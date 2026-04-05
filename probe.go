@@ -30,14 +30,17 @@ func formatDateEU(s string) string {
 
 // probeInfo holds the results of a host probe.
 type probeInfo struct {
-	FQDN           string
-	OS             string
-	UpSince        string
-	ServiceCount   int
-	ContainerCount int
-	LastUpdate     string
-	LastSecurity   string
-	SystemdMode    string // the mode that actually worked
+	FQDN              string
+	OS                string
+	UpSince           string
+	ServiceCount      int
+	ServiceRunning    int
+	ServiceFailed     int
+	ContainerCount    int
+	ContainerRunning  int
+	LastUpdate        string
+	LastSecurity      string
+	SystemdMode       string // the mode that actually worked
 }
 
 // probe runs a single SSH command to gather all host info in one roundtrip.
@@ -59,10 +62,13 @@ func probe(client *ssh.Client, systemdMode string) (probeInfo, error) {
 			`uptime -s 2>/dev/null || echo unknown && `+
 			`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown && `+
 			`%s list-units --type=service --no-pager -q 2>/dev/null | wc -l && `+
+			`%s list-units --type=service --state=running --no-pager -q 2>/dev/null | wc -l && `+
+			`%s list-units --type=service --state=failed --no-pager -q 2>/dev/null | wc -l && `+
 			`podman ps -q 2>/dev/null | wc -l && `+
+			`podman ps -a -q 2>/dev/null | wc -l && `+
 			`(dnf history list 2>/dev/null | grep -E '\| update ' | grep -v mdatp | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown) && `+
 			`(dnf history list 2>/dev/null | grep -E '\| update --security' | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown)`,
-		sysctl,
+		sysctl, sysctl, sysctl,
 	)
 
 	out, err := session.CombinedOutput(cmd)
@@ -100,37 +106,46 @@ func probe(client *ssh.Client, systemdMode string) (probeInfo, error) {
 	return parseProbeOutput(string(out), systemdMode)
 }
 
-// parseProbeOutput parses the 7-line output from the probe command.
+// parseProbeOutput parses the 9-line output from the probe command.
 func parseProbeOutput(output string, systemdMode string) (probeInfo, error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) < 5 {
+	if len(lines) < 7 {
 		return probeInfo{}, fmt.Errorf("unexpected probe output (%d lines): %s", len(lines), output)
 	}
 
 	svcCount, _ := strconv.Atoi(strings.TrimSpace(lines[3]))
-	ctnCount, _ := strconv.Atoi(strings.TrimSpace(lines[4]))
+	svcRunning, _ := strconv.Atoi(strings.TrimSpace(lines[4]))
+	svcFailed, _ := strconv.Atoi(strings.TrimSpace(lines[5]))
+	ctnRunning, _ := strconv.Atoi(strings.TrimSpace(lines[6]))
+	ctnCount := ctnRunning
+	if len(lines) > 7 {
+		ctnCount, _ = strconv.Atoi(strings.TrimSpace(lines[7]))
+	}
 
 	lastUpdate := "—"
 	lastSecurity := "—"
-	if len(lines) > 5 {
-		if v := strings.TrimSpace(lines[5]); v != "" && v != "unknown" {
+	if len(lines) > 8 {
+		if v := strings.TrimSpace(lines[8]); v != "" && v != "unknown" {
 			lastUpdate = formatDateEU(v)
 		}
 	}
-	if len(lines) > 6 {
-		if v := strings.TrimSpace(lines[6]); v != "" && v != "unknown" {
+	if len(lines) > 9 {
+		if v := strings.TrimSpace(lines[9]); v != "" && v != "unknown" {
 			lastSecurity = formatDateEU(v)
 		}
 	}
 
 	return probeInfo{
-		FQDN:           strings.TrimSpace(lines[0]),
-		UpSince:        formatDateEU(strings.TrimSpace(lines[1])),
-		OS:             strings.TrimSpace(lines[2]),
-		ServiceCount:   svcCount,
-		ContainerCount: ctnCount,
-		LastUpdate:     lastUpdate,
-		LastSecurity:   lastSecurity,
-		SystemdMode:    systemdMode,
+		FQDN:             strings.TrimSpace(lines[0]),
+		UpSince:          formatDateEU(strings.TrimSpace(lines[1])),
+		OS:               strings.TrimSpace(lines[2]),
+		ServiceCount:     svcCount,
+		ServiceRunning:   svcRunning,
+		ServiceFailed:    svcFailed,
+		ContainerCount:   ctnCount,
+		ContainerRunning: ctnRunning,
+		LastUpdate:       lastUpdate,
+		LastSecurity:     lastSecurity,
+		SystemdMode:      systemdMode,
 	}, nil
 }

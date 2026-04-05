@@ -64,7 +64,7 @@ func (m model) fetchServices() func() tea.Msg {
 	h := m.hosts[idx]
 	sm := m.ssh
 	mode := h.Entry.SystemdMode
-	filters := m.fleets[m.selectedFleet].Defaults.ServiceFilter
+	filters := h.Entry.ServiceFilter
 
 	return func() tea.Msg {
 		sysctl := "systemctl"
