@@ -69,6 +69,6 @@ var (
 			Bold(true)
 
 	groupHeaderStyle = lipgloss.NewStyle().
-				Foreground(colorYellow).
+				Foreground(colorBlue).
 				Bold(true)
 )
