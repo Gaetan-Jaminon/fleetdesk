@@ -2,10 +2,42 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// serviceStateOrder returns a sort priority for service states.
+// Lower = shown first.
+func serviceStateOrder(state string) int {
+	switch state {
+	case "failed":
+		return 0
+	case "running":
+		return 1
+	case "exited":
+		return 2
+	case "waiting":
+		return 3
+	case "inactive":
+		return 4
+	default:
+		return 5
+	}
+}
+
+// containerStateOrder returns a sort priority for container states.
+func containerStateOrder(status string) int {
+	if strings.HasPrefix(status, "Up") {
+		return 0
+	}
+	if strings.HasPrefix(status, "Exited") {
+		return 1
+	}
+	return 2
+}
 
 // fetchServicesMsg is sent when service list fetch completes.
 type fetchServicesMsg struct {
@@ -32,6 +64,7 @@ func (m model) fetchServices() func() tea.Msg {
 	h := m.hosts[idx]
 	sm := m.ssh
 	mode := h.Entry.SystemdMode
+	filters := m.fleets[m.selectedFleet].Defaults.ServiceFilter
 
 	return func() tea.Msg {
 		sysctl := "systemctl"
@@ -81,9 +114,18 @@ func (m model) fetchServices() func() tea.Msg {
 				if en, ok := enabledMap[svc.Name]; ok {
 					svc.Enabled = en
 				}
-				services = append(services, svc)
+				if matchesFilter(svc.Name, filters) {
+					services = append(services, svc)
+				}
 			}
 		}
+		sort.Slice(services, func(i, j int) bool {
+			oi, oj := serviceStateOrder(services[i].State), serviceStateOrder(services[j].State)
+			if oi != oj {
+				return oi < oj
+			}
+			return services[i].Name < services[j].Name
+		})
 		return fetchServicesMsg{services: services}
 	}
 }
@@ -154,8 +196,29 @@ func (m model) fetchContainers() func() tea.Msg {
 			}
 			containers = append(containers, c)
 		}
+		sort.Slice(containers, func(i, j int) bool {
+			oi, oj := containerStateOrder(containers[i].Status), containerStateOrder(containers[j].Status)
+			if oi != oj {
+				return oi < oj
+			}
+			return containers[i].Name < containers[j].Name
+		})
 		return fetchContainersMsg{containers: containers}
 	}
+}
+
+// matchesFilter returns true if the service name matches any of the filter patterns.
+// If no filters are defined, all services match.
+func matchesFilter(name string, filters []string) bool {
+	if len(filters) == 0 {
+		return true
+	}
+	for _, pattern := range filters {
+		if matched, _ := filepath.Match(pattern, name); matched {
+			return true
+		}
+	}
+	return false
 }
 
 // svcAction returns a tea.Cmd that runs a systemctl action via terminal handover with sudo.

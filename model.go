@@ -645,7 +645,23 @@ func (m model) renderHostList() string {
 			end = len(m.hosts)
 		}
 
+		// build group start index map
+		groupStarts := make(map[int]string)
+		for i, h := range m.hosts {
+			if h.Group != "" {
+				if i == 0 || m.hosts[i-1].Group != h.Group {
+					groupStarts[i] = h.Group
+				}
+			}
+		}
+
 		for i := offset; i < end; i++ {
+			// render group header if this host starts a new group
+			if groupName, ok := groupStarts[i]; ok {
+				groupLine := fmt.Sprintf("  ── %s ──", groupName)
+				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
+			}
+
 			h := m.hosts[i]
 			cur := "   "
 			if i == m.hostCursor {
