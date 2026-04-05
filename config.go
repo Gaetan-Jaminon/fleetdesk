@@ -29,29 +29,34 @@ type hostGroup struct {
 
 // hostEntry represents a single host definition in a fleet file.
 type hostEntry struct {
-	Name        string        `yaml:"name"`
-	Hostname    string        `yaml:"hostname"`
-	User        string        `yaml:"user"`
-	Port        int           `yaml:"port"`
-	Timeout     time.Duration `yaml:"timeout"`
-	SystemdMode string        `yaml:"systemd_mode"`
+	Name          string        `yaml:"name"`
+	Hostname      string        `yaml:"hostname"`
+	User          string        `yaml:"user"`
+	Port          int           `yaml:"port"`
+	Timeout       time.Duration `yaml:"timeout"`
+	SystemdMode   string        `yaml:"systemd_mode"`
+	ServiceFilter []string
 }
 
 // host is the runtime representation of a host with connection state.
 type host struct {
-	Entry  hostEntry
-	Group  string
-	Status hostStatus
+	Entry    hostEntry
+	Group    string
+	Status   hostStatus
+	NeedsPassword bool // true if key auth failed
 
 	// probe results
-	FQDN           string
-	OS             string
-	UpSince        string
-	ServiceCount   int
-	ContainerCount int
-	LastUpdate     string
-	LastSecurity   string
-	Error          string
+	FQDN             string
+	OS               string
+	UpSince          string
+	ServiceCount     int
+	ServiceRunning   int
+	ServiceFailed    int
+	ContainerCount   int
+	ContainerRunning int
+	LastUpdate       string
+	LastSecurity     string
+	Error            string
 }
 
 type hostStatus int

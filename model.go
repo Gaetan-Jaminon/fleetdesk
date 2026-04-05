@@ -53,6 +53,11 @@ type model struct {
 	// SSH
 	ssh *sshManager
 
+	// password prompt
+	passwordInput    string
+	passwordHostIdx  int
+	showPasswordPrompt bool
+
 	// flash message
 	flash      string
 	flashError bool
@@ -84,20 +89,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case hostProbeResult:
 		if msg.index < len(m.hosts) {
 			if msg.err != nil {
+				if isAuthError(msg.err) {
+					// mark as needing password
+					m.hosts[msg.index].Status = hostUnreachable
+					m.hosts[msg.index].Error = "password required"
+					m.hosts[msg.index].NeedsPassword = true
+					// show prompt if not already showing one
+					if !m.showPasswordPrompt {
+						m.passwordHostIdx = msg.index
+						m.passwordInput = ""
+						m.showPasswordPrompt = true
+					}
+					return m, nil
+				}
 				m.hosts[msg.index].Status = hostUnreachable
 				m.hosts[msg.index].Error = msg.err.Error()
 			} else {
-				m.hosts[msg.index].Status = hostOnline
-				m.hosts[msg.index].FQDN = msg.info.FQDN
-				m.hosts[msg.index].OS = msg.info.OS
-				m.hosts[msg.index].UpSince = msg.info.UpSince
-				m.hosts[msg.index].ServiceCount = msg.info.ServiceCount
-				m.hosts[msg.index].ContainerCount = msg.info.ContainerCount
-				m.hosts[msg.index].LastUpdate = msg.info.LastUpdate
-				m.hosts[msg.index].LastSecurity = msg.info.LastSecurity
+				m.applyProbeInfo(msg.index, msg.info)
 			}
 		}
 		return m, nil
+
+	case passwordRetryResult:
+		if msg.index < len(m.hosts) {
+			if msg.err != nil {
+				m.hosts[msg.index].Status = hostUnreachable
+				m.hosts[msg.index].Error = msg.err.Error()
+			} else {
+				m.hosts[msg.index].NeedsPassword = false
+				m.applyProbeInfo(msg.index, msg.info)
+			}
+		}
+		// check if more hosts need the same password
+		return m, m.retryRemainingPasswordHosts()
+
 
 	case fetchServicesMsg:
 		if msg.err != nil {
@@ -160,6 +185,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// password prompt mode — capture input
+	if m.showPasswordPrompt {
+		switch msg.Type {
+		case tea.KeyEnter:
+			m.showPasswordPrompt = false
+			password := m.passwordInput
+			m.passwordInput = "" // clear input immediately
+			idx := m.passwordHostIdx
+			m.hosts[idx].Status = hostConnecting
+			m.flash = ""
+			// cache password temporarily in ssh manager for batch retries
+			m.ssh.setCachedPassword(password)
+			return m, m.ssh.retryWithPassword(idx, m.hosts[idx], password)
+		case tea.KeyEsc:
+			m.showPasswordPrompt = false
+			m.hosts[m.passwordHostIdx].Status = hostUnreachable
+			m.hosts[m.passwordHostIdx].Error = "password prompt cancelled"
+			m.flash = ""
+			return m, nil
+		case tea.KeyBackspace:
+			if len(m.passwordInput) > 0 {
+				m.passwordInput = m.passwordInput[:len(m.passwordInput)-1]
+			}
+		default:
+			if msg.Type == tea.KeyRunes {
+				m.passwordInput += string(msg.Runes)
+			}
+		}
+		return m, nil
+	}
+
 	m.flash = ""
 	m.flashError = false
 
@@ -254,7 +310,11 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.selectedHost = m.hostCursor
 			m.resourceCursor = 0
+			m.services = nil
+			m.containers = nil
 			m.view = viewResourcePicker
+			// pre-fetch services and containers for accurate counts
+			return m, tea.Batch(m.fetchServices(), m.fetchContainers())
 		}
 	case "esc":
 		m.ssh.close()
@@ -384,6 +444,43 @@ func (m model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewResourcePicker
 	}
 	return m, nil
+}
+
+// applyProbeInfo updates a host with successful probe results.
+func (m *model) applyProbeInfo(idx int, info probeInfo) {
+	m.hosts[idx].Status = hostOnline
+	m.hosts[idx].FQDN = info.FQDN
+	m.hosts[idx].OS = info.OS
+	m.hosts[idx].UpSince = info.UpSince
+	m.hosts[idx].ServiceCount = info.ServiceCount
+	m.hosts[idx].ServiceRunning = info.ServiceRunning
+	m.hosts[idx].ServiceFailed = info.ServiceFailed
+	m.hosts[idx].ContainerCount = info.ContainerCount
+	m.hosts[idx].ContainerRunning = info.ContainerRunning
+	m.hosts[idx].LastUpdate = info.LastUpdate
+	m.hosts[idx].LastSecurity = info.LastSecurity
+}
+
+// retryRemainingPasswordHosts retries connection for hosts that still need a password.
+// Uses the password from the last successful retry (stored temporarily in sshManager).
+func (m model) retryRemainingPasswordHosts() tea.Cmd {
+	var cmds []tea.Cmd
+	for i, h := range m.hosts {
+		if h.NeedsPassword && h.Status == hostUnreachable {
+			idx := i
+			hh := h
+			sm := m.ssh
+			cmds = append(cmds, func() tea.Msg {
+				return sm.retryWithCachedPassword(idx, hh)
+			})
+		}
+	}
+	if len(cmds) == 0 {
+		// all done — clear the cached password
+		m.ssh.clearPassword()
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // startProbe launches parallel SSH connections and probes for all hosts.
@@ -697,12 +794,20 @@ func (m model) renderHostList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
-	s += m.renderHintBar([][]string{
-		{"Enter", "Drill In"},
-		{"r", "Refresh"},
-		{"Esc", "Back"},
-		{"q", "Quit"},
-	})
+
+	if m.showPasswordPrompt {
+		user := m.hosts[m.passwordHostIdx].Entry.User
+		masked := strings.Repeat("*", len(m.passwordInput))
+		prompt := fmt.Sprintf("  Password for %s: %s█", user, masked)
+		s += hintBarStyle.Width(m.width).Render(prompt)
+	} else {
+		s += m.renderHintBar([][]string{
+			{"Enter", "Drill In"},
+			{"r", "Refresh"},
+			{"Esc", "Back"},
+			{"q", "Quit"},
+		})
+	}
 	return s
 }
 
@@ -719,20 +824,65 @@ func (m model) renderResourcePicker() string {
 	s := m.renderHeader(breadcrumb, m.resourceCursor+1, 2) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	options := []string{
-		fmt.Sprintf("Services              %d units", h.ServiceCount),
-		fmt.Sprintf("Containers            %d running", h.ContainerCount),
+	nameCol := len("RESOURCE") + 4
+
+	hdr := fmt.Sprintf("     %-*s  %7s  %7s  %7s", nameCol, "RESOURCE", "TOTAL", "RUNNING", "FAILED")
+	s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+	s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+	type resRow struct {
+		name    string
+		total   int
+		running int
+		failed  int
 	}
-	for i, opt := range options {
+
+	// use fetched (filtered) data if available, otherwise probe counts
+	svcTotal, svcRunning, svcFailed := h.ServiceCount, h.ServiceRunning, h.ServiceFailed
+	ctnTotal, ctnRunning := h.ContainerCount, h.ContainerRunning
+	if len(m.services) > 0 {
+		svcTotal = len(m.services)
+		svcRunning = 0
+		svcFailed = 0
+		for _, s := range m.services {
+			switch s.State {
+			case "running":
+				svcRunning++
+			case "failed":
+				svcFailed++
+			}
+		}
+	}
+	ctnFailed := 0
+	if len(m.containers) > 0 {
+		ctnTotal = len(m.containers)
+		ctnRunning = 0
+		for _, c := range m.containers {
+			if strings.HasPrefix(c.Status, "Up") {
+				ctnRunning++
+			} else if !strings.HasPrefix(c.Status, "Exited (0)") && c.Status != "Created" {
+				ctnFailed++
+			}
+		}
+	}
+
+	rows := []resRow{
+		{"Services", svcTotal, svcRunning, svcFailed},
+		{"Containers", ctnTotal, ctnRunning, ctnFailed},
+	}
+	for i, r := range rows {
 		cur := "   "
 		if i == m.resourceCursor {
 			cur = " ▸ "
 		}
-		line := cur + "  " + opt
+		failedStr := fmt.Sprintf("%d", r.failed)
+		line := fmt.Sprintf("%s  %-*s  %7d  %7d  %7s", cur, nameCol, r.name, r.total, r.running, failedStr)
 
 		var style lipgloss.Style
 		if i == m.resourceCursor {
 			style = selectedRowStyle
+		} else if i%2 == 0 {
+			style = altRowStyle
 		} else {
 			style = normalRowStyle
 		}

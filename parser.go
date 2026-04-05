@@ -28,17 +28,19 @@ type defaultsFile struct {
 }
 
 type groupFile struct {
-	Name  string          `yaml:"name"`
-	Hosts []hostEntryFile `yaml:"hosts"`
+	Name          string          `yaml:"name"`
+	Hosts         []hostEntryFile `yaml:"hosts"`
+	ServiceFilter []string        `yaml:"service_filter"`
 }
 
 type hostEntryFile struct {
-	Name        string `yaml:"name"`
-	Hostname    string `yaml:"hostname"`
-	User        string `yaml:"user"`
-	Port        int    `yaml:"port"`
-	Timeout     string `yaml:"timeout"`
-	SystemdMode string `yaml:"systemd_mode"`
+	Name          string   `yaml:"name"`
+	Hostname      string   `yaml:"hostname"`
+	User          string   `yaml:"user"`
+	Port          int      `yaml:"port"`
+	Timeout       string   `yaml:"timeout"`
+	SystemdMode   string   `yaml:"systemd_mode"`
+	ServiceFilter []string `yaml:"service_filter"`
 }
 
 // parseFleetFile reads and parses a single fleet YAML file.
@@ -92,7 +94,7 @@ func parseFleetFile(path string) (fleet, error) {
 	// parse groups
 	var groups []hostGroup
 	for _, g := range raw.Groups {
-		hosts, err := parseHosts(g.Hosts, defaults)
+		hosts, err := parseHosts(g.Hosts, defaults, g.ServiceFilter)
 		if err != nil {
 			return fleet{}, fmt.Errorf("group %q: %w", g.Name, err)
 		}
@@ -103,7 +105,7 @@ func parseFleetFile(path string) (fleet, error) {
 	}
 
 	// parse ungrouped hosts
-	hosts, err := parseHosts(raw.Hosts, defaults)
+	hosts, err := parseHosts(raw.Hosts, defaults, nil)
 	if err != nil {
 		return fleet{}, fmt.Errorf("hosts: %w", err)
 	}
@@ -119,7 +121,8 @@ func parseFleetFile(path string) (fleet, error) {
 }
 
 // parseHosts converts raw host entries, applying defaults where needed.
-func parseHosts(raw []hostEntryFile, defaults hostDefaults) ([]hostEntry, error) {
+// groupFilter is the group-level service filter (can be nil).
+func parseHosts(raw []hostEntryFile, defaults hostDefaults, groupFilter []string) ([]hostEntry, error) {
 	var hosts []hostEntry
 	for _, r := range raw {
 		if r.Name == "" {
@@ -130,11 +133,21 @@ func parseHosts(raw []hostEntryFile, defaults hostDefaults) ([]hostEntry, error)
 		}
 
 		h := hostEntry{
-			Name:     r.Name,
-			Hostname: r.Hostname,
-			User:     r.User,
-			Port:     r.Port,
+			Name:        r.Name,
+			Hostname:    r.Hostname,
+			User:        r.User,
+			Port:        r.Port,
 			SystemdMode: r.SystemdMode,
+		}
+
+		// service filter: host → group → defaults
+		switch {
+		case len(r.ServiceFilter) > 0:
+			h.ServiceFilter = r.ServiceFilter
+		case len(groupFilter) > 0:
+			h.ServiceFilter = groupFilter
+		default:
+			h.ServiceFilter = defaults.ServiceFilter
 		}
 
 		// apply defaults

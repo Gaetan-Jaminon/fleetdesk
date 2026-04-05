@@ -15,8 +15,9 @@ import (
 
 // sshManager holds persistent SSH connections for all hosts in a fleet.
 type sshManager struct {
-	mu    sync.Mutex
-	conns map[int]*ssh.Client // keyed by host index
+	mu             sync.Mutex
+	conns          map[int]*ssh.Client // keyed by host index
+	cachedPassword string              // temporary, cleared after batch retry
 }
 
 func newSSHManager() *sshManager {
@@ -185,6 +186,76 @@ func (sm *sshManager) runCommand(idx int, cmd string) (string, error) {
 	return string(out), nil
 }
 
+// setCachedPassword stores a password temporarily for batch retries.
+func (sm *sshManager) setCachedPassword(password string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.cachedPassword = password
+}
+
+// clearPassword zeroes out the cached password.
+func (sm *sshManager) clearPassword() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.cachedPassword = ""
+}
+
+// retryWithCachedPassword uses the temporarily cached password to connect a host.
+func (sm *sshManager) retryWithCachedPassword(idx int, h host) passwordRetryResult {
+	sm.mu.Lock()
+	pw := sm.cachedPassword
+	sm.mu.Unlock()
+
+	if pw == "" {
+		return passwordRetryResult{index: idx, err: fmt.Errorf("no cached password")}
+	}
+
+	return sm.connectWithPassword(idx, h, pw)
+}
+
+// connectWithPassword connects to a host using password auth and probes it.
+func (sm *sshManager) connectWithPassword(idx int, h host, password string) passwordRetryResult {
+	entry := h.Entry
+	hostname := entry.Hostname
+	port := entry.Port
+	if port == 0 {
+		port = 22
+	}
+
+	config := &ssh.ClientConfig{
+		User: entry.User,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range questions {
+					answers[i] = password
+				}
+				return answers, nil
+			}),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         entry.Timeout,
+	}
+
+	addr := fmt.Sprintf("%s:%d", hostname, port)
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil {
+		return passwordRetryResult{index: idx, err: fmt.Errorf("password auth: %w", err)}
+	}
+
+	sm.mu.Lock()
+	sm.conns[idx] = client
+	sm.mu.Unlock()
+
+	info, err := probe(client, entry.SystemdMode)
+	if err != nil {
+		return passwordRetryResult{index: idx, err: fmt.Errorf("probe: %w", err)}
+	}
+
+	return passwordRetryResult{index: idx, info: info}
+}
+
 // close shuts down all SSH connections.
 func (sm *sshManager) close() {
 	sm.mu.Lock()
@@ -195,6 +266,7 @@ func (sm *sshManager) close() {
 		}
 	}
 	sm.conns = make(map[int]*ssh.Client)
+	sm.cachedPassword = ""
 }
 
 // sshAgentAuth returns an auth method from the SSH agent, or nil.
