@@ -62,9 +62,10 @@ const (
 
 // service represents a systemd unit on a remote host.
 type service struct {
-	Name    string
-	State   string // active, inactive, failed
-	Enabled string // enabled, disabled, static
+	Name        string
+	State       string // active, inactive, failed
+	Enabled     string // enabled, disabled, static
+	Description string
 }
 
 // container represents a Podman container on a remote host.

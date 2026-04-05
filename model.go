@@ -97,6 +97,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchServicesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.services = msg.services
+		}
+		return m, nil
+
+	case fetchContainersMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.containers = msg.containers
+		}
+		return m, nil
+
+	case serviceActionMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("%s %s failed: %v", msg.action, msg.unit, msg.err)
+			m.flashError = true
+		} else {
+			m.flash = fmt.Sprintf("%s %s: ok", msg.action, msg.unit)
+		}
+		// refresh service list after action
+		return m, m.fetchServices()
+
+	case sshHandoverFinishedMsg:
+		// refresh service list after terminal handover returns
+		if m.view == viewServiceList {
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchServices())
+		}
+		return m, tea.EnterAltScreen
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -217,12 +252,14 @@ func (m model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.resourceCursor == 0 {
 			m.serviceCursor = 0
+			m.services = nil
 			m.view = viewServiceList
-			// TODO: fetch services
+			return m, m.fetchServices()
 		} else {
 			m.containerCursor = 0
+			m.containers = nil
 			m.view = viewContainerList
-			// TODO: fetch containers
+			return m, m.fetchContainers()
 		}
 	case "esc":
 		m.view = viewHostList
@@ -240,6 +277,22 @@ func (m model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.serviceCursor < len(m.services)-1 {
 			m.serviceCursor++
 		}
+	case "s":
+		if len(m.services) > 0 {
+			return m, m.svcAction("start")
+		}
+	case "o":
+		if len(m.services) > 0 {
+			return m, m.svcAction("stop")
+		}
+	case "t":
+		if len(m.services) > 0 {
+			return m, m.svcAction("restart")
+		}
+	case "r":
+		m.services = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchServices()
 	case "esc":
 		m.view = viewResourcePicker
 	}
@@ -618,14 +671,19 @@ func (m model) renderServiceList() string {
 		s += borderedRow("  No services found.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("SERVICE")
+		enabledCol := len("ENABLED")
 		for _, svc := range m.services {
 			if len(svc.Name) > nameCol {
 				nameCol = len(svc.Name)
 			}
+			if len(svc.Enabled) > enabledCol {
+				enabledCol = len(svc.Enabled)
+			}
 		}
 		nameCol += 2
+		enabledCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-10s  %s", nameCol, "SERVICE", "STATE", "ENABLED")
+		hdr := fmt.Sprintf("     %-*s  %-10s  %-*s  %s", nameCol, "SERVICE", "STATE", enabledCol, "ENABLED", "DESCRIPTION")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
@@ -652,7 +710,11 @@ func (m model) renderServiceList() string {
 			if svc.State == "failed" {
 				prefix = "✗ "
 			}
-			line := fmt.Sprintf("%s  %s%-*s  %-10s  %s", cur, prefix, nameCol, svc.Name, svc.State, svc.Enabled)
+			desc := svc.Description
+			if desc == "" {
+				desc = "—"
+			}
+			line := fmt.Sprintf("%s  %s%-*s  %-10s  %-*s  %s", cur, prefix, nameCol, svc.Name, svc.State, enabledCol, svc.Enabled, desc)
 
 			var style lipgloss.Style
 			if i == m.serviceCursor {
