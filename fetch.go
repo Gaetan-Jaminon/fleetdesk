@@ -39,19 +39,48 @@ func (m model) fetchServices() func() tea.Msg {
 			sysctl = "systemctl --user"
 		}
 
-		cmd := fmt.Sprintf("%s list-units --type=service --all --no-pager --plain --no-legend", sysctl)
+		// fetch units and unit-files in one SSH command
+		cmd := fmt.Sprintf(
+			"%s list-units --type=service --all --no-pager --plain --no-legend && echo '---SEPARATOR---' && %s list-unit-files --type=service --no-pager --plain --no-legend",
+			sysctl, sysctl,
+		)
 		out, err := sm.runCommand(idx, cmd)
 		if err != nil {
 			return fetchServicesMsg{err: fmt.Errorf("list services: %w", err)}
 		}
 
+		// split output into units and unit-files sections
+		parts := strings.SplitN(out, "---SEPARATOR---", 2)
+		unitsOut := parts[0]
+		var unitFilesOut string
+		if len(parts) > 1 {
+			unitFilesOut = parts[1]
+		}
+
+		// parse enabled status from unit-files
+		enabledMap := make(map[string]string)
+		for _, line := range strings.Split(strings.TrimSpace(unitFilesOut), "\n") {
+			if line == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				name := strings.TrimSuffix(fields[0], ".service")
+				enabledMap[name] = fields[1]
+			}
+		}
+
+		// parse services from list-units
 		var services []service
-		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		for _, line := range strings.Split(strings.TrimSpace(unitsOut), "\n") {
 			if line == "" {
 				continue
 			}
 			svc := parseServiceLine(line)
 			if svc.Name != "" {
+				if en, ok := enabledMap[svc.Name]; ok {
+					svc.Enabled = en
+				}
 				services = append(services, svc)
 			}
 		}
@@ -71,23 +100,26 @@ func parseServiceLine(line string) service {
 	// strip .service suffix for cleaner display
 	name = strings.TrimSuffix(name, ".service")
 
-	// ACTIVE is field 2 (0-indexed): loaded/not-found, active/inactive/failed, running/dead/exited
 	state := fields[2] // active, inactive, failed
 	sub := fields[3]   // running, dead, exited, waiting, etc.
 
 	// use sub-state for more detail when relevant
 	display := state
 	if state == "active" && sub != "" {
-		display = sub // show "running", "exited", "waiting" instead of just "active"
+		display = sub
 	}
 
-	// determine enabled status — not available from list-units, use "—"
-	enabled := "—"
+	// description is everything after the 4th field
+	desc := ""
+	if len(fields) > 4 {
+		desc = strings.Join(fields[4:], " ")
+	}
 
 	return service{
-		Name:    name,
-		State:   display,
-		Enabled: enabled,
+		Name:        name,
+		State:       display,
+		Enabled:     "—",
+		Description: desc,
 	}
 }
 

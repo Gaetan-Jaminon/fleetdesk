@@ -671,14 +671,19 @@ func (m model) renderServiceList() string {
 		s += borderedRow("  No services found.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("SERVICE")
+		enabledCol := len("ENABLED")
 		for _, svc := range m.services {
 			if len(svc.Name) > nameCol {
 				nameCol = len(svc.Name)
 			}
+			if len(svc.Enabled) > enabledCol {
+				enabledCol = len(svc.Enabled)
+			}
 		}
 		nameCol += 2
+		enabledCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-10s  %s", nameCol, "SERVICE", "STATE", "ENABLED")
+		hdr := fmt.Sprintf("     %-*s  %-10s  %-*s  %s", nameCol, "SERVICE", "STATE", enabledCol, "ENABLED", "DESCRIPTION")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
@@ -705,7 +710,11 @@ func (m model) renderServiceList() string {
 			if svc.State == "failed" {
 				prefix = "✗ "
 			}
-			line := fmt.Sprintf("%s  %s%-*s  %-10s  %s", cur, prefix, nameCol, svc.Name, svc.State, svc.Enabled)
+			desc := svc.Description
+			if desc == "" {
+				desc = "—"
+			}
+			line := fmt.Sprintf("%s  %s%-*s  %-10s  %-*s  %s", cur, prefix, nameCol, svc.Name, svc.State, enabledCol, svc.Enabled, desc)
 
 			var style lipgloss.Style
 			if i == m.serviceCursor {
