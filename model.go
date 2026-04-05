@@ -19,6 +19,13 @@ const (
 	viewContainerList
 )
 
+// hostProbeResult is sent when an SSH probe completes for a host.
+type hostProbeResult struct {
+	index int
+	info  probeInfo
+	err   error
+}
+
 type model struct {
 	view view
 
@@ -32,8 +39,8 @@ type model struct {
 	hostCursor    int
 
 	// resource picker
-	selectedHost    int
-	resourceCursor  int
+	selectedHost   int
+	resourceCursor int
 
 	// service list
 	services      []service
@@ -42,6 +49,9 @@ type model struct {
 	// container list
 	containers      []container
 	containerCursor int
+
+	// SSH
+	ssh *sshManager
 
 	// flash message
 	flash      string
@@ -56,6 +66,7 @@ func newModel(fleets []fleet) model {
 	return model{
 		view:   viewFleetPicker,
 		fleets: fleets,
+		ssh:    newSSHManager(),
 	}
 }
 
@@ -68,6 +79,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+
+	case hostProbeResult:
+		if msg.index < len(m.hosts) {
+			if msg.err != nil {
+				m.hosts[msg.index].Status = hostUnreachable
+				m.hosts[msg.index].Error = msg.err.Error()
+			} else {
+				m.hosts[msg.index].Status = hostOnline
+				m.hosts[msg.index].FQDN = msg.info.FQDN
+				m.hosts[msg.index].OS = msg.info.OS
+				m.hosts[msg.index].UpSince = msg.info.UpSince
+				m.hosts[msg.index].ServiceCount = msg.info.ServiceCount
+				m.hosts[msg.index].ContainerCount = msg.info.ContainerCount
+			}
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -132,10 +159,11 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedFleet = m.fleetCursor
+			m.ssh.close()
 			m.hosts = buildHostList(f)
 			m.hostCursor = 0
 			m.view = viewHostList
-			// TODO: start SSH connections
+			return m, m.startProbe()
 		}
 	}
 	return m, nil
@@ -151,6 +179,12 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.hostCursor < len(m.hosts)-1 {
 			m.hostCursor++
 		}
+	case "r":
+		f := m.fleets[m.selectedFleet]
+		m.ssh.close()
+		m.hosts = buildHostList(f)
+		m.flash = "Refreshing..."
+		return m, m.startProbe()
 	case "enter":
 		if len(m.hosts) > 0 {
 			h := m.hosts[m.hostCursor]
@@ -164,6 +198,7 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewResourcePicker
 		}
 	case "esc":
+		m.ssh.close()
 		m.view = viewFleetPicker
 	}
 	return m, nil
@@ -225,6 +260,21 @@ func (m model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewResourcePicker
 	}
 	return m, nil
+}
+
+// startProbe launches parallel SSH connections and probes for all hosts.
+// Returns a batch of commands, one per host, that will send hostProbeResult messages.
+func (m model) startProbe() tea.Cmd {
+	var cmds []tea.Cmd
+	for i, h := range m.hosts {
+		idx := i
+		hh := h
+		sm := m.ssh
+		cmds = append(cmds, func() tea.Msg {
+			return sm.connectAndProbe(idx, hh)
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 // buildHostList creates the runtime host list from a fleet definition.
@@ -349,7 +399,7 @@ func (m model) renderFleetPicker() string {
 		}
 		nameCol += 2
 
-		hdr := fmt.Sprintf("      %-*s  %-6s  %s", nameCol, "FLEET", "TYPE", "HOSTS")
+		hdr := fmt.Sprintf("     %-*s  %-6s  %s", nameCol, "FLEET", "TYPE", "HOSTS")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
@@ -438,7 +488,15 @@ func (m model) renderHostList() string {
 		nameCol += 2
 		osCol += 2
 
-		hdr := fmt.Sprintf("      %-*s  %-*s  %-12s  %5s  %5s", nameCol, "HOST", osCol, "OS", "UP SINCE", "SVC", "CTN")
+		// compute uptime column width from actual data
+		upCol := len("UP SINCE")
+		for _, h := range m.hosts {
+			if len(h.UpSince) > upCol {
+				upCol = len(h.UpSince)
+			}
+		}
+
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %5s  %5s", nameCol, "HOST", osCol, "OS", upCol, "UP SINCE", "SVC", "CTN")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
@@ -473,8 +531,8 @@ func (m model) renderHostList() string {
 				}
 				line = fmt.Sprintf("%s  %-*s  unreachable (%s)", cur, nameCol, h.Entry.Name, reason)
 			default:
-				line = fmt.Sprintf("%s  %-*s  %-*s  %-12s  %5d  %5d",
-					cur, nameCol, h.Entry.Name, osCol, h.OS, h.UpSince, h.ServiceCount, h.ContainerCount)
+				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s  %5d  %5d",
+					cur, nameCol, h.Entry.Name, osCol, h.OS, upCol, h.UpSince, h.ServiceCount, h.ContainerCount)
 			}
 
 			var style lipgloss.Style
@@ -567,7 +625,7 @@ func (m model) renderServiceList() string {
 		}
 		nameCol += 2
 
-		hdr := fmt.Sprintf("      %-*s  %-10s  %s", nameCol, "SERVICE", "STATE", "ENABLED")
+		hdr := fmt.Sprintf("     %-*s  %-10s  %s", nameCol, "SERVICE", "STATE", "ENABLED")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
@@ -650,7 +708,7 @@ func (m model) renderContainerList() string {
 		nameCol += 2
 		imgCol += 2
 
-		hdr := fmt.Sprintf("      %-*s  %-*s  %s", nameCol, "CONTAINER", imgCol, "IMAGE", "STATUS")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", nameCol, "CONTAINER", imgCol, "IMAGE", "STATUS")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
