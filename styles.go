@@ -67,4 +67,8 @@ var (
 	flashErrorStyle = lipgloss.NewStyle().
 			Foreground(colorRed).
 			Bold(true)
+
+	groupHeaderStyle = lipgloss.NewStyle().
+				Foreground(colorYellow).
+				Bold(true)
 )
