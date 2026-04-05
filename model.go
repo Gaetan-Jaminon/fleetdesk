@@ -127,6 +127,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// refresh service list after action
 		return m, m.fetchServices()
 
+	case editFinishedMsg:
+		// reload fleets after editor returns
+		fleets, err := scanFleets()
+		if err != nil {
+			m.flash = fmt.Sprintf("Reload failed: %v", err)
+			m.flashError = true
+		} else {
+			m.fleets = fleets
+			if m.fleetCursor >= len(m.fleets) {
+				m.fleetCursor = max(0, len(m.fleets)-1)
+			}
+			m.flash = "Reloaded"
+		}
+		return m, tea.EnterAltScreen
+
 	case sshHandoverFinishedMsg:
 		// refresh list after terminal handover returns
 		switch m.view {
@@ -177,6 +192,10 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if m.fleetCursor < len(m.fleets)-1 {
 			m.fleetCursor++
+		}
+	case "e":
+		if len(m.fleets) > 0 {
+			return m, m.editFleetFile()
 		}
 	case "r":
 		fleets, err := scanFleets()

@@ -59,6 +59,47 @@ type sshHandoverFinishedMsg struct {
 	err error
 }
 
+// editFinishedMsg is sent when the editor returns.
+type editFinishedMsg struct {
+	err error
+}
+
+// editorExec wraps an editor command for terminal handover.
+type editorExec struct {
+	path string
+	err  error
+}
+
+func (e *editorExec) Run() error {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	c := exec.Command(editor, e.path)
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	e.err = c.Run()
+	return nil
+}
+
+func (e *editorExec) SetStdin(_ io.Reader)  {}
+func (e *editorExec) SetStdout(_ io.Writer) {}
+func (e *editorExec) SetStderr(_ io.Writer) {}
+
+// editFleetFile opens the selected fleet file in the user's editor.
+func (m model) editFleetFile() tea.Cmd {
+	f := m.fleets[m.fleetCursor]
+	e := &editorExec{path: f.Path}
+	return tea.Exec(e, func(err error) tea.Msg {
+		return editFinishedMsg{err: e.err}
+	})
+}
+
 // sshHandover creates a tea.Cmd for terminal handover to an SSH command.
 func sshHandover(h host, args []string, banner string) tea.Cmd {
 	e := &sshExec{
