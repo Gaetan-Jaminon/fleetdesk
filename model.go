@@ -52,9 +52,10 @@ type model struct {
 	height int
 }
 
-func newModel() model {
+func newModel(fleets []fleet) model {
 	return model{
-		view: viewFleetPicker,
+		view:   viewFleetPicker,
+		fleets: fleets,
 	}
 }
 
@@ -110,12 +111,31 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.fleetCursor < len(m.fleets)-1 {
 			m.fleetCursor++
 		}
+	case "r":
+		fleets, err := scanFleets()
+		if err != nil {
+			m.flash = fmt.Sprintf("Reload failed: %v", err)
+			m.flashError = true
+			return m, nil
+		}
+		m.fleets = fleets
+		if m.fleetCursor >= len(m.fleets) {
+			m.fleetCursor = max(0, len(m.fleets)-1)
+		}
+		m.flash = "Reloaded"
 	case "enter":
 		if len(m.fleets) > 0 {
+			f := m.fleets[m.fleetCursor]
+			if f.Type != "vm" {
+				m.flash = "K8s support coming soon"
+				m.flashError = false
+				return m, nil
+			}
 			m.selectedFleet = m.fleetCursor
+			m.hosts = buildHostList(f)
 			m.hostCursor = 0
 			m.view = viewHostList
-			// TODO: load hosts from fleet + start SSH connections
+			// TODO: start SSH connections
 		}
 	}
 	return m, nil
@@ -205,6 +225,27 @@ func (m model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = viewResourcePicker
 	}
 	return m, nil
+}
+
+// buildHostList creates the runtime host list from a fleet definition.
+func buildHostList(f fleet) []host {
+	var hosts []host
+	for _, g := range f.Groups {
+		for _, e := range g.Hosts {
+			hosts = append(hosts, host{
+				Entry:  e,
+				Group:  g.Name,
+				Status: hostConnecting,
+			})
+		}
+	}
+	for _, e := range f.Hosts {
+		hosts = append(hosts, host{
+			Entry:  e,
+			Status: hostConnecting,
+		})
+	}
+	return hosts
 }
 
 // --- View rendering ---
