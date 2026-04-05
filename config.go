@@ -44,12 +44,14 @@ type host struct {
 	Status hostStatus
 
 	// probe results
-	FQDN         string
-	OS           string
-	UpSince      string
-	ServiceCount int
+	FQDN           string
+	OS             string
+	UpSince        string
+	ServiceCount   int
 	ContainerCount int
-	Error        string
+	LastUpdate     string
+	LastSecurity   string
+	Error          string
 }
 
 type hostStatus int
