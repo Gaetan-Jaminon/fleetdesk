@@ -128,9 +128,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fetchServices()
 
 	case sshHandoverFinishedMsg:
-		// refresh service list after terminal handover returns
-		if m.view == viewServiceList {
+		// refresh list after terminal handover returns
+		switch m.view {
+		case viewServiceList:
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchServices())
+		case viewContainerList:
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchContainers())
 		}
 		return m, tea.EnterAltScreen
 
@@ -291,6 +294,28 @@ func (m model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.services) > 0 {
 			return m, m.svcAction("restart")
 		}
+	case "l":
+		if len(m.services) > 0 {
+			h := m.hosts[m.selectedHost]
+			unit := m.services[m.serviceCursor].Name + ".service"
+			jctl := "sudo journalctl -u"
+			if h.Entry.SystemdMode == "user" {
+				jctl = "journalctl --user-unit"
+			}
+			cmd := fmt.Sprintf("%s %s -f", jctl, unit)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("logs %s on %s (Ctrl+C to stop)", unit, h.Entry.Name))
+		}
+	case "i":
+		if len(m.services) > 0 {
+			h := m.hosts[m.selectedHost]
+			unit := m.services[m.serviceCursor].Name + ".service"
+			sysctl := "sudo systemctl"
+			if h.Entry.SystemdMode == "user" {
+				sysctl = "systemctl --user"
+			}
+			cmd := fmt.Sprintf("%s status %s --no-pager", sysctl, unit)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("status %s on %s", unit, h.Entry.Name))
+		}
 	case "r":
 		m.services = nil
 		m.flash = "Refreshing..."
@@ -311,6 +336,31 @@ func (m model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.containerCursor < len(m.containers)-1 {
 			m.containerCursor++
 		}
+	case "l":
+		if len(m.containers) > 0 {
+			h := m.hosts[m.selectedHost]
+			ctr := m.containers[m.containerCursor].Name
+			cmd := fmt.Sprintf("podman logs -f %s", ctr)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("logs %s on %s (Ctrl+C to stop)", ctr, h.Entry.Name))
+		}
+	case "i":
+		if len(m.containers) > 0 {
+			h := m.hosts[m.selectedHost]
+			ctr := m.containers[m.containerCursor].Name
+			cmd := fmt.Sprintf("podman inspect %s | less", ctr)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("inspect %s on %s", ctr, h.Entry.Name))
+		}
+	case "e":
+		if len(m.containers) > 0 {
+			h := m.hosts[m.selectedHost]
+			ctr := m.containers[m.containerCursor].Name
+			cmd := fmt.Sprintf("podman exec -it %s /bin/bash || podman exec -it %s /bin/sh", ctr, ctr)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("exec %s on %s", ctr, h.Entry.Name))
+		}
+	case "r":
+		m.containers = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchContainers()
 	case "esc":
 		m.view = viewResourcePicker
 	}
@@ -804,7 +854,7 @@ func (m model) renderContainerList() string {
 				cur = " ▸ "
 			}
 			prefix := ""
-			if c.Status != "running" && c.Status != "exited" {
+			if !strings.HasPrefix(c.Status, "Up") && !strings.HasPrefix(c.Status, "Exited (0)") && c.Status != "Created" {
 				prefix = "✗ "
 			}
 			line := fmt.Sprintf("%s  %s%-*s  %-*s  %s", cur, prefix, nameCol, c.Name, imgCol, c.Image, c.Status)
