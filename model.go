@@ -294,6 +294,16 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.hostCursor < len(m.hosts)-1 {
 			m.hostCursor++
 		}
+	case "x":
+		if len(m.hosts) > 0 {
+			h := m.hosts[m.hostCursor]
+			if h.Status != hostOnline {
+				m.flash = "Host is not reachable"
+				m.flashError = true
+				return m, nil
+			}
+			return m, sshHandover(h, []string{}, fmt.Sprintf("shell %s@%s", h.Entry.User, h.Entry.Name))
+		}
 	case "r":
 		f := m.fleets[m.selectedFleet]
 		m.ssh.close()
@@ -803,6 +813,7 @@ func (m model) renderHostList() string {
 	} else {
 		s += m.renderHintBar([][]string{
 			{"Enter", "Drill In"},
+			{"x", "Shell"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
