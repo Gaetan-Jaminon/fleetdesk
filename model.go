@@ -17,6 +17,11 @@ const (
 	viewResourcePicker
 	viewServiceList
 	viewContainerList
+	viewCronList
+	viewLogLevelPicker
+	viewErrorLogList
+	viewUpdateList
+	viewDiskList
 )
 
 // hostProbeResult is sent when an SSH probe completes for a host.
@@ -49,6 +54,27 @@ type model struct {
 	// container list
 	containers      []container
 	containerCursor int
+
+	// cron jobs
+	cronJobs    []cronJob
+	cronCursor  int
+
+	// log level picker
+	logLevels      []logLevelEntry
+	logLevelCursor int
+
+	// error logs
+	errorLogs      []errorLog
+	errorCursor    int
+	selectedLogLevel string
+
+	// updates
+	updates      []update
+	updateCursor int
+
+	// disk
+	disks      []disk
+	diskCursor int
 
 	// SSH
 	ssh *sshManager
@@ -139,6 +165,51 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashError = true
 		} else {
 			m.containers = msg.containers
+		}
+		return m, nil
+
+	case fetchCronMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.cronJobs = msg.jobs
+		}
+		return m, nil
+
+	case fetchLogLevelsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.logLevels = msg.levels
+		}
+		return m, nil
+
+	case fetchErrorLogsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.errorLogs = msg.logs
+		}
+		return m, nil
+
+	case fetchUpdatesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.updates = msg.updates
+		}
+		return m, nil
+
+	case fetchDiskMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.disks = msg.disks
 		}
 		return m, nil
 
@@ -235,6 +306,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleServiceListKeys(msg)
 	case viewContainerList:
 		return m.handleContainerListKeys(msg)
+	case viewCronList:
+		return m.handleCronListKeys(msg)
+	case viewLogLevelPicker:
+		return m.handleLogLevelPickerKeys(msg)
+	case viewErrorLogList:
+		return m.handleErrorLogListKeys(msg)
+	case viewUpdateList:
+		return m.handleUpdateListKeys(msg)
+	case viewDiskList:
+		return m.handleDiskListKeys(msg)
 	}
 	return m, nil
 }
@@ -355,8 +436,26 @@ func (m model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.containers = nil
 			m.view = viewContainerList
 			return m, m.fetchContainers()
-		case 2, 3, 4, 5: // Cron Jobs, Error Logs, Updates, Disk — not yet implemented
-			m.flash = "Coming soon"
+		case 2: // Cron Jobs
+			m.cronCursor = 0
+			m.cronJobs = nil
+			m.view = viewCronList
+			return m, m.fetchCronJobs()
+		case 3: // Error Logs -> Log Level Picker
+			m.logLevelCursor = 0
+			m.logLevels = nil
+			m.view = viewLogLevelPicker
+			return m, m.fetchLogLevels()
+		case 4: // Updates
+			m.updateCursor = 0
+			m.updates = nil
+			m.view = viewUpdateList
+			return m, m.fetchUpdates()
+		case 5: // Disk
+			m.diskCursor = 0
+			m.disks = nil
+			m.view = viewDiskList
+			return m, m.fetchDisk()
 		}
 	case "esc":
 		m.view = viewHostList
@@ -459,6 +558,122 @@ func (m model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) handleCronListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.cronCursor > 0 {
+			m.cronCursor--
+		}
+	case "down", "j":
+		if m.cronCursor < len(m.cronJobs)-1 {
+			m.cronCursor++
+		}
+	case "r":
+		m.cronJobs = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchCronJobs()
+	case "esc":
+		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m model) handleLogLevelPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.logLevelCursor > 0 {
+			m.logLevelCursor--
+		}
+	case "down", "j":
+		if m.logLevelCursor < len(m.logLevels)-1 {
+			m.logLevelCursor++
+		}
+	case "enter":
+		if len(m.logLevels) > 0 {
+			selected := m.logLevels[m.logLevelCursor]
+			m.selectedLogLevel = selected.Code
+			m.errorCursor = 0
+			m.errorLogs = nil
+			m.view = viewErrorLogList
+			return m, m.fetchErrorLogs()
+		}
+	case "r":
+		m.logLevels = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchLogLevels()
+	case "esc":
+		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.errorCursor > 0 {
+			m.errorCursor--
+		}
+	case "down", "j":
+		if m.errorCursor < len(m.errorLogs)-1 {
+			m.errorCursor++
+		}
+	case "l":
+		if len(m.errorLogs) > 0 {
+			h := m.hosts[m.selectedHost]
+			since := h.ErrorLogSince
+			cmd := fmt.Sprintf("sudo journalctl -p %s --since '%s' --no-pager -q --no-hostname | less", m.selectedLogLevel, since)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("%s logs on %s", m.logLevels[m.logLevelCursor].Level, h.Entry.Name))
+		}
+	case "r":
+		m.errorLogs = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchErrorLogs()
+	case "esc":
+		m.view = viewLogLevelPicker
+	}
+	return m, nil
+}
+
+func (m model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.updateCursor > 0 {
+			m.updateCursor--
+		}
+	case "down", "j":
+		if m.updateCursor < len(m.updates)-1 {
+			m.updateCursor++
+		}
+	case "r":
+		m.updates = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchUpdates()
+	case "esc":
+		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.diskCursor > 0 {
+			m.diskCursor--
+		}
+	case "down", "j":
+		if m.diskCursor < len(m.disks)-1 {
+			m.diskCursor++
+		}
+	case "r":
+		m.disks = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchDisk()
+	case "esc":
+		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
 // applyProbeInfo updates a host with successful probe results.
 func (m *model) applyProbeInfo(idx int, info probeInfo) {
 	m.hosts[idx].Status = hostOnline
@@ -554,6 +769,16 @@ func (m model) View() string {
 		return m.renderServiceList()
 	case viewContainerList:
 		return m.renderContainerList()
+	case viewCronList:
+		return m.renderCronList()
+	case viewLogLevelPicker:
+		return m.renderLogLevelPicker()
+	case viewErrorLogList:
+		return m.renderErrorLogList()
+	case viewUpdateList:
+		return m.renderUpdateList()
+	case viewDiskList:
+		return m.renderDiskList()
 	}
 	return ""
 }
@@ -893,7 +1118,7 @@ func (m model) renderResourcePicker() string {
 		{"Services", svcTotal, svcRunning, svcFailed},
 		{"Containers", ctnTotal, ctnRunning, ctnFailed},
 		{"Cron Jobs", h.CronCount, 0, 0},
-		{"Error Logs", h.ErrorCount, 0, 0},
+		{"System Logs", h.ErrorCount, 0, 0},
 		{"Updates", h.UpdateCount, 0, 0},
 		{"Disk", h.DiskCount, 0, h.DiskHighCount},
 	}
@@ -1089,6 +1314,401 @@ func (m model) renderContainerList() string {
 		{"l", "Logs"},
 		{"i", "Inspect"},
 		{"e", "Exec"},
+		{"Esc", "Back"},
+	})
+	return s
+}
+
+func (m model) renderLogLevelPicker() string {
+	h := m.hosts[m.selectedHost]
+	f := m.fleets[m.selectedFleet]
+	w := m.width
+	if w < 20 {
+		w = 80
+	}
+	iw := w - 2
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Logs"
+	s := m.renderHeader(breadcrumb, m.logLevelCursor+1, len(m.logLevels)) + "\n"
+	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+	if len(m.logLevels) == 0 {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else {
+		nameCol := len("LEVEL") + 6
+
+		hdr := fmt.Sprintf("     %-*s  %8s", nameCol, "LEVEL", "COUNT")
+		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		for i, l := range m.logLevels {
+			cur := "   "
+			if i == m.logLevelCursor {
+				cur = " ▸ "
+			}
+			line := fmt.Sprintf("%s  %-*s  %8d", cur, nameCol, l.Level, l.Count)
+
+			var style lipgloss.Style
+			if i == m.logLevelCursor {
+				style = selectedRowStyle
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	s = m.padToBottom(s, iw)
+	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+	s += m.renderHintBar([][]string{
+		{"Enter", "View Logs"},
+		{"r", "Refresh"},
+		{"Esc", "Back"},
+	})
+	return s
+}
+
+func (m model) renderCronList() string {
+	h := m.hosts[m.selectedHost]
+	f := m.fleets[m.selectedFleet]
+	w := m.width
+	if w < 20 {
+		w = 80
+	}
+	iw := w - 2
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Cron Jobs"
+	s := m.renderHeader(breadcrumb, m.cronCursor+1, len(m.cronJobs)) + "\n"
+	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+	if len(m.cronJobs) == 0 {
+		s += borderedRow("  No cron jobs found.", iw, normalRowStyle) + "\n"
+	} else {
+		schedCol := len("SCHEDULE")
+		srcCol := len("SOURCE")
+		for _, j := range m.cronJobs {
+			if len(j.Schedule) > schedCol {
+				schedCol = len(j.Schedule)
+			}
+			if len(j.Source) > srcCol {
+				srcCol = len(j.Source)
+			}
+		}
+		schedCol += 2
+		srcCol += 2
+
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", schedCol, "SCHEDULE", srcCol, "SOURCE", "COMMAND")
+		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		maxVisible := m.height - 8
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		offset := 0
+		if m.cronCursor >= offset+maxVisible {
+			offset = m.cronCursor - maxVisible + 1
+		}
+		end := offset + maxVisible
+		if end > len(m.cronJobs) {
+			end = len(m.cronJobs)
+		}
+
+		lastGroup := ""
+		for i := offset; i < end; i++ {
+			j := m.cronJobs[i]
+
+			// group header: crontab = User, anything else = System
+			group := "System"
+			if j.Source == "crontab" {
+				group = "User"
+			}
+			if group != lastGroup {
+				groupLine := fmt.Sprintf("  ── %s ──", group)
+				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
+				lastGroup = group
+			}
+
+			cur := "   "
+			if i == m.cronCursor {
+				cur = " ▸ "
+			}
+			line := fmt.Sprintf("%s  %-*s  %-*s  %s", cur, schedCol, j.Schedule, srcCol, j.Source, j.Command)
+
+			var style lipgloss.Style
+			if i == m.cronCursor {
+				style = selectedRowStyle
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	s = m.padToBottom(s, iw)
+	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+	s += m.renderHintBar([][]string{
+		{"r", "Refresh"},
+		{"Esc", "Back"},
+	})
+	return s
+}
+
+func (m model) renderErrorLogList() string {
+	h := m.hosts[m.selectedHost]
+	f := m.fleets[m.selectedFleet]
+	w := m.width
+	if w < 20 {
+		w = 80
+	}
+	iw := w - 2
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Error Logs"
+	s := m.renderHeader(breadcrumb, m.errorCursor+1, len(m.errorLogs)) + "\n"
+	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+	if len(m.errorLogs) == 0 {
+		s += borderedRow("  No errors found.", iw, normalRowStyle) + "\n"
+	} else {
+		timeCol := len("TIME")
+		unitCol := len("UNIT")
+		for _, e := range m.errorLogs {
+			if len(e.Time) > timeCol {
+				timeCol = len(e.Time)
+			}
+			if len(e.Unit) > unitCol {
+				unitCol = len(e.Unit)
+			}
+		}
+		timeCol += 2
+		if unitCol > 40 {
+			unitCol = 40
+		}
+		unitCol += 2
+
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", timeCol, "TIME", unitCol, "UNIT", "MESSAGE")
+		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		maxVisible := m.height - 8
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		offset := 0
+		if m.errorCursor >= offset+maxVisible {
+			offset = m.errorCursor - maxVisible + 1
+		}
+		end := offset + maxVisible
+		if end > len(m.errorLogs) {
+			end = len(m.errorLogs)
+		}
+
+		for i := offset; i < end; i++ {
+			e := m.errorLogs[i]
+			cur := "   "
+			if i == m.errorCursor {
+				cur = " ▸ "
+			}
+			unit := e.Unit
+			if len(unit) > unitCol-2 {
+				unit = unit[:unitCol-3] + "…"
+			}
+			line := fmt.Sprintf("%s  %-*s  %-*s  %s", cur, timeCol, e.Time, unitCol, unit, e.Message)
+
+			var style lipgloss.Style
+			if i == m.errorCursor {
+				style = selectedRowStyle
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	s = m.padToBottom(s, iw)
+	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+	s += m.renderHintBar([][]string{
+		{"l", "Full Log"},
+		{"r", "Refresh"},
+		{"Esc", "Back"},
+	})
+	return s
+}
+
+func (m model) renderUpdateList() string {
+	h := m.hosts[m.selectedHost]
+	f := m.fleets[m.selectedFleet]
+	w := m.width
+	if w < 20 {
+		w = 80
+	}
+	iw := w - 2
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Updates"
+	s := m.renderHeader(breadcrumb, m.updateCursor+1, len(m.updates)) + "\n"
+	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+	if len(m.updates) == 0 {
+		s += borderedRow("  No pending updates.", iw, normalRowStyle) + "\n"
+	} else {
+		pkgCol := len("PACKAGE")
+		verCol := len("VERSION")
+		for _, u := range m.updates {
+			if len(u.Package) > pkgCol {
+				pkgCol = len(u.Package)
+			}
+			if len(u.Version) > verCol {
+				verCol = len(u.Version)
+			}
+		}
+		pkgCol += 2
+		verCol += 2
+
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", pkgCol, "PACKAGE", verCol, "VERSION", "TYPE")
+		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		maxVisible := m.height - 8
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		offset := 0
+		if m.updateCursor >= offset+maxVisible {
+			offset = m.updateCursor - maxVisible + 1
+		}
+		end := offset + maxVisible
+		if end > len(m.updates) {
+			end = len(m.updates)
+		}
+
+		lastType := ""
+		for i := offset; i < end; i++ {
+			u := m.updates[i]
+
+			// group header when type changes
+			if u.Type != lastType {
+				label := strings.ToUpper(u.Type[:1]) + u.Type[1:]
+				groupLine := fmt.Sprintf("  ── %s ──", label)
+				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
+				lastType = u.Type
+			}
+
+			cur := "   "
+			if i == m.updateCursor {
+				cur = " ▸ "
+			}
+			line := fmt.Sprintf("%s  %-*s  %-*s  %s", cur, pkgCol, u.Package, verCol, u.Version, u.Type)
+
+			var style lipgloss.Style
+			if i == m.updateCursor {
+				style = selectedRowStyle
+			} else if u.Type == "security" && i != m.updateCursor {
+				style = lipgloss.NewStyle().Foreground(colorRed)
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	s = m.padToBottom(s, iw)
+	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+	s += m.renderHintBar([][]string{
+		{"r", "Refresh"},
+		{"Esc", "Back"},
+	})
+	return s
+}
+
+func (m model) renderDiskList() string {
+	h := m.hosts[m.selectedHost]
+	f := m.fleets[m.selectedFleet]
+	w := m.width
+	if w < 20 {
+		w = 80
+	}
+	iw := w - 2
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Disk"
+	s := m.renderHeader(breadcrumb, m.diskCursor+1, len(m.disks)) + "\n"
+	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+	if len(m.disks) == 0 {
+		s += borderedRow("  No partitions found.", iw, normalRowStyle) + "\n"
+	} else {
+		fsCol := len("FILESYSTEM")
+		mountCol := len("MOUNT")
+		for _, d := range m.disks {
+			if len(d.Filesystem) > fsCol {
+				fsCol = len(d.Filesystem)
+			}
+			if len(d.Mount) > mountCol {
+				mountCol = len(d.Mount)
+			}
+		}
+		fsCol += 2
+		mountCol += 2
+
+		hdr := fmt.Sprintf("     %-*s  %6s  %6s  %6s  %5s  %-*s", fsCol, "FILESYSTEM", "SIZE", "USED", "AVAIL", "USE%", mountCol, "MOUNT")
+		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		maxVisible := m.height - 8
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		offset := 0
+		if m.diskCursor >= offset+maxVisible {
+			offset = m.diskCursor - maxVisible + 1
+		}
+		end := offset + maxVisible
+		if end > len(m.disks) {
+			end = len(m.disks)
+		}
+
+		for i := offset; i < end; i++ {
+			d := m.disks[i]
+			cur := "   "
+			if i == m.diskCursor {
+				cur = " ▸ "
+			}
+			line := fmt.Sprintf("%s  %-*s  %6s  %6s  %6s  %5s  %-*s", cur, fsCol, d.Filesystem, d.Size, d.Used, d.Avail, d.UsePercent, mountCol, d.Mount)
+
+			var style lipgloss.Style
+			if i == m.diskCursor {
+				style = selectedRowStyle
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+
+			// highlight high disk usage
+			pct := strings.TrimSuffix(d.UsePercent, "%")
+			var pctVal int
+			fmt.Sscanf(pct, "%d", &pctVal)
+			if pctVal >= 90 && i != m.diskCursor {
+				style = flashErrorStyle
+			} else if pctVal >= 80 && i != m.diskCursor {
+				style = lipgloss.NewStyle().Foreground(colorYellow)
+			}
+
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	s = m.padToBottom(s, iw)
+	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+	s += m.renderHintBar([][]string{
+		{"r", "Refresh"},
 		{"Esc", "Back"},
 	})
 	return s

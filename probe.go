@@ -75,7 +75,7 @@ func probe(client *ssh.Client, systemdMode string, errorLogSince string) (probeI
 			`(dnf history list 2>/dev/null | grep -E '\| update --security' | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown) && `+
 			`echo $(( $(crontab -l 2>/dev/null | grep -v '^#' | grep -v '^$' | wc -l) + $(ls /etc/cron.d/ 2>/dev/null | wc -l) )) && `+
 			`sudo journalctl -p err --since '%s' --no-pager -q 2>/dev/null | wc -l && `+
-			`dnf check-update --quiet 2>/dev/null | grep -v '^$' | wc -l && `+
+			`dnf check-update --quiet 2>/dev/null | grep -E '^\S+\.\S+\s' | wc -l && `+
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && `+
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l`,
 		sysctl, sysctl, sysctl, errorLogSince,
