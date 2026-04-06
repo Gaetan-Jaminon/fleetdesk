@@ -221,6 +221,30 @@ func matchesFilter(name string, filters []string) bool {
 	return false
 }
 
+// extractPkgName extracts the package name from an NVRA string like "ansible-core-1:2.16.17-1.el9ap.noarch".
+// RPM NVRA: name-version-release.arch or name-[epoch:]version-release.arch
+// The last dash separates release from version, the second-to-last separates version from name.
+func extractPkgName(nvra string) string {
+	// strip .arch if present
+	if idx := strings.LastIndex(nvra, "."); idx > 0 {
+		tail := nvra[idx+1:]
+		if tail == "x86_64" || tail == "noarch" || tail == "i686" || tail == "aarch64" || tail == "src" {
+			nvra = nvra[:idx]
+		}
+	}
+	// NVR: name-version-release
+	// find last dash (before release), then second-to-last dash (before version)
+	lastDash := strings.LastIndex(nvra, "-")
+	if lastDash <= 0 {
+		return nvra
+	}
+	secondDash := strings.LastIndex(nvra[:lastDash], "-")
+	if secondDash <= 0 {
+		return nvra
+	}
+	return nvra[:secondDash]
+}
+
 // svcAction returns a tea.Cmd that runs a systemctl action via terminal handover with sudo.
 // After the action, it shows systemctl status so the user can see the result.
 func (m model) svcAction(action string) tea.Cmd {
@@ -438,7 +462,7 @@ func (m model) fetchUpdates() func() tea.Msg {
 
 	return func() tea.Msg {
 		// get pending updates and security updates in one command
-		cmd := `dnf check-update --quiet 2>/dev/null; echo '===SECURITY==='; dnf updateinfo list --security --quiet 2>/dev/null`
+		cmd := `dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
 		out, err := sm.runCommand(idx, cmd)
 		// dnf check-update returns exit 100 when updates are available
 		if err != nil && !strings.Contains(out, "===SECURITY===") {
@@ -457,20 +481,39 @@ func (m model) fetchUpdates() func() tea.Msg {
 		for _, line := range strings.Split(strings.TrimSpace(securitySection), "\n") {
 			fields := strings.Fields(line)
 			if len(fields) >= 3 {
-				// format: "RHSA-xxx:xx Important/Critical pkg.arch version"
-				pkg := fields[len(fields)-2]
-				// strip arch
-				if idx := strings.LastIndex(pkg, "."); idx > 0 {
-					pkg = pkg[:idx]
+				// format: "RHSA-2026:6277 Important/Sec. ansible-core-1:2.16.17-1.el9ap.noarch"
+				nvra := fields[len(fields)-1]
+				// strip .arch
+				if idx := strings.LastIndex(nvra, "."); idx > 0 {
+					nvra = nvra[:idx]
 				}
-				secPkgs[pkg] = true
+				// extract package name: everything before the version
+				// NVR format: name-[epoch:]version-release
+				// Find the last two dashes that precede a digit
+				pkg := extractPkgName(nvra)
+				if pkg != "" {
+					secPkgs[pkg] = true
+				}
 			}
 		}
 
 		var updates []update
+
+		// capture errors/warnings from dnf output
 		for _, line := range strings.Split(strings.TrimSpace(updatesSection), "\n") {
 			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "Last metadata") || strings.HasPrefix(line, "Obsoleting") || strings.HasPrefix(line, "Is this ok") || strings.HasPrefix(line, "Not root") || strings.HasPrefix(line, "Microsoft") {
+			if strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") {
+				updates = append(updates, update{
+					Package: line,
+					Version: "",
+					Type:    "error",
+				})
+			}
+		}
+
+		for _, line := range strings.Split(strings.TrimSpace(updatesSection), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "Last metadata") || strings.HasPrefix(line, "Obsoleting") || strings.HasPrefix(line, "Is this ok") || strings.HasPrefix(line, "Not root") || strings.HasPrefix(line, "Microsoft") || strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") || strings.HasPrefix(line, "Importing") || strings.HasPrefix(line, "Userid") || strings.HasPrefix(line, "Fingerprint") || strings.HasPrefix(line, "From") {
 				continue
 			}
 			fields := strings.Fields(line)
@@ -497,20 +540,155 @@ func (m model) fetchUpdates() func() tea.Msg {
 			}
 		}
 
-		// sort: security first, then alphabetically
+		// sort: errors first, then security, then bugfix, then alphabetically
+		typeOrder := map[string]int{"error": 0, "security": 1, "bugfix": 2}
 		sort.Slice(updates, func(i, j int) bool {
-			if updates[i].Type != updates[j].Type {
-				if updates[i].Type == "security" {
-					return true
-				}
-				if updates[j].Type == "security" {
-					return false
-				}
+			oi := typeOrder[updates[i].Type]
+			oj := typeOrder[updates[j].Type]
+			if oi != oj {
+				return oi < oj
 			}
 			return updates[i].Package < updates[j].Package
 		})
 
 		return fetchUpdatesMsg{updates: updates}
+	}
+}
+
+// --- Subscription ---
+
+type fetchSubscriptionMsg struct {
+	subs []subscription
+	err  error
+}
+
+func (m model) fetchSubscription() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && echo '===STATUS===' && sudo subscription-manager status 2>&1 && echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && echo '===REPOS===' && dnf repolist --enabled 2>&1 && echo '===REPOCHECK===' && for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do (echo "REPO:$repo:$(dnf repoinfo --disablerepo='*' --enablerepo=$repo 2>&1 | grep -c 'Error:')") & done; wait`
+		out, err := sm.runCommand(idx, cmd)
+		if err != nil && !strings.Contains(out, "===IDENTITY===") {
+			return fetchSubscriptionMsg{err: fmt.Errorf("subscription: %w", err)}
+		}
+
+		var subs []subscription
+
+		parts := strings.SplitN(out, "===STATUS===", 2)
+		identitySection := strings.Replace(parts[0], "===IDENTITY===", "", 1)
+		statusSection := ""
+		serverSection := ""
+		repoSection := ""
+		if len(parts) > 1 {
+			parts2 := strings.SplitN(parts[1], "===SERVER===", 2)
+			statusSection = parts2[0]
+			if len(parts2) > 1 {
+				parts3 := strings.SplitN(parts2[1], "===REPOS===", 2)
+				serverSection = parts3[0]
+				if len(parts3) > 1 {
+					repoSection = parts3[1]
+				}
+			}
+		}
+
+		// detect registration type from server hostname
+		regType := "Unknown"
+		serverHost := ""
+		for _, line := range strings.Split(serverSection, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, "hostname") {
+				if idx := strings.Index(line, "["); idx > 0 {
+					serverHost = strings.Trim(line[idx:], "[]")
+				}
+			}
+		}
+		if strings.Contains(serverHost, "rhsm.redhat.com") {
+			regType = "Red Hat CDN"
+		} else if strings.Contains(serverHost, "satellite") || strings.Contains(serverHost, "katello") {
+			regType = "Satellite"
+		} else if serverHost != "" {
+			regType = "Custom (" + serverHost + ")"
+		}
+		subs = append(subs, subscription{Field: "Registration", Value: regType})
+		if serverHost != "" {
+			subs = append(subs, subscription{Field: "Server", Value: serverHost})
+		}
+
+		// parse identity
+		for _, line := range strings.Split(strings.TrimSpace(identitySection), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if idx := strings.Index(line, ": "); idx > 0 {
+				subs = append(subs, subscription{
+					Field: line[:idx],
+					Value: line[idx+2:],
+				})
+			}
+		}
+
+		// parse status
+		for _, line := range strings.Split(strings.TrimSpace(statusSection), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "+--") || strings.HasPrefix(line, "System Status") {
+				continue
+			}
+			if idx := strings.Index(line, ": "); idx > 0 {
+				subs = append(subs, subscription{
+					Field: line[:idx],
+					Value: line[idx+2:],
+				})
+			} else if strings.Contains(line, "Simple Content Access") {
+				subs = append(subs, subscription{
+					Field: "Content Access",
+					Value: "Simple Content Access",
+				})
+			}
+		}
+
+		// parse repos and status
+		parts3 := strings.SplitN(repoSection, "===REPOCHECK===", 2)
+		repoListSection := parts3[0]
+		repoCheckSection := ""
+		if len(parts3) > 1 {
+			repoCheckSection = parts3[1]
+		}
+
+		// build repo error map
+		repoErrors := make(map[string]bool)
+		for _, line := range strings.Split(strings.TrimSpace(repoCheckSection), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "REPO:") {
+				parts := strings.SplitN(line, ":", 3)
+				if len(parts) == 3 && parts[2] != "0" {
+					repoErrors[parts[1]] = true
+				}
+			}
+		}
+
+		// list enabled repos with status
+		for _, line := range strings.Split(strings.TrimSpace(repoListSection), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "repo id") || strings.HasPrefix(line, "Not root") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) >= 1 {
+				repoID := fields[0]
+				status := "OK"
+				if repoErrors[repoID] {
+					status = "ERROR"
+				}
+				subs = append(subs, subscription{
+					Field: "Repo: " + repoID,
+					Value: status,
+				})
+			}
+		}
+
+		return fetchSubscriptionMsg{subs: subs}
 	}
 }
 
