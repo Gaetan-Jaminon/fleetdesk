@@ -30,4 +30,4 @@ jobs:
             - Tests exist for new parsers and helpers in ssh/ and config/
             - No scope creep beyond the Linear issue
             - Go conventions (table-driven tests, error handling)
-          model: "claude-sonnet-4-6"
+          claude_args: "--model claude-sonnet-4-6"
