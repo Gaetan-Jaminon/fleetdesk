@@ -57,7 +57,7 @@ func (m model) fetchServices() func() tea.Msg {
 			"%s list-units --type=service --all --no-pager --plain --no-legend && echo '---SEPARATOR---' && %s list-unit-files --type=service --no-pager --plain --no-legend",
 			sysctl, sysctl,
 		)
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchServicesMsg{err: fmt.Errorf("list services: %w", err)}
 		}
@@ -119,7 +119,7 @@ func (m model) fetchContainers() func() tea.Msg {
 
 	return func() tea.Msg {
 		cmd := `podman ps -a --format "{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.ID}}" 2>/dev/null`
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchContainersMsg{err: fmt.Errorf("list containers: %w", err)}
 		}
@@ -216,7 +216,7 @@ func (m model) fetchCronJobs() func() tea.Msg {
 
 	return func() tea.Msg {
 		cmd := `echo '===CRONTAB===' && crontab -l 2>/dev/null || true && echo '===CROND===' && for f in /etc/cron.d/*; do echo "FILE:$f"; cat "$f" 2>/dev/null; done`
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchCronMsg{err: fmt.Errorf("cron: %w", err)}
 		}
@@ -302,7 +302,7 @@ func (m model) fetchLogLevels() func() tea.Msg {
 			`for p in 0 1 2 3 4 5 6; do echo $(sudo journalctl -p $p..$p --since '%s' --no-pager -q 2>/dev/null | wc -l); done`,
 			since,
 		)
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchLogLevelsMsg{err: fmt.Errorf("log levels: %w", err)}
 		}
@@ -354,7 +354,7 @@ func (m model) fetchErrorLogs() func() tea.Msg {
 
 	return func() tea.Msg {
 		cmd := fmt.Sprintf("sudo journalctl -p %s --since '%s' --no-pager -q -o short --no-hostname 2>/dev/null | tail -500", level, since)
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchErrorLogsMsg{err: fmt.Errorf("error logs: %w", err)}
 		}
@@ -397,7 +397,7 @@ func (m model) fetchUpdates() func() tea.Msg {
 	return func() tea.Msg {
 		// get pending updates and security updates in one command
 		cmd := `dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		// dnf check-update returns exit 100 when updates are available
 		if err != nil && !strings.Contains(out, "===SECURITY===") {
 			return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
@@ -502,7 +502,7 @@ func (m model) fetchSubscription() func() tea.Msg {
 
 	return func() tea.Msg {
 		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && echo '===STATUS===' && sudo subscription-manager status 2>&1 && echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && echo '===REPOS===' && dnf repolist --enabled 2>&1 && echo '===REPOCHECK===' && for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do (echo "REPO:$repo:$(dnf repoinfo --disablerepo='*' --enablerepo=$repo 2>&1 | grep -c 'Error:')") & done; wait`
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && !strings.Contains(out, "===IDENTITY===") {
 			return fetchSubscriptionMsg{err: fmt.Errorf("subscription: %w", err)}
 		}
@@ -639,7 +639,7 @@ func (m model) fetchDisk() func() tea.Msg {
 
 	return func() tea.Msg {
 		cmd := `df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2`
-		out, err := sm.runCommand(idx, cmd)
+		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchDiskMsg{err: fmt.Errorf("disk: %w", err)}
 		}

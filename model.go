@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+
+	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
 // tickMsg triggers a periodic host probe refresh.
@@ -38,13 +40,6 @@ const (
 	viewDiskList
 	viewSubscription
 )
-
-// hostProbeResult is sent when an SSH probe completes for a host.
-type hostProbeResult struct {
-	index int
-	info  probeInfo
-	err   error
-}
 
 type model struct {
 	view view
@@ -145,37 +140,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case hostProbeResult:
-		if msg.index < len(m.hosts) {
-			if msg.err != nil {
-				if isAuthError(msg.err) {
+		if msg.Index < len(m.hosts) {
+			if msg.Err != nil {
+				if isAuthError(msg.Err) {
 					// mark as needing password
-					m.hosts[msg.index].Status = hostUnreachable
-					m.hosts[msg.index].Error = "password required"
-					m.hosts[msg.index].NeedsPassword = true
+					m.hosts[msg.Index].Status = hostUnreachable
+					m.hosts[msg.Index].Error = "password required"
+					m.hosts[msg.Index].NeedsPassword = true
 					// show prompt if not already showing one
 					if !m.showPasswordPrompt {
-						m.passwordHostIdx = msg.index
+						m.passwordHostIdx = msg.Index
 						m.passwordInput = ""
 						m.showPasswordPrompt = true
 					}
 					return m, nil
 				}
-				m.hosts[msg.index].Status = hostUnreachable
-				m.hosts[msg.index].Error = msg.err.Error()
+				m.hosts[msg.Index].Status = hostUnreachable
+				m.hosts[msg.Index].Error = msg.Err.Error()
 			} else {
-				m.applyProbeInfo(msg.index, msg.info)
+				m.applyProbeInfo(msg.Index, msg.Info)
 			}
 		}
 		return m, nil
 
 	case passwordRetryResult:
-		if msg.index < len(m.hosts) {
-			if msg.err != nil {
-				m.hosts[msg.index].Status = hostUnreachable
-				m.hosts[msg.index].Error = msg.err.Error()
+		if msg.Index < len(m.hosts) {
+			if msg.Err != nil {
+				m.hosts[msg.Index].Status = hostUnreachable
+				m.hosts[msg.Index].Error = msg.Err.Error()
 			} else {
-				m.hosts[msg.index].NeedsPassword = false
-				m.applyProbeInfo(msg.index, msg.info)
+				m.hosts[msg.Index].NeedsPassword = false
+				m.applyProbeInfo(msg.Index, msg.Info)
 			}
 		}
 		// check if more hosts need the same password
@@ -393,8 +388,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hosts[idx].Status = hostConnecting
 			m.flash = ""
 			// cache password temporarily in ssh manager for batch retries
-			m.ssh.setCachedPassword(password)
-			return m, m.ssh.retryWithPassword(idx, m.hosts[idx], password)
+			m.ssh.SetCachedPassword(password)
+			return m, retryWithPassword(m.ssh, idx, m.hosts[idx], password)
 		case tea.KeyEsc:
 			m.showPasswordPrompt = false
 			m.hosts[m.passwordHostIdx].Status = hostUnreachable
@@ -460,7 +455,8 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		if len(m.fleets) > 0 {
-			return m, m.editFleetFile()
+			f := m.fleets[m.fleetCursor]
+				return m, issh.EditFile(f.Path)
 		}
 	case "r":
 		fleets, err := scanFleets()
@@ -483,7 +479,7 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedFleet = m.fleetCursor
-			m.ssh.close()
+			m.ssh.Close()
 			m.hosts = buildHostList(f)
 			m.hostCursor = 0
 			m.view = viewHostList
@@ -529,7 +525,7 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		f := m.fleets[m.selectedFleet]
-		m.ssh.close()
+		m.ssh.Close()
 		m.hosts = buildHostList(f)
 		m.flash = "Refreshing..."
 		return m, m.startProbe()
@@ -550,7 +546,7 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
 		}
 	case "esc":
-		m.ssh.close()
+		m.ssh.Close()
 		m.view = viewFleetPicker
 	}
 	return m, nil
@@ -994,13 +990,13 @@ func (m model) retryRemainingPasswordHosts() tea.Cmd {
 			hh := h
 			sm := m.ssh
 			cmds = append(cmds, func() tea.Msg {
-				return sm.retryWithCachedPassword(idx, hh)
+				return sm.RetryWithCachedPassword(idx, hh)
 			})
 		}
 	}
 	if len(cmds) == 0 {
 		// all done — clear the cached password
-		m.ssh.clearPassword()
+		m.ssh.ClearPassword()
 		return nil
 	}
 	return tea.Batch(cmds...)
@@ -1015,7 +1011,7 @@ func (m model) startProbe() tea.Cmd {
 		hh := h
 		sm := m.ssh
 		cmds = append(cmds, func() tea.Msg {
-			return sm.connectAndProbe(idx, hh)
+			return sm.ConnectAndProbe(idx, hh)
 		})
 	}
 	return tea.Batch(cmds...)
