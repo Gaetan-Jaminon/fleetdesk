@@ -6,7 +6,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Gaetan-Jaminon/fleetdesk)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Fleet management TUI — manage Linux VMs over SSH with k9s-style navigation.
+Fleet management TUI — manage your platforms from a single pane over SSH with k9s-style navigation.
 
 ## Overview
 
