@@ -13,7 +13,7 @@ Fleet management TUI — manage your platforms from a single pane over SSH with 
 `fleetdesk` is a terminal UI application that provides a unified view of your Linux VM fleet.
 Connect via SSH, browse systemd services and Podman containers, and manage them interactively.
 
-No agents, no server — just a single binary that reads a host list and connects via SSH.
+No agents, no server, no infrastructure — just a single binary that reads a host list and connects via SSH.
 
 ## Screenshots
 
