@@ -8,8 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
-
-	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
 // tickMsg triggers a periodic host probe refresh.
@@ -455,8 +453,7 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		if len(m.fleets) > 0 {
-			f := m.fleets[m.fleetCursor]
-				return m, issh.EditFile(f.Path)
+			return m, m.editFleetFile()
 		}
 	case "r":
 		fleets, err := scanFleets()
