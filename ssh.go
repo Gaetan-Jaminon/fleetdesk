@@ -11,6 +11,8 @@ import (
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
 // sshManager holds persistent SSH connections for all hosts in a fleet.
@@ -296,13 +298,5 @@ func publicKeyFile(path string) ssh.AuthMethod {
 	return ssh.PublicKeys(signer)
 }
 
-// expandPath expands ~ in paths.
-func expandPath(path string) string {
-	if len(path) > 1 && path[:2] == "~/" {
-		home, _ := os.UserHomeDir()
-		if home != "" {
-			return filepath.Join(home, path[2:])
-		}
-	}
-	return path
-}
+// expandPath delegates to internal/ssh.ExpandPath.
+var expandPath = issh.ExpandPath

@@ -7,37 +7,17 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
-// serviceStateOrder returns a sort priority for service states.
-// Lower = shown first.
-func serviceStateOrder(state string) int {
-	switch state {
-	case "failed":
-		return 0
-	case "running":
-		return 1
-	case "exited":
-		return 2
-	case "waiting":
-		return 3
-	case "inactive":
-		return 4
-	default:
-		return 5
-	}
-}
-
-// containerStateOrder returns a sort priority for container states.
-func containerStateOrder(status string) int {
-	if strings.HasPrefix(status, "Up") {
-		return 0
-	}
-	if strings.HasPrefix(status, "Exited") {
-		return 1
-	}
-	return 2
-}
+// Bridge functions to internal/ssh.
+var (
+	serviceStateOrder   = issh.ServiceStateOrder
+	containerStateOrder = issh.ContainerStateOrder
+	matchesFilter       = issh.MatchesFilter
+	extractPkgName      = issh.ExtractPkgName
+)
 
 // fetchServicesMsg is sent when service list fetch completes.
 type fetchServicesMsg struct {
@@ -130,40 +110,7 @@ func (m model) fetchServices() func() tea.Msg {
 	}
 }
 
-// parseServiceLine parses a single line from systemctl list-units output.
-// Format: UNIT LOAD ACTIVE SUB DESCRIPTION...
-func parseServiceLine(line string) service {
-	fields := strings.Fields(line)
-	if len(fields) < 4 {
-		return service{}
-	}
-
-	name := fields[0]
-	// strip .service suffix for cleaner display
-	name = strings.TrimSuffix(name, ".service")
-
-	state := fields[2] // active, inactive, failed
-	sub := fields[3]   // running, dead, exited, waiting, etc.
-
-	// use sub-state for more detail when relevant
-	display := state
-	if state == "active" && sub != "" {
-		display = sub
-	}
-
-	// description is everything after the 4th field
-	desc := ""
-	if len(fields) > 4 {
-		desc = strings.Join(fields[4:], " ")
-	}
-
-	return service{
-		Name:        name,
-		State:       display,
-		Enabled:     "—",
-		Description: desc,
-	}
-}
+var parseServiceLine = issh.ParseServiceLine
 
 // fetchContainers returns a tea.Cmd that fetches Podman containers from a host.
 func (m model) fetchContainers() func() tea.Msg {
@@ -207,43 +154,6 @@ func (m model) fetchContainers() func() tea.Msg {
 	}
 }
 
-// matchesFilter returns true if the service name matches any of the filter patterns.
-// If no filters are defined, all services match.
-func matchesFilter(name string, filters []string) bool {
-	if len(filters) == 0 {
-		return true
-	}
-	for _, pattern := range filters {
-		if matched, _ := filepath.Match(pattern, name); matched {
-			return true
-		}
-	}
-	return false
-}
-
-// extractPkgName extracts the package name from an NVRA string like "ansible-core-1:2.16.17-1.el9ap.noarch".
-// RPM NVRA: name-version-release.arch or name-[epoch:]version-release.arch
-// The last dash separates release from version, the second-to-last separates version from name.
-func extractPkgName(nvra string) string {
-	// strip .arch if present
-	if idx := strings.LastIndex(nvra, "."); idx > 0 {
-		tail := nvra[idx+1:]
-		if tail == "x86_64" || tail == "noarch" || tail == "i686" || tail == "aarch64" || tail == "src" {
-			nvra = nvra[:idx]
-		}
-	}
-	// NVR: name-version-release
-	// find last dash (before release), then second-to-last dash (before version)
-	lastDash := strings.LastIndex(nvra, "-")
-	if lastDash <= 0 {
-		return nvra
-	}
-	secondDash := strings.LastIndex(nvra[:lastDash], "-")
-	if secondDash <= 0 {
-		return nvra
-	}
-	return nvra[:secondDash]
-}
 
 // svcAction returns a tea.Cmd that runs a systemctl action via terminal handover with sudo.
 // After the action, it shows systemctl status so the user can see the result.

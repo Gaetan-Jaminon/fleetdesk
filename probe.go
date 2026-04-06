@@ -2,51 +2,20 @@ package main
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
-	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
-// formatDateEU converts a date string to DD/MM/YYYY format.
-// Handles: "2026-03-31 09:57", "2026-04-05 15:56:35", etc.
-func formatDateEU(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "—" || s == "unknown" {
-		return s
-	}
-	for _, layout := range []string{
-		"2006-01-02 15:04:05",
-		"2006-01-02 15:04",
-		"2006-01-02",
-	} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t.Format("02/01/2006")
-		}
-	}
-	return s
-}
+// probeInfo is an alias for internal/ssh.ProbeInfo.
+type probeInfo = issh.ProbeInfo
 
-// probeInfo holds the results of a host probe.
-type probeInfo struct {
-	FQDN              string
-	OS                string
-	UpSince           string
-	ServiceCount      int
-	ServiceRunning    int
-	ServiceFailed     int
-	ContainerCount    int
-	ContainerRunning  int
-	CronCount         int
-	ErrorCount        int
-	UpdateCount       int
-	DiskCount         int
-	DiskHighCount     int
-	LastUpdate        string
-	LastSecurity      string
-	SystemdMode       string // the mode that actually worked
-}
+// formatDateEU delegates to internal/ssh.FormatDateEU.
+var formatDateEU = issh.FormatDateEU
+
+// parseProbeOutput delegates to internal/ssh.ParseProbeOutput.
+var parseProbeOutput = issh.ParseProbeOutput
 
 // probe runs a single SSH command to gather all host info in one roundtrip.
 func probe(client *ssh.Client, systemdMode string, errorLogSince string) (probeInfo, error) {
@@ -56,7 +25,6 @@ func probe(client *ssh.Client, systemdMode string, errorLogSince string) (probeI
 	}
 	defer session.Close()
 
-	// build the systemctl command based on mode
 	sysctl := "systemctl"
 	if systemdMode == "user" {
 		sysctl = "systemctl --user"
@@ -83,7 +51,6 @@ func probe(client *ssh.Client, systemdMode string, errorLogSince string) (probeI
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {
-		// try the opposite systemd mode
 		session2, err2 := client.NewSession()
 		if err2 != nil {
 			return probeInfo{}, fmt.Errorf("probe failed: %w", err)
@@ -114,50 +81,4 @@ func probe(client *ssh.Client, systemdMode string, errorLogSince string) (probeI
 	}
 
 	return parseProbeOutput(string(out), systemdMode)
-}
-
-// parseProbeOutput parses the probe command output.
-// Lines: hostname, uptime, os, svc_total, svc_running, svc_failed, ctn_running, ctn_total,
-//        last_update, last_security, cron_count, error_count, update_count, disk_count, disk_high
-func parseProbeOutput(output string, systemdMode string) (probeInfo, error) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) < 7 {
-		return probeInfo{}, fmt.Errorf("unexpected probe output (%d lines): %s", len(lines), output)
-	}
-
-	getInt := func(idx int) int {
-		if idx < len(lines) {
-			v, _ := strconv.Atoi(strings.TrimSpace(lines[idx]))
-			return v
-		}
-		return 0
-	}
-
-	getDate := func(idx int) string {
-		if idx < len(lines) {
-			if v := strings.TrimSpace(lines[idx]); v != "" && v != "unknown" {
-				return formatDateEU(v)
-			}
-		}
-		return "—"
-	}
-
-	return probeInfo{
-		FQDN:             strings.TrimSpace(lines[0]),
-		UpSince:          formatDateEU(strings.TrimSpace(lines[1])),
-		OS:               strings.TrimSpace(lines[2]),
-		ServiceCount:     getInt(3),
-		ServiceRunning:   getInt(4),
-		ServiceFailed:    getInt(5),
-		ContainerRunning: getInt(6),
-		ContainerCount:   getInt(7),
-		LastUpdate:       getDate(8),
-		LastSecurity:     getDate(9),
-		CronCount:        getInt(10),
-		ErrorCount:       getInt(11),
-		UpdateCount:      getInt(12),
-		DiskCount:        getInt(13),
-		DiskHighCount:    getInt(14),
-		SystemdMode:      systemdMode,
-	}, nil
 }
