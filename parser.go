@@ -20,11 +20,12 @@ type fleetFile struct {
 }
 
 type defaultsFile struct {
-	User          string   `yaml:"user"`
-	Port          int      `yaml:"port"`
-	Timeout       string   `yaml:"timeout"`
-	SystemdMode   string   `yaml:"systemd_mode"`
-	ServiceFilter []string `yaml:"service_filter"`
+	User           string   `yaml:"user"`
+	Port           int      `yaml:"port"`
+	Timeout        string   `yaml:"timeout"`
+	SystemdMode    string   `yaml:"systemd_mode"`
+	ServiceFilter  []string `yaml:"service_filter"`
+	ErrorLogSince  string   `yaml:"error_log_since"`
 }
 
 type groupFile struct {
@@ -74,12 +75,16 @@ func parseFleetFile(path string) (fleet, error) {
 		Port:          raw.Defaults.Port,
 		SystemdMode:   raw.Defaults.SystemdMode,
 		ServiceFilter: raw.Defaults.ServiceFilter,
+		ErrorLogSince: raw.Defaults.ErrorLogSince,
 	}
 	if defaults.Port == 0 {
 		defaults.Port = 22
 	}
 	if defaults.SystemdMode == "" {
 		defaults.SystemdMode = "system"
+	}
+	if defaults.ErrorLogSince == "" {
+		defaults.ErrorLogSince = "1 hour ago"
 	}
 	if raw.Defaults.Timeout != "" {
 		d, err := time.ParseDuration(raw.Defaults.Timeout)

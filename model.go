@@ -340,20 +340,23 @@ func (m model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resourceCursor--
 		}
 	case "down", "j":
-		if m.resourceCursor < 1 {
+		if m.resourceCursor < 5 {
 			m.resourceCursor++
 		}
 	case "enter":
-		if m.resourceCursor == 0 {
+		switch m.resourceCursor {
+		case 0: // Services
 			m.serviceCursor = 0
 			m.services = nil
 			m.view = viewServiceList
 			return m, m.fetchServices()
-		} else {
+		case 1: // Containers
 			m.containerCursor = 0
 			m.containers = nil
 			m.view = viewContainerList
 			return m, m.fetchContainers()
+		case 2, 3, 4, 5: // Cron Jobs, Error Logs, Updates, Disk — not yet implemented
+			m.flash = "Coming soon"
 		}
 	case "esc":
 		m.view = viewHostList
@@ -467,6 +470,11 @@ func (m *model) applyProbeInfo(idx int, info probeInfo) {
 	m.hosts[idx].ServiceFailed = info.ServiceFailed
 	m.hosts[idx].ContainerCount = info.ContainerCount
 	m.hosts[idx].ContainerRunning = info.ContainerRunning
+	m.hosts[idx].CronCount = info.CronCount
+	m.hosts[idx].ErrorCount = info.ErrorCount
+	m.hosts[idx].UpdateCount = info.UpdateCount
+	m.hosts[idx].DiskCount = info.DiskCount
+	m.hosts[idx].DiskHighCount = info.DiskHighCount
 	m.hosts[idx].LastUpdate = info.LastUpdate
 	m.hosts[idx].LastSecurity = info.LastSecurity
 }
@@ -510,20 +518,23 @@ func (m model) startProbe() tea.Cmd {
 
 // buildHostList creates the runtime host list from a fleet definition.
 func buildHostList(f fleet) []host {
+	errorLogSince := f.Defaults.ErrorLogSince
 	var hosts []host
 	for _, g := range f.Groups {
 		for _, e := range g.Hosts {
 			hosts = append(hosts, host{
-				Entry:  e,
-				Group:  g.Name,
-				Status: hostConnecting,
+				Entry:         e,
+				Group:         g.Name,
+				Status:        hostConnecting,
+				ErrorLogSince: errorLogSince,
 			})
 		}
 	}
 	for _, e := range f.Hosts {
 		hosts = append(hosts, host{
-			Entry:  e,
-			Status: hostConnecting,
+			Entry:         e,
+			Status:        hostConnecting,
+			ErrorLogSince: errorLogSince,
 		})
 	}
 	return hosts
@@ -832,7 +843,8 @@ func (m model) renderResourcePicker() string {
 	iw := w - 2
 
 	breadcrumb := f.Name + " › " + h.Entry.Name
-	s := m.renderHeader(breadcrumb, m.resourceCursor+1, 2) + "\n"
+	resourceCount := 6
+	s := m.renderHeader(breadcrumb, m.resourceCursor+1, resourceCount) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
 	nameCol := len("RESOURCE") + 4
@@ -880,6 +892,10 @@ func (m model) renderResourcePicker() string {
 	rows := []resRow{
 		{"Services", svcTotal, svcRunning, svcFailed},
 		{"Containers", ctnTotal, ctnRunning, ctnFailed},
+		{"Cron Jobs", h.CronCount, 0, 0},
+		{"Error Logs", h.ErrorCount, 0, 0},
+		{"Updates", h.UpdateCount, 0, 0},
+		{"Disk", h.DiskCount, 0, h.DiskHighCount},
 	}
 	for i, r := range rows {
 		cur := "   "
