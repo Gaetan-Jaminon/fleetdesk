@@ -22,6 +22,7 @@ const (
 	viewErrorLogList
 	viewUpdateList
 	viewDiskList
+	viewSubscription
 )
 
 // hostProbeResult is sent when an SSH probe completes for a host.
@@ -75,6 +76,15 @@ type model struct {
 	// disk
 	disks      []disk
 	diskCursor int
+
+	// subscription
+	subscriptions      []subscription
+	subscriptionCursor int
+
+	// confirmation prompt
+	showConfirm    bool
+	confirmMessage string
+	confirmRepoID  string
 
 	// SSH
 	ssh *sshManager
@@ -200,7 +210,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
 		} else {
-			m.updates = msg.updates
+			if msg.updates == nil {
+				m.updates = []update{}
+			} else {
+				m.updates = msg.updates
+			}
+		}
+		return m, nil
+
+	case fetchSubscriptionMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.subscriptions = msg.subs
 		}
 		return m, nil
 
@@ -245,6 +268,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchServices())
 		case viewContainerList:
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchContainers())
+		case viewSubscription:
+			m.subscriptions = nil
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchSubscription())
 		}
 		return m, tea.EnterAltScreen
 
@@ -256,6 +282,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// confirmation prompt mode
+	if m.showConfirm {
+		switch msg.String() {
+		case "y", "Y":
+			m.showConfirm = false
+			h := m.hosts[m.selectedHost]
+			repoID := m.confirmRepoID
+			m.confirmRepoID = ""
+			m.flash = ""
+			cmd := fmt.Sprintf("sudo dnf config-manager --set-disabled %s && echo '' && echo '✓ Repo %s disabled'", repoID, repoID)
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("disable %s on %s", repoID, h.Entry.Name))
+		case "n", "N", "esc":
+			m.showConfirm = false
+			m.confirmRepoID = ""
+			m.flash = "Cancelled"
+		}
+		return m, nil
+	}
+
 	// password prompt mode — capture input
 	if m.showPasswordPrompt {
 		switch msg.Type {
@@ -316,6 +361,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleUpdateListKeys(msg)
 	case viewDiskList:
 		return m.handleDiskListKeys(msg)
+	case viewSubscription:
+		return m.handleSubscriptionKeys(msg)
 	}
 	return m, nil
 }
@@ -404,8 +451,8 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.services = nil
 			m.containers = nil
 			m.view = viewResourcePicker
-			// pre-fetch services and containers for accurate counts
-			return m, tea.Batch(m.fetchServices(), m.fetchContainers())
+			// pre-fetch for accurate counts
+			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
 		}
 	case "esc":
 		m.ssh.close()
@@ -421,7 +468,7 @@ func (m model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resourceCursor--
 		}
 	case "down", "j":
-		if m.resourceCursor < 5 {
+		if m.resourceCursor < 6 {
 			m.resourceCursor++
 		}
 	case "enter":
@@ -456,6 +503,11 @@ func (m model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.disks = nil
 			m.view = viewDiskList
 			return m, m.fetchDisk()
+		case 6: // Subscription
+			m.subscriptionCursor = 0
+			m.subscriptions = nil
+			m.view = viewSubscription
+			return m, m.fetchSubscription()
 		}
 	case "esc":
 		m.view = viewHostList
@@ -779,6 +831,8 @@ func (m model) View() string {
 		return m.renderUpdateList()
 	case viewDiskList:
 		return m.renderDiskList()
+	case viewSubscription:
+		return m.renderSubscription()
 	}
 	return ""
 }
@@ -1068,7 +1122,7 @@ func (m model) renderResourcePicker() string {
 	iw := w - 2
 
 	breadcrumb := f.Name + " › " + h.Entry.Name
-	resourceCount := 6
+	resourceCount := 7
 	s := m.renderHeader(breadcrumb, m.resourceCursor+1, resourceCount) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
@@ -1114,13 +1168,26 @@ func (m model) renderResourcePicker() string {
 		}
 	}
 
+	updTotal, updFailed := h.UpdateCount, 0
+	if len(m.updates) > 0 {
+		updTotal = 0
+		for _, u := range m.updates {
+			if u.Type == "error" {
+				updFailed++
+			} else {
+				updTotal++
+			}
+		}
+	}
+
 	rows := []resRow{
 		{"Services", svcTotal, svcRunning, svcFailed},
 		{"Containers", ctnTotal, ctnRunning, ctnFailed},
 		{"Cron Jobs", h.CronCount, 0, 0},
 		{"System Logs", h.ErrorCount, 0, 0},
-		{"Updates", h.UpdateCount, 0, 0},
+		{"Updates", updTotal, 0, updFailed},
 		{"Disk", h.DiskCount, 0, h.DiskHighCount},
+		{"Subscription", 0, 0, 0},
 	}
 	for i, r := range rows {
 		cur := "   "
@@ -1555,7 +1622,11 @@ func (m model) renderUpdateList() string {
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
 	if len(m.updates) == 0 {
-		s += borderedRow("  No pending updates.", iw, normalRowStyle) + "\n"
+		if m.updates == nil {
+			s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+		} else {
+			s += borderedRow("  No pending updates.", iw, normalRowStyle) + "\n"
+		}
 	} else {
 		pkgCol := len("PACKAGE")
 		verCol := len("VERSION")
@@ -1608,7 +1679,7 @@ func (m model) renderUpdateList() string {
 			var style lipgloss.Style
 			if i == m.updateCursor {
 				style = selectedRowStyle
-			} else if u.Type == "security" && i != m.updateCursor {
+			} else if (u.Type == "security" || u.Type == "error") && i != m.updateCursor {
 				style = lipgloss.NewStyle().Foreground(colorRed)
 			} else if i%2 == 0 {
 				style = altRowStyle
@@ -1707,9 +1778,118 @@ func (m model) renderDiskList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+
 	s += m.renderHintBar([][]string{
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 	})
+	return s
+}
+
+func (m model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.subscriptionCursor > 0 {
+			m.subscriptionCursor--
+		}
+	case "down", "j":
+		if m.subscriptionCursor < len(m.subscriptions)-1 {
+			m.subscriptionCursor++
+		}
+	case "d":
+		if len(m.subscriptions) > 0 {
+			sub := m.subscriptions[m.subscriptionCursor]
+			if strings.HasPrefix(sub.Field, "Repo: ") {
+				repoID := strings.TrimPrefix(sub.Field, "Repo: ")
+				m.showConfirm = true
+				m.confirmMessage = fmt.Sprintf("Disable repo %s? (y/n)", repoID)
+				m.confirmRepoID = repoID
+			}
+		}
+	case "r":
+		m.subscriptions = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchSubscription()
+	case "esc":
+		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m model) renderSubscription() string {
+	h := m.hosts[m.selectedHost]
+	f := m.fleets[m.selectedFleet]
+	w := m.width
+	if w < 20 {
+		w = 80
+	}
+	iw := w - 2
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Subscription"
+	s := m.renderHeader(breadcrumb, m.subscriptionCursor+1, len(m.subscriptions)) + "\n"
+	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+	if len(m.subscriptions) == 0 {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else {
+		fieldCol := len("FIELD")
+		for _, sub := range m.subscriptions {
+			if len(sub.Field) > fieldCol {
+				fieldCol = len(sub.Field)
+			}
+		}
+		fieldCol += 2
+
+		hdr := fmt.Sprintf("     %-*s  %s", fieldCol, "FIELD", "VALUE")
+		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		maxVisible := m.height - 8
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		offset := 0
+		if m.subscriptionCursor >= offset+maxVisible {
+			offset = m.subscriptionCursor - maxVisible + 1
+		}
+		end := offset + maxVisible
+		if end > len(m.subscriptions) {
+			end = len(m.subscriptions)
+		}
+
+		for i := offset; i < end; i++ {
+			sub := m.subscriptions[i]
+			cur := "   "
+			if i == m.subscriptionCursor {
+				cur = " ▸ "
+			}
+			line := fmt.Sprintf("%s  %-*s  %s", cur, fieldCol, sub.Field, sub.Value)
+
+			var style lipgloss.Style
+			if i == m.subscriptionCursor {
+				style = selectedRowStyle
+			} else if sub.Value == "ERROR" {
+				style = lipgloss.NewStyle().Foreground(colorRed)
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	s = m.padToBottom(s, iw)
+	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+
+	if m.showConfirm {
+		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
+	} else {
+		s += m.renderHintBar([][]string{
+			{"d", "Disable Repo"},
+			{"r", "Refresh"},
+			{"Esc", "Back"},
+		})
+	}
 	return s
 }

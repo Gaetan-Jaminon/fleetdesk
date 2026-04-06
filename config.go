@@ -115,7 +115,13 @@ type errorLog struct {
 type update struct {
 	Package string
 	Version string
-	Type    string // security, bugfix, enhancement
+	Type    string // security, bugfix, enhancement, error
+}
+
+// subscription represents a key-value pair from subscription-manager.
+type subscription struct {
+	Field string
+	Value string
 }
 
 // disk represents a filesystem partition.
