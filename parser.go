@@ -25,7 +25,8 @@ type defaultsFile struct {
 	Timeout        string   `yaml:"timeout"`
 	SystemdMode    string   `yaml:"systemd_mode"`
 	ServiceFilter  []string `yaml:"service_filter"`
-	ErrorLogSince  string   `yaml:"error_log_since"`
+	ErrorLogSince   string   `yaml:"error_log_since"`
+	RefreshInterval string   `yaml:"refresh_interval"`
 }
 
 type groupFile struct {
@@ -75,7 +76,8 @@ func parseFleetFile(path string) (fleet, error) {
 		Port:          raw.Defaults.Port,
 		SystemdMode:   raw.Defaults.SystemdMode,
 		ServiceFilter: raw.Defaults.ServiceFilter,
-		ErrorLogSince: raw.Defaults.ErrorLogSince,
+		ErrorLogSince:   raw.Defaults.ErrorLogSince,
+		RefreshInterval: raw.Defaults.RefreshInterval,
 	}
 	if defaults.Port == 0 {
 		defaults.Port = 22
@@ -85,6 +87,9 @@ func parseFleetFile(path string) (fleet, error) {
 	}
 	if defaults.ErrorLogSince == "" {
 		defaults.ErrorLogSince = "1 hour ago"
+	}
+	if defaults.RefreshInterval == "" {
+		defaults.RefreshInterval = "15s"
 	}
 	if raw.Defaults.Timeout != "" {
 		d, err := time.ParseDuration(raw.Defaults.Timeout)

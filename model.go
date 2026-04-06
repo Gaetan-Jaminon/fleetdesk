@@ -3,11 +3,25 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
+
+// tickMsg triggers a periodic host probe refresh.
+type tickMsg time.Time
+
+func (m model) tickCmd() tea.Cmd {
+	interval, err := time.ParseDuration(m.fleets[m.selectedFleet].Defaults.RefreshInterval)
+	if err != nil {
+		return nil
+	}
+	return tea.Tick(interval, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
 
 type view int
 
@@ -81,10 +95,18 @@ type model struct {
 	subscriptions      []subscription
 	subscriptionCursor int
 
+	// filter / search
+	filterActive bool
+	filterText   string
+
+	// log detail
+	showLogDetail bool
+
 	// confirmation prompt
 	showConfirm    bool
 	confirmMessage string
-	confirmRepoID  string
+	confirmCmd     string
+	confirmBanner  string
 
 	// SSH
 	ssh *sshManager
@@ -165,7 +187,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
 		} else {
-			m.services = msg.services
+			if msg.services == nil {
+				m.services = []service{}
+			} else {
+				m.services = msg.services
+			}
 		}
 		return m, nil
 
@@ -265,14 +291,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// refresh list after terminal handover returns
 		switch m.view {
 		case viewServiceList:
+			m.serviceCursor = 0
+			m.services = nil
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchServices())
 		case viewContainerList:
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchContainers())
+		case viewUpdateList:
+			m.updates = nil
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchUpdates())
 		case viewSubscription:
 			m.subscriptions = nil
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchSubscription())
 		}
 		return m, tea.EnterAltScreen
+
+	case tickMsg:
+		if m.view == viewHostList {
+			return m, tea.Batch(m.startProbe(), m.tickCmd())
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -282,23 +319,67 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// log detail mode — any key goes back
+	if m.showLogDetail {
+		m.showLogDetail = false
+		return m, nil
+	}
+
+	// filter mode — capture search input
+	if m.filterActive {
+		switch msg.Type {
+		case tea.KeyEnter:
+			m.filterActive = false
+			m.serviceCursor = 0
+			m.errorCursor = 0
+		case tea.KeyEsc:
+			m.filterActive = false
+			m.filterText = ""
+			m.serviceCursor = 0
+			m.errorCursor = 0
+		case tea.KeyBackspace:
+			if len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				m.serviceCursor = 0
+				m.errorCursor = 0
+			}
+		default:
+			if msg.Type == tea.KeyRunes {
+				m.filterText += string(msg.Runes)
+				m.serviceCursor = 0
+				m.errorCursor = 0
+			}
+		}
+		return m, nil
+	}
+
 	// confirmation prompt mode
 	if m.showConfirm {
 		switch msg.String() {
 		case "y", "Y":
-			m.showConfirm = false
-			h := m.hosts[m.selectedHost]
-			repoID := m.confirmRepoID
-			m.confirmRepoID = ""
-			m.flash = ""
-			cmd := fmt.Sprintf("sudo dnf config-manager --set-disabled %s && echo '' && echo '✓ Repo %s disabled'", repoID, repoID)
-			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("disable %s on %s", repoID, h.Entry.Name))
+			// fall through
 		case "n", "N", "esc":
 			m.showConfirm = false
-			m.confirmRepoID = ""
+			m.confirmCmd = ""
+			m.confirmBanner = ""
 			m.flash = "Cancelled"
+			return m, nil
+		default:
+			if msg.Type == tea.KeyEnter {
+				// Enter = default yes, fall through
+			} else {
+				return m, nil
+			}
 		}
-		return m, nil
+		// confirmed — execute
+		m.showConfirm = false
+		h := m.hosts[m.selectedHost]
+		cmd := m.confirmCmd
+		banner := m.confirmBanner
+		m.confirmCmd = ""
+		m.confirmBanner = ""
+		m.flash = ""
+		return m, sshHandover(h, []string{cmd}, banner)
 	}
 
 	// password prompt mode — capture input
@@ -406,7 +487,7 @@ func (m model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.hosts = buildHostList(f)
 			m.hostCursor = 0
 			m.view = viewHostList
-			return m, m.startProbe()
+			return m, tea.Batch(m.startProbe(), m.tickCmd())
 		}
 	}
 	return m, nil
@@ -431,6 +512,20 @@ func (m model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, sshHandover(h, []string{}, fmt.Sprintf("shell %s@%s", h.Entry.User, h.Entry.Name))
+		}
+	case "R":
+		if len(m.hosts) > 0 {
+			h := m.hosts[m.hostCursor]
+			if h.Status != hostOnline {
+				m.flash = "Host is not reachable"
+				m.flashError = true
+				return m, nil
+			}
+			m.selectedHost = m.hostCursor
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("REBOOT %s? [Y/n]", h.Entry.Name)
+			m.confirmCmd = `sudo reboot; echo 'Reboot initiated'`
+			m.confirmBanner = fmt.Sprintf("reboot %s", h.Entry.Name)
 		}
 	case "r":
 		f := m.fleets[m.selectedFleet]
@@ -515,27 +610,52 @@ func (m model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) filteredServices() []service {
+	if m.filterText == "" {
+		return m.services
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []service
+	for _, s := range m.services {
+		line := strings.ToLower(s.Name + " " + s.State + " " + s.Enabled + " " + s.Description)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered
+}
+
 func (m model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredServices()
+
 	switch msg.String() {
 	case "up", "k":
 		if m.serviceCursor > 0 {
 			m.serviceCursor--
 		}
 	case "down", "j":
-		if m.serviceCursor < len(m.services)-1 {
+		if m.serviceCursor < len(filtered)-1 {
 			m.serviceCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.serviceCursor = 0
 	case "s":
-		if len(m.services) > 0 {
-			return m, m.svcAction("start")
+		if len(filtered) > 0 && m.serviceCursor < len(filtered) {
+			// find the original index for the action
+			m.serviceCursor = m.findServiceIndex(filtered[m.serviceCursor].Name)
+			return m.confirmSvcAction("start")
 		}
 	case "o":
-		if len(m.services) > 0 {
-			return m, m.svcAction("stop")
+		if len(filtered) > 0 && m.serviceCursor < len(filtered) {
+			m.serviceCursor = m.findServiceIndex(filtered[m.serviceCursor].Name)
+			return m.confirmSvcAction("stop")
 		}
 	case "t":
-		if len(m.services) > 0 {
-			return m, m.svcAction("restart")
+		if len(filtered) > 0 && m.serviceCursor < len(filtered) {
+			m.serviceCursor = m.findServiceIndex(filtered[m.serviceCursor].Name)
+			return m.confirmSvcAction("restart")
 		}
 	case "l":
 		if len(m.services) > 0 {
@@ -561,12 +681,26 @@ func (m model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.services = nil
-		m.flash = "Refreshing..."
+		m.filterText = ""
 		return m, m.fetchServices()
 	case "esc":
-		m.view = viewResourcePicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.serviceCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
+}
+
+func (m model) findServiceIndex(name string) int {
+	for i, s := range m.services {
+		if s.Name == name {
+			return i
+		}
+	}
+	return 0
 }
 
 func (m model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -659,18 +793,104 @@ func (m model) handleLogLevelPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// parseLogFields parses structured key=value pairs from a log message.
+// Handles both simple key=value and key="quoted value" formats.
+func parseLogFields(msg string) [][2]string {
+	var pairs [][2]string
+	remaining := msg
+
+	for len(remaining) > 0 {
+		remaining = strings.TrimLeft(remaining, " ")
+		if remaining == "" {
+			break
+		}
+
+		// find key=
+		eqIdx := strings.Index(remaining, "=")
+		if eqIdx < 0 {
+			break
+		}
+
+		key := remaining[:eqIdx]
+		// key should not contain spaces
+		if strings.Contains(key, " ") {
+			// not a key=value pattern — treat the rest as plain text
+			break
+		}
+
+		remaining = remaining[eqIdx+1:]
+
+		var value string
+		if len(remaining) > 0 && remaining[0] == '"' {
+			// quoted value — find closing quote
+			endQuote := strings.Index(remaining[1:], "\"")
+			if endQuote >= 0 {
+				value = remaining[1 : endQuote+1]
+				remaining = remaining[endQuote+2:]
+			} else {
+				value = remaining[1:]
+				remaining = ""
+			}
+		} else {
+			// unquoted value — until next space
+			spIdx := strings.Index(remaining, " ")
+			if spIdx >= 0 {
+				value = remaining[:spIdx]
+				remaining = remaining[spIdx+1:]
+			} else {
+				value = remaining
+				remaining = ""
+			}
+		}
+
+		pairs = append(pairs, [2]string{key, value})
+	}
+
+	// only return if we found at least 2 key-value pairs (otherwise it's plain text)
+	if len(pairs) >= 2 {
+		return pairs
+	}
+	return nil
+}
+
+// filteredErrorLogs returns the error logs matching the current filter.
+func (m model) filteredErrorLogs() []errorLog {
+	if m.filterText == "" {
+		return m.errorLogs
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []errorLog
+	for _, e := range m.errorLogs {
+		line := strings.ToLower(e.Time + " " + e.Unit + " " + e.Message)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 func (m model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredErrorLogs()
+
 	switch msg.String() {
 	case "up", "k":
 		if m.errorCursor > 0 {
 			m.errorCursor--
 		}
 	case "down", "j":
-		if m.errorCursor < len(m.errorLogs)-1 {
+		if m.errorCursor < len(filtered)-1 {
 			m.errorCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.errorCursor = 0
+	case "enter":
+		if len(filtered) > 0 && m.errorCursor < len(filtered) {
+			m.showLogDetail = true
+		}
 	case "l":
-		if len(m.errorLogs) > 0 {
+		if len(filtered) > 0 {
 			h := m.hosts[m.selectedHost]
 			since := h.ErrorLogSince
 			cmd := fmt.Sprintf("sudo journalctl -p %s --since '%s' --no-pager -q --no-hostname | less", m.selectedLogLevel, since)
@@ -678,10 +898,16 @@ func (m model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.errorLogs = nil
+		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchErrorLogs()
 	case "esc":
-		m.view = viewLogLevelPicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.errorCursor = 0
+		} else {
+			m.view = viewLogLevelPicker
+		}
 	}
 	return m, nil
 }
@@ -696,6 +922,18 @@ func (m model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.updateCursor < len(m.updates)-1 {
 			m.updateCursor++
 		}
+	case "u":
+		h := m.hosts[m.selectedHost]
+		m.showConfirm = true
+		m.confirmMessage = fmt.Sprintf("Apply ALL updates on %s? [Y/n]", h.Entry.Name)
+		m.confirmCmd = `sudo dnf update -y --setopt=skip_if_unavailable=1; echo ''; echo 'Update complete. Press Enter to return...'`
+		m.confirmBanner = fmt.Sprintf("full update on %s", h.Entry.Name)
+	case "p":
+		h := m.hosts[m.selectedHost]
+		m.showConfirm = true
+		m.confirmMessage = fmt.Sprintf("Apply SECURITY updates on %s? [Y/n]", h.Entry.Name)
+		m.confirmCmd = `sudo dnf update --security -y --setopt=skip_if_unavailable=1; echo ''; echo 'Security update complete. Press Enter to return...'`
+		m.confirmBanner = fmt.Sprintf("security update on %s", h.Entry.Name)
 	case "r":
 		m.updates = nil
 		m.flash = "Refreshing..."
@@ -1100,10 +1338,13 @@ func (m model) renderHostList() string {
 		masked := strings.Repeat("*", len(m.passwordInput))
 		prompt := fmt.Sprintf("  Password for %s: %s█", user, masked)
 		s += hintBarStyle.Width(m.width).Render(prompt)
+	} else if m.showConfirm {
+		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
 		s += m.renderHintBar([][]string{
 			{"Enter", "Drill In"},
 			{"x", "Shell"},
+			{"R", "Reboot"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
@@ -1227,16 +1468,27 @@ func (m model) renderServiceList() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredServices()
+	filterInfo := ""
+	if m.filterText != "" {
+		filterInfo = fmt.Sprintf(" [filter: %s]", m.filterText)
+	}
 	breadcrumb := f.Name + " › " + h.Entry.Name + " › Services"
-	s := m.renderHeader(breadcrumb, m.serviceCursor+1, len(m.services)) + "\n"
+	s := m.renderHeader(breadcrumb+filterInfo, m.serviceCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if len(m.services) == 0 {
-		s += borderedRow("  No services found.", iw, normalRowStyle) + "\n"
+	if m.services == nil {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else if len(filtered) == 0 {
+		if m.filterText != "" {
+			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
+		} else {
+			s += borderedRow("  No services found.", iw, normalRowStyle) + "\n"
+		}
 	} else {
 		nameCol := len("SERVICE")
 		enabledCol := len("ENABLED")
-		for _, svc := range m.services {
+		for _, svc := range filtered {
 			if len(svc.Name) > nameCol {
 				nameCol = len(svc.Name)
 			}
@@ -1260,12 +1512,12 @@ func (m model) renderServiceList() string {
 			offset = m.serviceCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.services) {
-			end = len(m.services)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			svc := m.services[i]
+			svc := filtered[i]
 			cur := "   "
 			if i == m.serviceCursor {
 				cur = " ▸ "
@@ -1294,14 +1546,23 @@ func (m model) renderServiceList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
-	s += m.renderHintBar([][]string{
-		{"s", "Start"},
-		{"o", "Stop"},
-		{"t", "Restart"},
-		{"l", "Logs"},
-		{"i", "Status"},
-		{"Esc", "Back"},
-	})
+
+	if m.showConfirm {
+		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
+	} else if m.filterActive {
+		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
+	} else {
+		s += m.renderHintBar([][]string{
+			{"/", "Search"},
+			{"s", "Start"},
+			{"o", "Stop"},
+			{"t", "Restart"},
+			{"l", "Logs"},
+			{"i", "Status"},
+			{"r", "Refresh"},
+			{"Esc", "Back"},
+		})
+	}
 	return s
 }
 
@@ -1534,16 +1795,84 @@ func (m model) renderErrorLogList() string {
 	}
 	iw := w - 2
 
-	breadcrumb := f.Name + " › " + h.Entry.Name + " › Error Logs"
-	s := m.renderHeader(breadcrumb, m.errorCursor+1, len(m.errorLogs)) + "\n"
+	filtered := m.filteredErrorLogs()
+
+	// log detail view
+	if m.showLogDetail && m.errorCursor < len(filtered) {
+		e := filtered[m.errorCursor]
+		breadcrumb := f.Name + " › " + h.Entry.Name + " › Log Detail"
+		s := m.renderHeader(breadcrumb, 0, 0) + "\n"
+		s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
+
+		s += borderedRow(fmt.Sprintf("  Time: %s", e.Time), iw, colHeaderStyle) + "\n"
+		s += borderedRow(fmt.Sprintf("  Unit: %s", e.Unit), iw, colHeaderStyle) + "\n"
+		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+
+		// parse structured key=value fields from the message
+		kvPairs := parseLogFields(e.Message)
+		if len(kvPairs) > 0 {
+			fieldCol := 0
+			for _, kv := range kvPairs {
+				if len(kv[0]) > fieldCol {
+					fieldCol = len(kv[0])
+				}
+			}
+			fieldCol += 2
+
+			for i, kv := range kvPairs {
+				line := fmt.Sprintf("  %-*s  %s", fieldCol, kv[0], kv[1])
+				var style lipgloss.Style
+				if kv[0] == "level" && (kv[1] == "error" || kv[1] == "crit") {
+					style = lipgloss.NewStyle().Foreground(colorRed)
+				} else if kv[0] == "err" || kv[0] == "error" {
+					style = lipgloss.NewStyle().Foreground(colorRed)
+				} else if i%2 == 0 {
+					style = altRowStyle
+				} else {
+					style = normalRowStyle
+				}
+				s += borderedRow(line, iw, style) + "\n"
+			}
+		} else {
+			// plain message — word-wrap
+			msg := e.Message
+			lineWidth := iw - 4
+			for len(msg) > 0 {
+				end := lineWidth
+				if end > len(msg) {
+					end = len(msg)
+				}
+				s += borderedRow("  "+msg[:end], iw, normalRowStyle) + "\n"
+				msg = msg[end:]
+			}
+		}
+
+		s = m.padToBottom(s, iw)
+		s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
+		s += hintBarStyle.Width(m.width).Render("  Press any key to return")
+		return s
+	}
+
+	breadcrumb := f.Name + " › " + h.Entry.Name + " › Logs"
+	filterInfo := ""
+	if m.filterText != "" {
+		filterInfo = fmt.Sprintf(" [filter: %s]", m.filterText)
+	}
+	s := m.renderHeader(breadcrumb+filterInfo, m.errorCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if len(m.errorLogs) == 0 {
-		s += borderedRow("  No errors found.", iw, normalRowStyle) + "\n"
+	if m.errorLogs == nil {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else if len(filtered) == 0 {
+		if m.filterText != "" {
+			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
+		} else {
+			s += borderedRow("  No errors found.", iw, normalRowStyle) + "\n"
+		}
 	} else {
 		timeCol := len("TIME")
 		unitCol := len("UNIT")
-		for _, e := range m.errorLogs {
+		for _, e := range filtered {
 			if len(e.Time) > timeCol {
 				timeCol = len(e.Time)
 			}
@@ -1570,12 +1899,12 @@ func (m model) renderErrorLogList() string {
 			offset = m.errorCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.errorLogs) {
-			end = len(m.errorLogs)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			e := m.errorLogs[i]
+			e := filtered[i]
 			cur := "   "
 			if i == m.errorCursor {
 				cur = " ▸ "
@@ -1600,11 +1929,18 @@ func (m model) renderErrorLogList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
-	s += m.renderHintBar([][]string{
-		{"l", "Full Log"},
-		{"r", "Refresh"},
-		{"Esc", "Back"},
-	})
+
+	if m.filterActive {
+		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
+	} else {
+		s += m.renderHintBar([][]string{
+			{"Enter", "Detail"},
+			{"/", "Search"},
+			{"l", "Full Log"},
+			{"r", "Refresh"},
+			{"Esc", "Back"},
+		})
+	}
 	return s
 }
 
@@ -1692,10 +2028,17 @@ func (m model) renderUpdateList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
-	s += m.renderHintBar([][]string{
-		{"r", "Refresh"},
-		{"Esc", "Back"},
-	})
+
+	if m.showConfirm {
+		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
+	} else {
+		s += m.renderHintBar([][]string{
+			{"u", "Update All"},
+			{"p", "Security Only"},
+			{"r", "Refresh"},
+			{"Esc", "Back"},
+		})
+	}
 	return s
 }
 
@@ -1801,9 +2144,11 @@ func (m model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			sub := m.subscriptions[m.subscriptionCursor]
 			if strings.HasPrefix(sub.Field, "Repo: ") {
 				repoID := strings.TrimPrefix(sub.Field, "Repo: ")
+				h := m.hosts[m.selectedHost]
 				m.showConfirm = true
-				m.confirmMessage = fmt.Sprintf("Disable repo %s? (y/n)", repoID)
-				m.confirmRepoID = repoID
+				m.confirmMessage = fmt.Sprintf("Disable repo %s? [Y/n]", repoID)
+				m.confirmCmd = fmt.Sprintf("sudo dnf config-manager --set-disabled %s && echo '' && echo '✓ Repo %s disabled'", repoID, repoID)
+				m.confirmBanner = fmt.Sprintf("disable %s on %s", repoID, h.Entry.Name)
 			}
 		}
 	case "r":

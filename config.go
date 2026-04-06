@@ -20,6 +20,7 @@ type hostDefaults struct {
 	SystemdMode    string        `yaml:"systemd_mode"`
 	ServiceFilter  []string      `yaml:"service_filter"`
 	ErrorLogSince  string
+	RefreshInterval string
 }
 
 // hostGroup provides visual grouping of hosts.
