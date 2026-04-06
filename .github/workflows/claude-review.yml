@@ -1,29 +1,32 @@
 name: Claude Code Review
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, ready_for_review, reopened]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
 
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
-  id-token: write
-
 jobs:
   review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
             Review this PR for:
             - Code correctness and potential bugs
             - Adherence to the internal/ package structure (config/, ssh/, app/, views/)
@@ -31,4 +34,8 @@ jobs:
             - Tests exist for new parsers and helpers in ssh/ and config/
             - No scope creep beyond the Linear issue
             - Go conventions (table-driven tests, error handling)
-          claude_args: "--model claude-sonnet-4-6"
+
+            Use inline comments for specific code issues.
+            Use top-level comments for general observations.
+          claude_args: |
+            --model claude-sonnet-4-6 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
