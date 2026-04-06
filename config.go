@@ -89,3 +89,41 @@ type container struct {
 	Status string // running, exited, etc.
 	ID     string
 }
+
+// cronJob represents a scheduled task.
+type cronJob struct {
+	Schedule string
+	Command  string
+	Source   string // "crontab" or filename from /etc/cron.d/
+}
+
+// logLevelEntry represents a log severity level with its count.
+type logLevelEntry struct {
+	Level string
+	Code  string // journalctl priority code (0-7)
+	Count int
+}
+
+// errorLog represents a journal error entry.
+type errorLog struct {
+	Time    string
+	Unit    string
+	Message string
+}
+
+// update represents a pending package update.
+type update struct {
+	Package string
+	Version string
+	Type    string // security, bugfix, enhancement
+}
+
+// disk represents a filesystem partition.
+type disk struct {
+	Filesystem string
+	Size       string
+	Used       string
+	Avail      string
+	UsePercent string
+	Mount      string
+}
