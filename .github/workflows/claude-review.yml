@@ -27,15 +27,30 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this PR for:
-            - Code correctness and potential bugs
-            - Adherence to the internal/ package structure (config/, ssh/, app/, views/)
-            - internal/ssh/ must NOT import Bubble Tea
-            - Tests exist for new parsers and helpers in ssh/ and config/
-            - No scope creep beyond the Linear issue
-            - Go conventions (table-driven tests, error handling)
+            You are reviewing a Go TUI application (Bubble Tea) that manages Linux VM fleets over SSH.
 
-            Use inline comments for specific code issues.
-            Use top-level comments for general observations.
+            ## Architecture rules
+            - Package structure: internal/config/, internal/ssh/, internal/app/, internal/views/
+            - internal/ssh/ must NOT import Bubble Tea — it contains pure data-fetching and parsing logic
+            - Each view follows the pattern: fetch function → message type → model handler → render function
+            - Destructive actions require [Y/n] confirmation prompts
+
+            ## Security rules
+            - No hardcoded credentials, keys, or secrets
+            - SSH passwords must never be logged, stored, or cached beyond the session
+            - User input used in SSH commands must be sanitized — no command injection
+            - No secrets in error messages or log output
+
+            ## Review checklist
+            - Code correctness and potential bugs
+            - Go conventions: error handling, table-driven tests, named return values only when useful
+            - Tests exist for new parsers and helpers in ssh/ and config/
+            - PR scope matches the PR description — flag unrelated changes
+
+            ## How to report
+            - Only flag real issues — not style nitpicks or subjective preferences
+            - Use inline comments for specific code issues with a fix suggestion
+            - Use a top-level comment for a short summary (approve, request changes, or observations)
+            - Rate each issue: 🔴 must fix, 🟡 should fix, 🟢 suggestion
           claude_args: |
             --model claude-sonnet-4-6 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
