@@ -59,7 +59,7 @@ func (sm *sshManager) connectAndProbe(idx int, h host) hostProbeResult {
 	sm.mu.Unlock()
 
 	// run probe command
-	info, err := probe(client, h.Entry.SystemdMode)
+	info, err := probe(client, h.Entry.SystemdMode, h.ErrorLogSince)
 	if err != nil {
 		return hostProbeResult{
 			index: idx,
@@ -248,7 +248,7 @@ func (sm *sshManager) connectWithPassword(idx int, h host, password string) pass
 	sm.conns[idx] = client
 	sm.mu.Unlock()
 
-	info, err := probe(client, entry.SystemdMode)
+	info, err := probe(client, entry.SystemdMode, h.ErrorLogSince)
 	if err != nil {
 		return passwordRetryResult{index: idx, err: fmt.Errorf("probe: %w", err)}
 	}

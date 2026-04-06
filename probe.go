@@ -38,13 +38,18 @@ type probeInfo struct {
 	ServiceFailed     int
 	ContainerCount    int
 	ContainerRunning  int
+	CronCount         int
+	ErrorCount        int
+	UpdateCount       int
+	DiskCount         int
+	DiskHighCount     int
 	LastUpdate        string
 	LastSecurity      string
 	SystemdMode       string // the mode that actually worked
 }
 
 // probe runs a single SSH command to gather all host info in one roundtrip.
-func probe(client *ssh.Client, systemdMode string) (probeInfo, error) {
+func probe(client *ssh.Client, systemdMode string, errorLogSince string) (probeInfo, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return probeInfo{}, fmt.Errorf("new session: %w", err)
@@ -67,8 +72,13 @@ func probe(client *ssh.Client, systemdMode string) (probeInfo, error) {
 			`podman ps -q 2>/dev/null | wc -l && `+
 			`podman ps -a -q 2>/dev/null | wc -l && `+
 			`(dnf history list 2>/dev/null | grep -E '\| update ' | grep -v mdatp | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown) && `+
-			`(dnf history list 2>/dev/null | grep -E '\| update --security' | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown)`,
-		sysctl, sysctl, sysctl,
+			`(dnf history list 2>/dev/null | grep -E '\| update --security' | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown) && `+
+			`echo $(( $(crontab -l 2>/dev/null | grep -v '^#' | grep -v '^$' | wc -l) + $(ls /etc/cron.d/ 2>/dev/null | wc -l) )) && `+
+			`sudo journalctl -p err --since '%s' --no-pager -q 2>/dev/null | wc -l && `+
+			`dnf check-update --quiet 2>/dev/null | grep -v '^$' | wc -l && `+
+			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && `+
+			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l`,
+		sysctl, sysctl, sysctl, errorLogSince,
 	)
 
 	out, err := session.CombinedOutput(cmd)
@@ -106,46 +116,48 @@ func probe(client *ssh.Client, systemdMode string) (probeInfo, error) {
 	return parseProbeOutput(string(out), systemdMode)
 }
 
-// parseProbeOutput parses the 9-line output from the probe command.
+// parseProbeOutput parses the probe command output.
+// Lines: hostname, uptime, os, svc_total, svc_running, svc_failed, ctn_running, ctn_total,
+//        last_update, last_security, cron_count, error_count, update_count, disk_count, disk_high
 func parseProbeOutput(output string, systemdMode string) (probeInfo, error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) < 7 {
 		return probeInfo{}, fmt.Errorf("unexpected probe output (%d lines): %s", len(lines), output)
 	}
 
-	svcCount, _ := strconv.Atoi(strings.TrimSpace(lines[3]))
-	svcRunning, _ := strconv.Atoi(strings.TrimSpace(lines[4]))
-	svcFailed, _ := strconv.Atoi(strings.TrimSpace(lines[5]))
-	ctnRunning, _ := strconv.Atoi(strings.TrimSpace(lines[6]))
-	ctnCount := ctnRunning
-	if len(lines) > 7 {
-		ctnCount, _ = strconv.Atoi(strings.TrimSpace(lines[7]))
+	getInt := func(idx int) int {
+		if idx < len(lines) {
+			v, _ := strconv.Atoi(strings.TrimSpace(lines[idx]))
+			return v
+		}
+		return 0
 	}
 
-	lastUpdate := "—"
-	lastSecurity := "—"
-	if len(lines) > 8 {
-		if v := strings.TrimSpace(lines[8]); v != "" && v != "unknown" {
-			lastUpdate = formatDateEU(v)
+	getDate := func(idx int) string {
+		if idx < len(lines) {
+			if v := strings.TrimSpace(lines[idx]); v != "" && v != "unknown" {
+				return formatDateEU(v)
+			}
 		}
-	}
-	if len(lines) > 9 {
-		if v := strings.TrimSpace(lines[9]); v != "" && v != "unknown" {
-			lastSecurity = formatDateEU(v)
-		}
+		return "—"
 	}
 
 	return probeInfo{
 		FQDN:             strings.TrimSpace(lines[0]),
 		UpSince:          formatDateEU(strings.TrimSpace(lines[1])),
 		OS:               strings.TrimSpace(lines[2]),
-		ServiceCount:     svcCount,
-		ServiceRunning:   svcRunning,
-		ServiceFailed:    svcFailed,
-		ContainerCount:   ctnCount,
-		ContainerRunning: ctnRunning,
-		LastUpdate:       lastUpdate,
-		LastSecurity:     lastSecurity,
+		ServiceCount:     getInt(3),
+		ServiceRunning:   getInt(4),
+		ServiceFailed:    getInt(5),
+		ContainerRunning: getInt(6),
+		ContainerCount:   getInt(7),
+		LastUpdate:       getDate(8),
+		LastSecurity:     getDate(9),
+		CronCount:        getInt(10),
+		ErrorCount:       getInt(11),
+		UpdateCount:      getInt(12),
+		DiskCount:        getInt(13),
+		DiskHighCount:    getInt(14),
 		SystemdMode:      systemdMode,
 	}, nil
 }

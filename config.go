@@ -14,11 +14,12 @@ type fleet struct {
 
 // hostDefaults holds default values applied to all hosts in a fleet.
 type hostDefaults struct {
-	User          string        `yaml:"user"`
-	Port          int           `yaml:"port"`
-	Timeout       time.Duration `yaml:"timeout"`
-	SystemdMode   string        `yaml:"systemd_mode"`
-	ServiceFilter []string      `yaml:"service_filter"`
+	User           string        `yaml:"user"`
+	Port           int           `yaml:"port"`
+	Timeout        time.Duration `yaml:"timeout"`
+	SystemdMode    string        `yaml:"systemd_mode"`
+	ServiceFilter  []string      `yaml:"service_filter"`
+	ErrorLogSince  string
 }
 
 // hostGroup provides visual grouping of hosts.
@@ -40,10 +41,11 @@ type hostEntry struct {
 
 // host is the runtime representation of a host with connection state.
 type host struct {
-	Entry    hostEntry
-	Group    string
-	Status   hostStatus
-	NeedsPassword bool // true if key auth failed
+	Entry         hostEntry
+	Group         string
+	Status        hostStatus
+	NeedsPassword bool   // true if key auth failed
+	ErrorLogSince string // configurable journalctl window
 
 	// probe results
 	FQDN             string
@@ -54,6 +56,11 @@ type host struct {
 	ServiceFailed    int
 	ContainerCount   int
 	ContainerRunning int
+	CronCount        int
+	ErrorCount       int
+	UpdateCount      int
+	DiskCount        int
+	DiskHighCount    int
 	LastUpdate       string
 	LastSecurity     string
 	Error            string
