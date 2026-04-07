@@ -26,6 +26,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.accountCursor = 0
 			m.portCursor = 0
 			m.firewallCursor = 0
+			m.serviceLogCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -34,6 +35,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.accountCursor = 0
 			m.portCursor = 0
 			m.firewallCursor = 0
+			m.serviceLogCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -42,6 +44,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.accountCursor = 0
 				m.portCursor = 0
 				m.firewallCursor = 0
+				m.serviceLogCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -50,6 +53,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.errorCursor = 0
 				m.accountCursor = 0
 				m.portCursor = 0
+				m.serviceLogCursor = 0
 			}
 		}
 		return m, nil
@@ -336,6 +340,55 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	filtered := m.filteredServices()
 
+	// detail mode keys
+	if m.showServiceDetail {
+		filteredLogs := m.filteredServiceLogs()
+		switch msg.String() {
+		case "up", "k":
+			if m.serviceLogCursor > 0 {
+				m.serviceLogCursor--
+			}
+		case "down", "j":
+			if m.serviceLogCursor < len(filteredLogs)-1 {
+				m.serviceLogCursor++
+			}
+		case "/":
+			m.filterActive = true
+			m.filterText = ""
+			m.serviceLogCursor = 0
+		case "s":
+			if m.serviceDetailUnit != "" {
+				return m.confirmDetailSvcAction("start")
+			}
+		case "o":
+			if m.serviceDetailUnit != "" {
+				return m.confirmDetailSvcAction("stop")
+			}
+		case "t":
+			if m.serviceDetailUnit != "" {
+				return m.confirmDetailSvcAction("restart")
+			}
+		case "r":
+			if m.serviceDetailUnit != "" {
+				m.flash = fmt.Sprintf("Refreshing %s...", m.serviceDetailUnit)
+				m.serviceLogCursor = 0
+				return m, m.fetchServiceDetail(m.serviceDetailUnit)
+			}
+		case "esc":
+			if m.filterText != "" {
+				m.filterActive = false
+				m.filterText = ""
+				m.serviceLogCursor = 0
+			} else {
+				m.filterActive = false
+				m.showServiceDetail = false
+				m.serviceLogCursor = 0
+			}
+		}
+		return m, nil
+	}
+
+	// list mode keys
 	switch msg.String() {
 	case "up", "k":
 		if m.serviceCursor > 0 {
@@ -349,43 +402,12 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.serviceCursor = 0
-	case "s":
-		if len(filtered) > 0 && m.serviceCursor < len(filtered) {
-			// find the original index for the action
-			m.serviceCursor = m.findServiceIndex(filtered[m.serviceCursor].Name)
-			return m.confirmSvcAction("start")
-		}
-	case "o":
-		if len(filtered) > 0 && m.serviceCursor < len(filtered) {
-			m.serviceCursor = m.findServiceIndex(filtered[m.serviceCursor].Name)
-			return m.confirmSvcAction("stop")
-		}
-	case "t":
-		if len(filtered) > 0 && m.serviceCursor < len(filtered) {
-			m.serviceCursor = m.findServiceIndex(filtered[m.serviceCursor].Name)
-			return m.confirmSvcAction("restart")
-		}
-	case "l":
-		if len(m.services) > 0 {
-			h := m.hosts[m.selectedHost]
-			unit := m.services[m.serviceCursor].Name + ".service"
-			jctl := "sudo journalctl -u"
-			if h.Entry.SystemdMode == "user" {
-				jctl = "journalctl --user-unit"
-			}
-			cmd := fmt.Sprintf("%s %s -f", jctl, unit)
-			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("logs %s on %s (Ctrl+C to stop)", unit, h.Entry.Name))
-		}
-	case "i":
-		if len(m.services) > 0 {
-			h := m.hosts[m.selectedHost]
-			unit := m.services[m.serviceCursor].Name + ".service"
-			sysctl := "sudo systemctl"
-			if h.Entry.SystemdMode == "user" {
-				sysctl = "systemctl --user"
-			}
-			cmd := fmt.Sprintf("%s status %s --no-pager", sysctl, unit)
-			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("status %s on %s", unit, h.Entry.Name))
+	case "enter":
+		if len(filtered) > 0 {
+			unit := filtered[m.serviceCursor].Name + ".service"
+			m.serviceDetailUnit = unit
+			m.flash = fmt.Sprintf("Loading %s...", unit)
+			return m, m.fetchServiceDetail(unit)
 		}
 	case "r":
 		m.services = nil

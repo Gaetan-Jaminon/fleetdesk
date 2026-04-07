@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
@@ -624,6 +625,81 @@ func TestParseNftablesOutput(t *testing.T) {
 	}
 	if !actions["drop"] {
 		t.Error("expected at least one drop rule")
+	}
+}
+
+func TestParseServiceStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   config.ServiceStatus
+	}{
+		{
+			name: "active running",
+			output: `MainPID=1617
+MemoryCurrent=10960896
+TasksCurrent=1
+Id=sshd.service
+Description=OpenSSH server daemon
+LoadState=loaded
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+ActiveEnterTimestamp=Tue 2026-04-07 00:40:03 UTC`,
+			want: config.ServiceStatus{
+				Name: "sshd.service", Description: "OpenSSH server daemon",
+				LoadState: "loaded", ActiveState: "active", SubState: "running",
+				PID: "1617", Memory: "10.5M", Tasks: "1",
+				Since: "Tue 2026-04-07 00:40:03 UTC", Enabled: "enabled",
+			},
+		},
+		{
+			name: "inactive dead",
+			output: `MainPID=0
+MemoryCurrent=[not set]
+TasksCurrent=[not set]
+Id=cups.service
+Description=CUPS Printing Service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+UnitFileState=disabled
+ActiveEnterTimestamp=`,
+			want: config.ServiceStatus{
+				Name: "cups.service", Description: "CUPS Printing Service",
+				LoadState: "loaded", ActiveState: "inactive", SubState: "dead",
+				PID: "—", Memory: "—", Tasks: "—",
+				Since: "—", Enabled: "disabled",
+			},
+		},
+		{
+			name: "failed",
+			output: `MainPID=0
+MemoryCurrent=0
+TasksCurrent=0
+Id=bad.service
+Description=Bad Service
+LoadState=loaded
+ActiveState=failed
+SubState=failed
+UnitFileState=enabled
+ActiveEnterTimestamp=Mon 2026-04-06 12:00:00 UTC`,
+			want: config.ServiceStatus{
+				Name: "bad.service", Description: "Bad Service",
+				LoadState: "loaded", ActiveState: "failed", SubState: "failed",
+				PID: "—", Memory: "0B", Tasks: "0",
+				Since: "Mon 2026-04-06 12:00:00 UTC", Enabled: "enabled",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseServiceStatus(tt.output)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got  %+v\nwant %+v", got, tt.want)
+			}
+		})
 	}
 }
 
