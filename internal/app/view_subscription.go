@@ -77,6 +77,7 @@ func (m Model) renderSubscription() string {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
 		s += m.renderHintBar([][]string{
+			{"↑↓", "Navigate"},
 			{"d", "Disable Repo"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},

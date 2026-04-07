@@ -379,6 +379,12 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewSecurityAudit
 			return m, m.fetchAuditSummary()
 		}
+	case "r":
+		m.services = nil
+		m.containers = nil
+		m.updates = nil
+		m.flash = "Refreshing..."
+		return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
 	case "esc":
 		m.view = viewHostList
 	}
