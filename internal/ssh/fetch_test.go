@@ -703,6 +703,195 @@ ActiveEnterTimestamp=Mon 2026-04-06 12:00:00 UTC`,
 	}
 }
 
+func TestParseFailedLoginLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.FailedLogin
+	}{
+		{
+			name: "failed password",
+			line: "Apr 06 14:32:01 sshd[12345]: Failed password for user1 from 192.168.1.1 port 22 ssh2",
+			want: config.FailedLogin{Time: "Apr 06 14:32:01", User: "user1", Source: "192.168.1.1", Method: "password"},
+		},
+		{
+			name: "invalid user",
+			line: "Apr 06 14:32:01 sshd[12345]: Invalid user admin from 10.0.0.5 port 55123",
+			want: config.FailedLogin{Time: "Apr 06 14:32:01", User: "admin", Source: "10.0.0.5", Method: "invalid user"},
+		},
+		{
+			name: "failed publickey",
+			line: "Apr 06 14:32:01 sshd[12345]: Failed publickey for root from 172.16.0.1 port 22 ssh2",
+			want: config.FailedLogin{Time: "Apr 06 14:32:01", User: "root", Source: "172.16.0.1", Method: "publickey"},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.FailedLogin{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseFailedLoginLine(tt.line)
+			if got.Time != tt.want.Time {
+				t.Errorf("Time = %q, want %q", got.Time, tt.want.Time)
+			}
+			if got.User != tt.want.User {
+				t.Errorf("User = %q, want %q", got.User, tt.want.User)
+			}
+			if got.Source != tt.want.Source {
+				t.Errorf("Source = %q, want %q", got.Source, tt.want.Source)
+			}
+			if got.Method != tt.want.Method {
+				t.Errorf("Method = %q, want %q", got.Method, tt.want.Method)
+			}
+		})
+	}
+}
+
+func TestParseSudoLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.SudoEntry
+	}{
+		{
+			name: "successful sudo",
+			line: "Apr 06 14:32:01 sudo[12345]: user1 : TTY=pts/0 ; PWD=/home/user1 ; USER=root ; COMMAND=/bin/ls",
+			want: config.SudoEntry{Time: "Apr 06 14:32:01", User: "user1", Command: "/bin/ls", Result: "success"},
+		},
+		{
+			name: "failed sudo",
+			line: "Apr 06 14:32:01 sudo[12345]: baduser : authentication failure ; TTY=pts/0 ; PWD=/home/baduser ; USER=root ; COMMAND=/bin/su",
+			want: config.SudoEntry{Time: "Apr 06 14:32:01", User: "baduser", Command: "/bin/su", Result: "failed"},
+		},
+		{
+			name: "not in sudoers",
+			line: "Apr 06 14:32:01 sudo[12345]: nope : NOT in sudoers ; TTY=pts/0 ; PWD=/tmp ; USER=root ; COMMAND=/usr/bin/cat /etc/shadow",
+			want: config.SudoEntry{Time: "Apr 06 14:32:01", User: "nope", Command: "/usr/bin/cat /etc/shadow", Result: "failed"},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.SudoEntry{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseSudoLine(tt.line)
+			if got.Time != tt.want.Time {
+				t.Errorf("Time = %q, want %q", got.Time, tt.want.Time)
+			}
+			if got.User != tt.want.User {
+				t.Errorf("User = %q, want %q", got.User, tt.want.User)
+			}
+			if got.Command != tt.want.Command {
+				t.Errorf("Command = %q, want %q", got.Command, tt.want.Command)
+			}
+			if got.Result != tt.want.Result {
+				t.Errorf("Result = %q, want %q", got.Result, tt.want.Result)
+			}
+		})
+	}
+}
+
+func TestParseSELinuxDenialLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.SELinuxDenial
+	}{
+		{
+			name: "avc denial",
+			line: `Apr 06 14:32:01 audit[1234]: avc:  denied  { open } for  pid=5678 comm="httpd" path="/var/www/html/index.html" scontext=system_u:system_r:httpd_t:s0 tcontext=unconfined_u:object_r:default_t:s0 tclass=file permissive=0`,
+			want: config.SELinuxDenial{Time: "Apr 06 14:32:01", Action: "open", Source: "httpd_t", Target: "default_t", Class: "file"},
+		},
+		{
+			name: "read denial",
+			line: `Apr 06 15:00:00 audit[999]: avc:  denied  { read } for  pid=100 comm="nginx" scontext=system_u:system_r:nginx_t:s0 tcontext=system_u:object_r:var_log_t:s0 tclass=dir permissive=1`,
+			want: config.SELinuxDenial{Time: "Apr 06 15:00:00", Action: "read", Source: "nginx_t", Target: "var_log_t", Class: "dir"},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.SELinuxDenial{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseSELinuxDenialLine(tt.line)
+			if got.Time != tt.want.Time {
+				t.Errorf("Time = %q, want %q", got.Time, tt.want.Time)
+			}
+			if got.Action != tt.want.Action {
+				t.Errorf("Action = %q, want %q", got.Action, tt.want.Action)
+			}
+			if got.Source != tt.want.Source {
+				t.Errorf("Source = %q, want %q", got.Source, tt.want.Source)
+			}
+			if got.Target != tt.want.Target {
+				t.Errorf("Target = %q, want %q", got.Target, tt.want.Target)
+			}
+			if got.Class != tt.want.Class {
+				t.Errorf("Class = %q, want %q", got.Class, tt.want.Class)
+			}
+		})
+	}
+}
+
+func TestParseAuditEventLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.AuditEvent
+	}{
+		{
+			name: "success with line number",
+			line: "42. 04/06/2026 14:32:01 user1 pts/0 192.168.1.1 /usr/sbin/sshd yes 12345",
+			want: config.AuditEvent{Time: "04/06/2026 14:32:01", Type: "auth", User: "user1", Result: "success", Message: "pts/0 192.168.1.1 /usr/sbin/sshd yes 12345"},
+		},
+		{
+			name: "failure",
+			line: "43. 04/06/2026 14:33:00 root pts/1 10.0.0.1 /usr/sbin/sshd no 12346",
+			want: config.AuditEvent{Time: "04/06/2026 14:33:00", Type: "auth", User: "root", Result: "failed", Message: "pts/1 10.0.0.1 /usr/sbin/sshd no 12346"},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.AuditEvent{},
+		},
+		{
+			name: "too few fields",
+			line: "one two",
+			want: config.AuditEvent{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseAuditEventLine(tt.line)
+			if got.Time != tt.want.Time {
+				t.Errorf("Time = %q, want %q", got.Time, tt.want.Time)
+			}
+			if got.Type != tt.want.Type {
+				t.Errorf("Type = %q, want %q", got.Type, tt.want.Type)
+			}
+			if got.User != tt.want.User {
+				t.Errorf("User = %q, want %q", got.User, tt.want.User)
+			}
+			if got.Result != tt.want.Result {
+				t.Errorf("Result = %q, want %q", got.Result, tt.want.Result)
+			}
+			if got.Message != tt.want.Message {
+				t.Errorf("Message = %q, want %q", got.Message, tt.want.Message)
+			}
+		})
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 

@@ -114,6 +114,66 @@ func (m Model) filteredFirewallRules() []config.FirewallRule {
 	return filtered
 }
 
+func (m Model) filteredFailedLogins() []config.FailedLogin {
+	if m.filterText == "" {
+		return m.failedLogins
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.FailedLogin
+	for _, fl := range m.failedLogins {
+		line := strings.ToLower(fl.Time + " " + fl.User + " " + fl.Source + " " + fl.Method)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, fl)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredSudoEntries() []config.SudoEntry {
+	if m.filterText == "" {
+		return m.sudoEntries
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.SudoEntry
+	for _, se := range m.sudoEntries {
+		line := strings.ToLower(se.Time + " " + se.User + " " + se.Command + " " + se.Result)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, se)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredSELinuxDenials() []config.SELinuxDenial {
+	if m.filterText == "" {
+		return m.selinuxDenials
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.SELinuxDenial
+	for _, d := range m.selinuxDenials {
+		line := strings.ToLower(d.Time + " " + d.Action + " " + d.Source + " " + d.Target + " " + d.Class)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredAuditEvents() []config.AuditEvent {
+	if m.filterText == "" {
+		return m.auditEvents
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.AuditEvent
+	for _, ae := range m.auditEvents {
+		line := strings.ToLower(ae.Time + " " + ae.Type + " " + ae.User + " " + ae.Result + " " + ae.Message)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, ae)
+		}
+	}
+	return filtered
+}
+
 // parseLogFields parses structured key=value pairs from a log message.
 // Handles both simple key=value and key="quoted value" formats.
 func parseLogFields(msg string) [][2]string {
@@ -195,6 +255,10 @@ func (m *Model) applyProbeInfo(idx int, info ssh.ProbeInfo) {
 	m.hosts[idx].InterfacesUp = info.InterfacesUp
 	m.hosts[idx].InterfacesTotal = info.InterfacesTotal
 	m.hosts[idx].ListeningPorts = info.ListeningPorts
+	m.hosts[idx].FailedLoginCount = info.FailedLoginCount
+	m.hosts[idx].SudoEventCount = info.SudoEventCount
+	m.hosts[idx].SELinuxDenyCount = info.SELinuxDenyCount
+	m.hosts[idx].AuditEventCount = info.AuditEventCount
 	m.hosts[idx].LastUpdate = info.LastUpdate
 	m.hosts[idx].LastSecurity = info.LastSecurity
 }

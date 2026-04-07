@@ -29,6 +29,10 @@ type ProbeInfo struct {
 	InterfacesUp     int
 	InterfacesTotal  int
 	ListeningPorts   int
+	FailedLoginCount int
+	SudoEventCount   int
+	SELinuxDenyCount int
+	AuditEventCount  int
 	SystemdMode      string
 }
 
@@ -95,6 +99,10 @@ func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 		InterfacesUp:     getInt(17),
 		InterfacesTotal:  getInt(18),
 		ListeningPorts:   getInt(19),
+		FailedLoginCount: getInt(20),
+		SudoEventCount:   getInt(21),
+		SELinuxDenyCount: getInt(22),
+		AuditEventCount:  getInt(23),
 		SystemdMode:      systemdMode,
 	}, nil
 }

@@ -1113,3 +1113,131 @@ func (m Model) fetchDisk() func() tea.Msg {
 		return fetchDiskMsg{disks: disks}
 	}
 }
+
+// --- Failed Logins ---
+
+type fetchFailedLoginsMsg struct {
+	logins []config.FailedLogin
+	err    error
+}
+
+func (m Model) fetchFailedLogins() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `sudo journalctl -u sshd --no-pager -q --no-hostname -o short -n 500 2>/dev/null | grep -iE 'Failed|Invalid user' | tac; true`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchFailedLoginsMsg{err: fmt.Errorf("failed logins: %w", err)}
+		}
+
+		var logins []config.FailedLogin
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			fl := ssh.ParseFailedLoginLine(line)
+			if fl.Source != "" || fl.User != "" {
+				logins = append(logins, fl)
+			}
+		}
+		return fetchFailedLoginsMsg{logins: logins}
+	}
+}
+
+// --- Sudo Activity ---
+
+type fetchSudoActivityMsg struct {
+	entries []config.SudoEntry
+	err     error
+}
+
+func (m Model) fetchSudoActivity() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `sudo journalctl _COMM=sudo --no-pager -q --no-hostname -o short -n 500 2>/dev/null | tac; true`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchSudoActivityMsg{err: fmt.Errorf("sudo activity: %w", err)}
+		}
+
+		var entries []config.SudoEntry
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			se := ssh.ParseSudoLine(line)
+			if se.User != "" {
+				entries = append(entries, se)
+			}
+		}
+		return fetchSudoActivityMsg{entries: entries}
+	}
+}
+
+// --- SELinux Denials ---
+
+type fetchSELinuxMsg struct {
+	denials []config.SELinuxDenial
+	err     error
+}
+
+func (m Model) fetchSELinuxDenials() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `sudo journalctl _TRANSPORT=audit --no-pager -q --no-hostname -o short -n 500 2>/dev/null | grep 'avc:' | tac; true`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchSELinuxMsg{err: fmt.Errorf("selinux: %w", err)}
+		}
+
+		var denials []config.SELinuxDenial
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			d := ssh.ParseSELinuxDenialLine(line)
+			if d.Action != "" {
+				denials = append(denials, d)
+			}
+		}
+		return fetchSELinuxMsg{denials: denials}
+	}
+}
+
+// --- Audit Summary ---
+
+type fetchAuditSummaryMsg struct {
+	events []config.AuditEvent
+	err    error
+}
+
+func (m Model) fetchAuditSummary() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `sudo aureport --auth -i 2>/dev/null | grep -E '^\s*[0-9]+\.' | tac; true`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchAuditSummaryMsg{err: fmt.Errorf("audit: %w", err)}
+		}
+
+		var events []config.AuditEvent
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			ae := ssh.ParseAuditEventLine(strings.TrimSpace(line))
+			if ae.User != "" {
+				events = append(events, ae)
+			}
+		}
+		return fetchAuditSummaryMsg{events: events}
+	}
+}

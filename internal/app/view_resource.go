@@ -20,7 +20,7 @@ func (m Model) renderResourcePicker() string {
 	s := m.renderHeader(breadcrumb, m.resourceCursor+1, resourceCount) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	nameCol := len("RESOURCE") + 4
+	nameCol := len("SELinux Denials") + 2
 
 	hdr := fmt.Sprintf("     %-*s  %7s  %7s  %7s", nameCol, "RESOURCE", "TOTAL", "RUNNING", "FAILED")
 	s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
@@ -84,6 +84,10 @@ func (m Model) renderResourcePicker() string {
 		{"Subscription", 0, 0, 0},
 		{"Accounts", h.UserCount, 0, h.LockedUsers},
 		{"Network", h.InterfacesTotal, h.InterfacesUp, 0},
+		{"Failed Logins", h.FailedLoginCount, 0, 0},
+		{"Sudo Activity", h.SudoEventCount, 0, 0},
+		{"SELinux Denials", h.SELinuxDenyCount, 0, 0},
+		{"Audit Summary", h.AuditEventCount, 0, 0},
 	}
 	for i, r := range rows {
 		cur := "   "

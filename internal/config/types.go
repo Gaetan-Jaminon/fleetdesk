@@ -67,6 +67,10 @@ type Host struct {
 	InterfacesUp     int
 	InterfacesTotal  int
 	ListeningPorts   int
+	FailedLoginCount int
+	SudoEventCount   int
+	SELinuxDenyCount int
+	AuditEventCount  int
 	LastUpdate       string
 	LastSecurity     string
 	Error            string
@@ -187,6 +191,40 @@ type FirewallRule struct {
 	Source   string // source IP or —
 	Action   string // allow, drop, reject
 	Backend  string // firewalld, nftables, iptables
+}
+
+// FailedLogin represents a failed SSH login attempt.
+type FailedLogin struct {
+	Time   string
+	User   string
+	Source string // source IP
+	Method string // password, publickey, etc.
+}
+
+// SudoEntry represents a sudo usage event.
+type SudoEntry struct {
+	Time    string
+	User    string
+	Command string
+	Result  string // success, failure
+}
+
+// SELinuxDenial represents an SELinux AVC denial.
+type SELinuxDenial struct {
+	Time   string
+	Action string // e.g. "open", "read", "write"
+	Source string // scontext type (e.g. httpd_t)
+	Target string // tcontext type
+	Class  string // e.g. "file", "dir", "process"
+}
+
+// AuditEvent represents an authentication event from aureport.
+type AuditEvent struct {
+	Time    string
+	Type    string // auth, login, anomaly
+	User    string
+	Result  string // success, failed
+	Message string
 }
 
 // ServiceStatus holds parsed systemctl show output for a service.
