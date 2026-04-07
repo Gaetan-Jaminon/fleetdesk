@@ -666,10 +666,6 @@ func (m model) fetchDisk() func() tea.Msg {
 		sort.Slice(disks, func(i, j int) bool {
 			pi := strings.TrimSuffix(disks[i].UsePercent, "%")
 			pj := strings.TrimSuffix(disks[j].UsePercent, "%")
-			vi, _ := fmt.Sscanf(pi, "%d", new(int))
-			vj, _ := fmt.Sscanf(pj, "%d", new(int))
-			_ = vi
-			_ = vj
 			var ii, jj int
 			fmt.Sscanf(pi, "%d", &ii)
 			fmt.Sscanf(pj, "%d", &jj)

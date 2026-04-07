@@ -104,7 +104,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 	// parse groups
 	var groups []HostGroup
 	for _, g := range raw.Groups {
-		hosts, err := ParseHosts(g.Hosts, defaults, g.ServiceFilter)
+		hosts, err := parseHosts(g.Hosts, defaults, g.ServiceFilter)
 		if err != nil {
 			return Fleet{}, fmt.Errorf("group %q: %w", g.Name, err)
 		}
@@ -115,7 +115,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 	}
 
 	// parse ungrouped hosts
-	hosts, err := ParseHosts(raw.Hosts, defaults, nil)
+	hosts, err := parseHosts(raw.Hosts, defaults, nil)
 	if err != nil {
 		return Fleet{}, fmt.Errorf("hosts: %w", err)
 	}
@@ -130,9 +130,9 @@ func ParseFleetFile(path string) (Fleet, error) {
 	}, nil
 }
 
-// ParseHosts converts raw host entries, applying defaults where needed.
+// parseHosts converts raw host entries, applying defaults where needed.
 // groupFilter is the group-level service filter (can be nil).
-func ParseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string) ([]HostEntry, error) {
+func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string) ([]HostEntry, error) {
 	var hosts []HostEntry
 	for _, r := range raw {
 		if r.Name == "" {

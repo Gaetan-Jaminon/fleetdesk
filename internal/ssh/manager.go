@@ -221,6 +221,8 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 				`uptime -s 2>/dev/null || echo unknown && `+
 				`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown && `+
 				`%s list-units --type=service --no-pager -q 2>/dev/null | wc -l && `+
+				`echo 0 && `+
+				`echo 0 && `+
 				`podman ps -q 2>/dev/null | wc -l`,
 			sysctl,
 		)
@@ -268,7 +270,8 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 
 	var authMethods []gossh.AuthMethod
 
-	if agentAuth := sshAgentAuth(); agentAuth != nil {
+	agentAuth, agentConn := sshAgentAuth()
+	if agentAuth != nil {
 		authMethods = append(authMethods, agentAuth)
 	}
 
@@ -300,7 +303,7 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 		sshConfig := &gossh.ClientConfig{
 			User:            user,
 			Auth:            []gossh.AuthMethod{auth},
-			HostKeyCallback: gossh.InsecureIgnoreHostKey(),
+			HostKeyCallback: gossh.InsecureIgnoreHostKey(), // trusted fleet network
 			Timeout:         timeout,
 		}
 		client, err := gossh.Dial("tcp", addr, sshConfig)
@@ -310,20 +313,27 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 		lastErr = err
 	}
 
+	// close agent socket on failure — no SSH client to use it
+	if agentConn != nil {
+		agentConn.Close()
+	}
+
 	return nil, fmt.Errorf("dial %s: %w", addr, lastErr)
 }
 
-// sshAgentAuth returns an auth method from the SSH agent, or nil.
-func sshAgentAuth() gossh.AuthMethod {
+// sshAgentAuth returns an auth method from the SSH agent and the underlying
+// connection. The caller must close agentConn when the SSH client is established
+// or when all auth attempts fail.
+func sshAgentAuth() (gossh.AuthMethod, net.Conn) {
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock == "" {
-		return nil
+		return nil, nil
 	}
 	conn, err := net.Dial("unix", sock)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return gossh.PublicKeysCallback(agent.NewClient(conn).Signers)
+	return gossh.PublicKeysCallback(agent.NewClient(conn).Signers), conn
 }
 
 // publicKeyFile returns an auth method from a private key file, or nil.
