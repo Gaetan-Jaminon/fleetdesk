@@ -172,6 +172,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFleetPickerKeys(msg)
 	case viewHostList:
 		return m.handleHostListKeys(msg)
+	case viewMetrics:
+		return m.handleMetricsKeys(msg)
 	case viewResourcePicker:
 		return m.handleResourcePickerKeys(msg)
 	case viewServiceList:
@@ -293,6 +295,13 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmCmd = `sudo reboot; echo 'Reboot initiated'`
 			m.confirmBanner = fmt.Sprintf("reboot %s", h.Entry.Name)
 		}
+	case "d":
+		m.metrics = make(map[int]config.HostMetrics)
+		m.metricsCursor = 0
+		m.sortColumn = 0
+		m.view = viewMetrics
+		m.flash = "Fetching metrics..."
+		return m, m.fetchAllMetrics()
 	case "r":
 		f := m.fleets[m.selectedFleet]
 		m.ssh.Close()
@@ -1368,6 +1377,36 @@ func (m Model) handleAuditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.view = viewResourcePicker
 		}
+	}
+	return m, nil
+}
+
+func (m Model) handleMetricsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.metricsCursor > 0 {
+			m.metricsCursor--
+		}
+	case "down", "j":
+		if m.metricsCursor < len(m.hosts)-1 {
+			m.metricsCursor++
+		}
+	case "1", "2", "3", "4", "5":
+		col := int(msg.Runes[0] - '0')
+		if col == m.sortColumn {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		// sort is applied in render via sorted index
+	case "r":
+		m.metrics = make(map[int]config.HostMetrics)
+		m.sortColumn = 0
+		m.flash = "Refreshing..."
+		return m, m.fetchAllMetrics()
+	case "esc":
+		m.view = viewHostList
 	}
 	return m, nil
 }

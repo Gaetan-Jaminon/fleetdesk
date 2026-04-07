@@ -1313,3 +1313,31 @@ func (m Model) fetchContainerDetail(name string) func() tea.Msg {
 		return fetchContainerDetailMsg{detail: detail}
 	}
 }
+
+// --- Metrics ---
+
+type fetchMetricsMsg struct {
+	index   int
+	metrics config.HostMetrics
+	err     error
+}
+
+func (m Model) fetchAllMetrics() tea.Cmd {
+	var cmds []tea.Cmd
+	for i, h := range m.hosts {
+		if h.Status != config.HostOnline {
+			continue
+		}
+		idx := i
+		sm := m.ssh
+		cmds = append(cmds, func() tea.Msg {
+			cmd := `top -bn1 -d0 2>/dev/null | grep '^%Cpu' | awk '{printf "%.0f\n", 100-$8}' && free 2>/dev/null | awk '/Mem/{printf "%.0f\n", $3*100/$2}' && df -h / 2>/dev/null | tail -1 | awk '{print $5}' && awk '{print $1}' /proc/loadavg 2>/dev/null && (uptime -s 2>/dev/null || echo unknown)`
+			out, err := sm.RunCommand(idx, cmd)
+			if err != nil {
+				return fetchMetricsMsg{index: idx, err: err}
+			}
+			return fetchMetricsMsg{index: idx, metrics: ssh.ParseMetricsOutput(out)}
+		})
+	}
+	return tea.Batch(cmds...)
+}

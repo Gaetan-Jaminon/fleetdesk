@@ -677,6 +677,33 @@ func ParseAuditEventLine(line string) config.AuditEvent {
 	return ae
 }
 
+// ParseMetricsOutput parses the metrics command output.
+// Expected: 5 lines — CPU%, MEM%, DISK%, LOAD, UP_SINCE
+func ParseMetricsOutput(output string) config.HostMetrics {
+	if output == "" {
+		return config.HostMetrics{}
+	}
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	m := config.HostMetrics{}
+	if len(lines) >= 1 {
+		fmt.Sscanf(strings.TrimSpace(lines[0]), "%d", &m.CPUPercent)
+	}
+	if len(lines) >= 2 {
+		fmt.Sscanf(strings.TrimSpace(lines[1]), "%d", &m.MemPercent)
+	}
+	if len(lines) >= 3 {
+		pct := strings.TrimSuffix(strings.TrimSpace(lines[2]), "%")
+		fmt.Sscanf(pct, "%d", &m.DiskPercent)
+	}
+	if len(lines) >= 4 {
+		m.Load = strings.TrimSpace(lines[3])
+	}
+	if len(lines) >= 5 {
+		m.Uptime = FormatDateEU(strings.TrimSpace(lines[4]))
+	}
+	return m
+}
+
 // ParseServiceStatus parses `systemctl show` key=value output into ServiceStatus.
 func ParseServiceStatus(output string) config.ServiceStatus {
 	props := make(map[string]string)
