@@ -83,7 +83,7 @@ func (m Model) renderNetworkFirewall() string {
 		srcCol += 2
 		actCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s", zoneCol, "ZONE", svcCol, "SERVICE/PORT", protoCol, "PROTOCOL", srcCol, "SOURCE", actCol, "ACTION")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s", zoneCol, "ZONE"+m.sortIndicator(1), svcCol, "SERVICE/PORT"+m.sortIndicator(2), protoCol, "PROTOCOL"+m.sortIndicator(3), srcCol, "SOURCE"+m.sortIndicator(4), actCol, "ACTION"+m.sortIndicator(5))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -135,6 +135,7 @@ func (m Model) renderNetworkFirewall() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"1-5", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

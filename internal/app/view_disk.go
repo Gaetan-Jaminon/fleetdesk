@@ -46,7 +46,7 @@ func (m Model) renderDiskList() string {
 		fsCol += 2
 		mountCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %6s  %6s  %6s  %5s  %-*s", fsCol, "FILESYSTEM", "SIZE", "USED", "AVAIL", "USE%", mountCol, "MOUNT")
+		hdr := fmt.Sprintf("     %-*s  %6s  %6s  %6s  %5s  %-*s", fsCol, "FILESYSTEM"+m.sortIndicator(1), "SIZE"+m.sortIndicator(2), "USED"+m.sortIndicator(3), "AVAIL"+m.sortIndicator(4), "USE%"+m.sortIndicator(5), mountCol, "MOUNT"+m.sortIndicator(6))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -102,6 +102,7 @@ func (m Model) renderDiskList() string {
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"1-6", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

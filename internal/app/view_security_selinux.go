@@ -56,7 +56,7 @@ func (m Model) renderSELinuxDenials() string {
 			}
 		}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s", timeCol, "TIME", actionCol, "ACTION", sourceCol, "SOURCE", targetCol, "TARGET", classCol, "CLASS")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s", timeCol, "TIME"+m.sortIndicator(1), actionCol, "ACTION"+m.sortIndicator(2), sourceCol, "SOURCE"+m.sortIndicator(3), targetCol, "TARGET"+m.sortIndicator(4), classCol, "CLASS"+m.sortIndicator(5))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -101,6 +101,7 @@ func (m Model) renderSELinuxDenials() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"1-5", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

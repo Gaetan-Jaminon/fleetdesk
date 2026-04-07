@@ -46,7 +46,7 @@ func (m Model) renderContainerList() string {
 		nameCol += 2
 		imgCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %s", nameCol, "CONTAINER", imgCol, "IMAGE", "STATUS")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", nameCol, "CONTAINER"+m.sortIndicator(1), imgCol, "IMAGE"+m.sortIndicator(2), "STATUS"+m.sortIndicator(3))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -94,6 +94,7 @@ func (m Model) renderContainerList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"1-3", "Sort"},
 		{"/", "Search"},
 		{"l", "Logs"},
 		{"i", "Inspect"},

@@ -337,69 +337,82 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 0: // Services
 			m.serviceCursor = 0
 			m.services = nil
+			m.sortColumn = 0
 			m.view = viewServiceList
 			return m, m.fetchServices()
 		case 1: // Containers
 			m.containerCursor = 0
 			m.containers = nil
+			m.sortColumn = 0
 			m.view = viewContainerList
 			return m, m.fetchContainers()
 		case 2: // Cron Jobs
 			m.cronCursor = 0
 			m.cronJobs = nil
+			m.sortColumn = 0
 			m.view = viewCronList
 			return m, m.fetchCronJobs()
 		case 3: // Error Logs -> Log Level Picker
 			m.logLevelCursor = 0
 			m.logLevels = nil
+			m.sortColumn = 0
 			m.view = viewLogLevelPicker
 			return m, m.fetchLogLevels()
 		case 4: // Updates
 			m.updateCursor = 0
 			m.updates = nil
+			m.sortColumn = 0
 			m.view = viewUpdateList
 			return m, m.fetchUpdates()
 		case 5: // Disk
 			m.diskCursor = 0
 			m.disks = nil
+			m.sortColumn = 0
 			m.view = viewDiskList
 			return m, m.fetchDisk()
 		case 6: // Subscription
 			m.subscriptionCursor = 0
 			m.subscriptions = nil
+			m.sortColumn = 0
 			m.view = viewSubscription
 			return m, m.fetchSubscription()
 		case 7: // Accounts
 			m.accountCursor = 0
 			m.accounts = nil
+			m.sortColumn = 0
 			m.view = viewAccountList
 			return m, m.fetchAccounts()
 		case 8: // Network
 			m.networkCursor = 0
+			m.sortColumn = 0
 			m.view = viewNetworkPicker
 			return m, m.fetchNetworkInfo()
 		case 9: // Failed Logins
 			m.failedLoginCursor = 0
 			m.failedLogins = nil
 			m.filterText = ""
+			m.sortColumn = 0
 			m.view = viewSecurityFailedLogins
 			return m, m.fetchFailedLogins()
 		case 10: // Sudo Activity
 			m.sudoCursor = 0
 			m.sudoEntries = nil
 			m.filterText = ""
+			m.sortColumn = 0
 			m.view = viewSecuritySudo
 			return m, m.fetchSudoActivity()
 		case 11: // SELinux Denials
 			m.selinuxCursor = 0
 			m.selinuxDenials = nil
 			m.filterText = ""
+			m.sortColumn = 0
 			m.view = viewSecuritySELinux
 			return m, m.fetchSELinuxDenials()
 		case 12: // Audit Summary
 			m.auditCursor = 0
 			m.auditEvents = nil
 			m.filterText = ""
+			m.sortColumn = 0
 			m.view = viewSecurityAudit
 			return m, m.fetchAuditSummary()
 		}
@@ -487,6 +500,17 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.flash = fmt.Sprintf("Loading %s...", unit)
 			return m, m.fetchServiceDetail(unit)
 		}
+	case "1", "2", "3", "4":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 4 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.services = nil
 		m.filterText = ""
@@ -541,6 +565,17 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := fmt.Sprintf("podman exec -it '%s' /bin/bash || podman exec -it '%s' /bin/sh", shellQuote(ctr), shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("exec %s on %s", ctr, h.Entry.Name))
 		}
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 3 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.containers = nil
 		m.flash = "Refreshing..."
@@ -571,6 +606,17 @@ func (m Model) handleCronListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.cronCursor = 0
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 3 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.cronJobs = nil
 		m.flash = "Refreshing..."
@@ -642,6 +688,17 @@ func (m Model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := fmt.Sprintf("sudo journalctl -p %s --since '%s' --no-pager -q --no-hostname | less", m.selectedLogLevel, since)
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("%s logs on %s", m.logLevels[m.logLevelCursor].Level, h.Entry.Name))
 		}
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 3 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.errorLogs = nil
 		m.filterText = ""
@@ -685,6 +742,17 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirmMessage = fmt.Sprintf("Apply SECURITY updates on %s? [Y/n]", h.Entry.Name)
 		m.confirmCmd = `sudo dnf update --security -y --setopt=skip_if_unavailable=1; echo ''; echo 'Security update complete. Press Enter to return...'`
 		m.confirmBanner = fmt.Sprintf("security update on %s", h.Entry.Name)
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 3 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.updates = nil
 		m.flash = "Refreshing..."
@@ -715,6 +783,17 @@ func (m Model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.diskCursor = 0
+	case "1", "2", "3", "4", "5", "6":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 6 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.disks = nil
 		m.flash = "Refreshing..."
@@ -789,6 +868,17 @@ func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.accountCursor = 0
+	case "1", "2", "3", "4", "5":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 5 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.accounts = nil
 		m.flash = "Refreshing..."
@@ -864,6 +954,17 @@ func (m Model) handleInterfaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.interfaceCursor = 0
+	case "1", "2", "3", "4":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 4 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.interfaces = nil
 		m.flash = "Refreshing..."
@@ -895,6 +996,17 @@ func (m Model) handlePortListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.portCursor = 0
+	case "1", "2", "3", "4":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 4 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.ports = nil
 		m.filterText = ""
@@ -926,6 +1038,17 @@ func (m Model) handleFirewallListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.firewallCursor = 0
+	case "1", "2", "3", "4", "5":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 5 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.firewallRules = nil
 		m.firewallBackend = ""
@@ -957,6 +1080,17 @@ func (m Model) handleRouteListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.routeCursor = 0
+	case "1", "2", "3", "4":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 4 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.routes = nil
 		m.flash = "Refreshing..."
@@ -988,6 +1122,17 @@ func (m Model) handleFailedLoginKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.failedLoginCursor = 0
+	case "1", "2", "3", "4":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 4 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.failedLogins = nil
 		m.filterText = ""
@@ -1020,6 +1165,17 @@ func (m Model) handleSudoKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.sudoCursor = 0
+	case "1", "2", "3", "4":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 4 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.sudoEntries = nil
 		m.filterText = ""
@@ -1052,6 +1208,17 @@ func (m Model) handleSELinuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.selinuxCursor = 0
+	case "1", "2", "3", "4", "5":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 5 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.selinuxDenials = nil
 		m.filterText = ""
@@ -1084,6 +1251,17 @@ func (m Model) handleAuditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.auditCursor = 0
+	case "1", "2", "3", "4", "5":
+		col := int(msg.Runes[0] - '0')
+		if col >= 1 && col <= 5 {
+			if col == m.sortColumn {
+				m.sortAsc = !m.sortAsc
+			} else {
+				m.sortColumn = col
+				m.sortAsc = true
+			}
+			m.sortView()
+		}
 	case "r":
 		m.auditEvents = nil
 		m.filterText = ""

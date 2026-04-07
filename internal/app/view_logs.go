@@ -167,7 +167,7 @@ func (m Model) renderErrorLogList() string {
 		}
 		unitCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %s", timeCol, "TIME", unitCol, "UNIT", "MESSAGE")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", timeCol, "TIME"+m.sortIndicator(1), unitCol, "UNIT"+m.sortIndicator(2), "MESSAGE"+m.sortIndicator(3))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -216,6 +216,7 @@ func (m Model) renderErrorLogList() string {
 	} else {
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
+			{"1-3", "Sort"},
 			{"Enter", "Detail"},
 			{"/", "Search"},
 			{"l", "Full Log"},

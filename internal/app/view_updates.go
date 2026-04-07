@@ -46,7 +46,7 @@ func (m Model) renderUpdateList() string {
 		pkgCol += 2
 		verCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %s", pkgCol, "PACKAGE", verCol, "VERSION", "TYPE")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", pkgCol, "PACKAGE"+m.sortIndicator(1), verCol, "VERSION"+m.sortIndicator(2), "TYPE"+m.sortIndicator(3))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -106,6 +106,7 @@ func (m Model) renderUpdateList() string {
 	} else {
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
+			{"1-3", "Sort"},
 			{"/", "Search"},
 			{"u", "Update All"},
 			{"p", "Security Only"},

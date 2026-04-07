@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -262,6 +263,291 @@ func (m Model) filteredRoutes() []config.Route {
 		}
 	}
 	return filtered
+}
+
+// sortIndicator returns ▲ or ▼ if the given column is the active sort column.
+func (m Model) sortIndicator(col int) string {
+	if m.sortColumn != col {
+		return ""
+	}
+	if m.sortAsc {
+		return " \u25b2"
+	}
+	return " \u25bc"
+}
+
+// sortView applies user-selected column sort to the current view's data.
+func (m *Model) sortView() {
+	if m.sortColumn == 0 {
+		return
+	}
+	switch m.view {
+	case viewServiceList:
+		m.sortServices()
+	case viewContainerList:
+		m.sortContainers()
+	case viewCronList:
+		m.sortCronJobs()
+	case viewErrorLogList:
+		m.sortErrorLogs()
+	case viewUpdateList:
+		m.sortUpdates()
+	case viewDiskList:
+		m.sortDisks()
+	case viewAccountList:
+		m.sortAccounts()
+	case viewNetworkInterfaces:
+		m.sortInterfaces()
+	case viewNetworkPorts:
+		m.sortPorts()
+	case viewNetworkRoutes:
+		m.sortRoutes()
+	case viewNetworkFirewall:
+		m.sortFirewallRules()
+	case viewSecurityFailedLogins:
+		m.sortFailedLogins()
+	case viewSecuritySudo:
+		m.sortSudoEntries()
+	case viewSecuritySELinux:
+		m.sortSELinuxDenials()
+	case viewSecurityAudit:
+		m.sortAuditEvents()
+	}
+}
+
+func (m *Model) sortServices() {
+	sort.Slice(m.services, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.services[i].Name, m.services[j].Name
+		case 2: vi, vj = m.services[i].State, m.services[j].State
+		case 3: vi, vj = m.services[i].Enabled, m.services[j].Enabled
+		case 4: vi, vj = m.services[i].Description, m.services[j].Description
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortContainers() {
+	sort.Slice(m.containers, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.containers[i].Name, m.containers[j].Name
+		case 2: vi, vj = m.containers[i].Image, m.containers[j].Image
+		case 3: vi, vj = m.containers[i].Status, m.containers[j].Status
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortCronJobs() {
+	sort.Slice(m.cronJobs, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.cronJobs[i].Schedule, m.cronJobs[j].Schedule
+		case 2: vi, vj = m.cronJobs[i].Source, m.cronJobs[j].Source
+		case 3: vi, vj = m.cronJobs[i].Command, m.cronJobs[j].Command
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortErrorLogs() {
+	sort.Slice(m.errorLogs, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.errorLogs[i].Time, m.errorLogs[j].Time
+		case 2: vi, vj = m.errorLogs[i].Unit, m.errorLogs[j].Unit
+		case 3: vi, vj = m.errorLogs[i].Message, m.errorLogs[j].Message
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortUpdates() {
+	sort.Slice(m.updates, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.updates[i].Package, m.updates[j].Package
+		case 2: vi, vj = m.updates[i].Version, m.updates[j].Version
+		case 3: vi, vj = m.updates[i].Type, m.updates[j].Type
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortDisks() {
+	sort.Slice(m.disks, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.disks[i].Filesystem, m.disks[j].Filesystem
+		case 2: vi, vj = m.disks[i].Size, m.disks[j].Size
+		case 3: vi, vj = m.disks[i].Used, m.disks[j].Used
+		case 4: vi, vj = m.disks[i].Avail, m.disks[j].Avail
+		case 5: vi, vj = m.disks[i].UsePercent, m.disks[j].UsePercent
+		case 6: vi, vj = m.disks[i].Mount, m.disks[j].Mount
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortAccounts() {
+	sort.Slice(m.accounts, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.accounts[i].User, m.accounts[j].User
+		case 2: vi, vj = m.accounts[i].Groups, m.accounts[j].Groups
+		case 3: vi, vj = m.accounts[i].Shell, m.accounts[j].Shell
+		case 4: vi, vj = m.accounts[i].LastLogin, m.accounts[j].LastLogin
+		case 5: vi, vj = m.accounts[i].PasswordStatus, m.accounts[j].PasswordStatus
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortInterfaces() {
+	sort.Slice(m.interfaces, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.interfaces[i].Name, m.interfaces[j].Name
+		case 2: vi, vj = m.interfaces[i].State, m.interfaces[j].State
+		case 3: vi, vj = m.interfaces[i].IPs, m.interfaces[j].IPs
+		case 4: vi, vj = m.interfaces[i].MTU, m.interfaces[j].MTU
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortPorts() {
+	sort.Slice(m.ports, func(i, j int) bool {
+		switch m.sortColumn {
+		case 1:
+			if m.sortAsc { return m.ports[i].Port < m.ports[j].Port }
+			return m.ports[i].Port > m.ports[j].Port
+		case 2:
+			vi, vj := m.ports[i].Protocol, m.ports[j].Protocol
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		case 3:
+			vi, vj := m.ports[i].Process, m.ports[j].Process
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		case 4:
+			vi, vj := m.ports[i].BindAddress, m.ports[j].BindAddress
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		}
+		return false
+	})
+}
+
+func (m *Model) sortRoutes() {
+	sort.Slice(m.routes, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.routes[i].Destination, m.routes[j].Destination
+		case 2: vi, vj = m.routes[i].Gateway, m.routes[j].Gateway
+		case 3: vi, vj = m.routes[i].Interface, m.routes[j].Interface
+		case 4: vi, vj = m.routes[i].Metric, m.routes[j].Metric
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortFirewallRules() {
+	sort.Slice(m.firewallRules, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.firewallRules[i].Zone, m.firewallRules[j].Zone
+		case 2: vi, vj = m.firewallRules[i].Service, m.firewallRules[j].Service
+		case 3: vi, vj = m.firewallRules[i].Protocol, m.firewallRules[j].Protocol
+		case 4: vi, vj = m.firewallRules[i].Source, m.firewallRules[j].Source
+		case 5: vi, vj = m.firewallRules[i].Action, m.firewallRules[j].Action
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortFailedLogins() {
+	sort.Slice(m.failedLogins, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.failedLogins[i].Time, m.failedLogins[j].Time
+		case 2: vi, vj = m.failedLogins[i].User, m.failedLogins[j].User
+		case 3: vi, vj = m.failedLogins[i].Source, m.failedLogins[j].Source
+		case 4: vi, vj = m.failedLogins[i].Method, m.failedLogins[j].Method
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortSudoEntries() {
+	sort.Slice(m.sudoEntries, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.sudoEntries[i].Time, m.sudoEntries[j].Time
+		case 2: vi, vj = m.sudoEntries[i].User, m.sudoEntries[j].User
+		case 3: vi, vj = m.sudoEntries[i].Result, m.sudoEntries[j].Result
+		case 4: vi, vj = m.sudoEntries[i].Command, m.sudoEntries[j].Command
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortSELinuxDenials() {
+	sort.Slice(m.selinuxDenials, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.selinuxDenials[i].Time, m.selinuxDenials[j].Time
+		case 2: vi, vj = m.selinuxDenials[i].Action, m.selinuxDenials[j].Action
+		case 3: vi, vj = m.selinuxDenials[i].Source, m.selinuxDenials[j].Source
+		case 4: vi, vj = m.selinuxDenials[i].Target, m.selinuxDenials[j].Target
+		case 5: vi, vj = m.selinuxDenials[i].Class, m.selinuxDenials[j].Class
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
+}
+
+func (m *Model) sortAuditEvents() {
+	sort.Slice(m.auditEvents, func(i, j int) bool {
+		var vi, vj string
+		switch m.sortColumn {
+		case 1: vi, vj = m.auditEvents[i].Time, m.auditEvents[j].Time
+		case 2: vi, vj = m.auditEvents[i].Type, m.auditEvents[j].Type
+		case 3: vi, vj = m.auditEvents[i].User, m.auditEvents[j].User
+		case 4: vi, vj = m.auditEvents[i].Result, m.auditEvents[j].Result
+		case 5: vi, vj = m.auditEvents[i].Message, m.auditEvents[j].Message
+		default: return false
+		}
+		if m.sortAsc { return vi < vj }
+		return vi > vj
+	})
 }
 
 // parseLogFields parses structured key=value pairs from a log message.

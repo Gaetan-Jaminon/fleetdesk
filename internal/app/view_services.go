@@ -185,7 +185,7 @@ func (m Model) renderServiceList() string {
 		nameCol += 2
 		enabledCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-10s  %-*s  %s", nameCol, "SERVICE", "STATE", enabledCol, "ENABLED", "DESCRIPTION")
+		hdr := fmt.Sprintf("     %-*s  %-10s  %-*s  %s", nameCol, "SERVICE"+m.sortIndicator(1), "STATE"+m.sortIndicator(2), enabledCol, "ENABLED"+m.sortIndicator(3), "DESCRIPTION"+m.sortIndicator(4))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -240,6 +240,7 @@ func (m Model) renderServiceList() string {
 	} else {
 		s += m.renderHintBar([][]string{
 			{"\u2191\u2193", "Navigate"},
+			{"1-4", "Sort"},
 			{"Enter", "Detail"},
 			{"/", "Search"},
 			{"r", "Refresh"},

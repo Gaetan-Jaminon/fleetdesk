@@ -70,7 +70,7 @@ func (m Model) renderNetworkRoutes() string {
 		ifCol += 2
 		metCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s", destCol, "DESTINATION", gwCol, "GATEWAY", ifCol, "INTERFACE", metCol, "METRIC")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s", destCol, "DESTINATION"+m.sortIndicator(1), gwCol, "GATEWAY"+m.sortIndicator(2), ifCol, "INTERFACE"+m.sortIndicator(3), metCol, "METRIC"+m.sortIndicator(4))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -120,6 +120,7 @@ func (m Model) renderNetworkRoutes() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"1-4", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
