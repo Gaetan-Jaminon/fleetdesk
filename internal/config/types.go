@@ -85,6 +85,15 @@ const (
 	HostUnreachable
 )
 
+// HostMetrics holds live system metrics for a host.
+type HostMetrics struct {
+	CPUPercent  int
+	MemPercent  int
+	DiskPercent int
+	Load        string
+	Uptime      string
+}
+
 // Service represents a systemd unit on a remote host.
 type Service struct {
 	Name        string

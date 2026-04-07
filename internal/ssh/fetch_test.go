@@ -975,6 +975,61 @@ func TestParseContainerInspect_NoPorts(t *testing.T) {
 	}
 }
 
+func TestParseMetricsOutput(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   config.HostMetrics
+	}{
+		{
+			name:   "full output",
+			output: "45\n72\n60%\n1.23\n2026-04-01 10:00:00",
+			want:   config.HostMetrics{CPUPercent: 45, MemPercent: 72, DiskPercent: 60, Load: "1.23", Uptime: "01/04/2026"},
+		},
+		{
+			name:   "high values",
+			output: "99\n95\n92%\n8.50\n2026-03-15 08:30:00",
+			want:   config.HostMetrics{CPUPercent: 99, MemPercent: 95, DiskPercent: 92, Load: "8.50", Uptime: "15/03/2026"},
+		},
+		{
+			name:   "no percent sign on disk",
+			output: "10\n20\n30\n0.05\n2026-01-01 00:00:00",
+			want:   config.HostMetrics{CPUPercent: 10, MemPercent: 20, DiskPercent: 30, Load: "0.05", Uptime: "01/01/2026"},
+		},
+		{
+			name:   "empty output",
+			output: "",
+			want:   config.HostMetrics{},
+		},
+		{
+			name:   "partial output",
+			output: "55\n40",
+			want:   config.HostMetrics{CPUPercent: 55, MemPercent: 40},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseMetricsOutput(tt.output)
+			if got.CPUPercent != tt.want.CPUPercent {
+				t.Errorf("CPUPercent = %d, want %d", got.CPUPercent, tt.want.CPUPercent)
+			}
+			if got.MemPercent != tt.want.MemPercent {
+				t.Errorf("MemPercent = %d, want %d", got.MemPercent, tt.want.MemPercent)
+			}
+			if got.DiskPercent != tt.want.DiskPercent {
+				t.Errorf("DiskPercent = %d, want %d", got.DiskPercent, tt.want.DiskPercent)
+			}
+			if got.Load != tt.want.Load {
+				t.Errorf("Load = %q, want %q", got.Load, tt.want.Load)
+			}
+			if got.Uptime != tt.want.Uptime {
+				t.Errorf("Uptime = %q, want %q", got.Uptime, tt.want.Uptime)
+			}
+		})
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 

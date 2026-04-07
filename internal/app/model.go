@@ -28,6 +28,7 @@ type view int
 const (
 	viewFleetPicker view = iota
 	viewHostList
+	viewMetrics
 	viewResourcePicker
 	viewServiceList
 	viewContainerList
@@ -66,6 +67,12 @@ type Model struct {
 	selectedFleet int
 	hosts         []config.Host
 	hostCursor    int
+
+	// metrics dashboard
+	metrics          map[int]config.HostMetrics
+	metricsCursor    int
+	metricsSortedIdx []int          // sorted host indices for metrics view
+	metricErrors     map[int]bool   // hosts where metrics fetch failed
 
 	// resource picker
 	selectedHost   int
@@ -240,6 +247,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// check if more hosts need the same password
 		return m, m.retryRemainingPasswordHosts()
+
+	case fetchMetricsMsg:
+		if msg.err != nil {
+			if m.metricErrors == nil {
+				m.metricErrors = make(map[int]bool)
+			}
+			m.metricErrors[msg.index] = true
+		} else {
+			if m.metrics == nil {
+				m.metrics = make(map[int]config.HostMetrics)
+			}
+			m.metrics[msg.index] = msg.metrics
+		}
+		m.flash = ""
+		return m, nil
 
 	case fetchServicesMsg:
 		if msg.err != nil {
@@ -573,6 +595,8 @@ func (m Model) View() string {
 		return m.renderFleetPicker()
 	case viewHostList:
 		return m.renderHostList()
+	case viewMetrics:
+		return m.renderMetrics()
 	case viewResourcePicker:
 		return m.renderResourcePicker()
 	case viewServiceList:
