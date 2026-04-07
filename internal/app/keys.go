@@ -23,22 +23,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterActive = false
 			m.serviceCursor = 0
 			m.errorCursor = 0
+			m.accountCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
 			m.serviceCursor = 0
 			m.errorCursor = 0
+			m.accountCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
 				m.serviceCursor = 0
 				m.errorCursor = 0
+				m.accountCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
 				m.filterText += string(msg.Runes)
 				m.serviceCursor = 0
 				m.errorCursor = 0
+				m.accountCursor = 0
 			}
 		}
 		return m, nil
@@ -628,7 +632,12 @@ func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = "Refreshing..."
 		return m, m.fetchAccounts()
 	case "esc":
-		m.view = viewResourcePicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.accountCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }

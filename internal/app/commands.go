@@ -608,8 +608,10 @@ func (m Model) fetchAccounts() func() tea.Msg {
 	return func() tea.Msg {
 		// Combine getent passwd (local users) + /home/* dirs (IPA/IDM users) for a complete list.
 		// Only fetch basic info here — details (lastlog, passwd status, chage) are fetched on demand.
-		cmd := `(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while read user; do
-  eval "$(getent passwd "$user" | awk -F: '{printf "uid=%s shell=%s\n", $3, $7}')"
+		cmd := `(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while IFS= read -r user; do
+  entry=$(getent passwd "$user")
+  uid=$(printf '%s' "$entry" | cut -d: -f3)
+  shell=$(printf '%s' "$entry" | cut -d: -f7)
   groups=$(groups "$user" 2>/dev/null | cut -d: -f2 | xargs)
   echo "$user|$uid|$groups|$shell"
 done`
