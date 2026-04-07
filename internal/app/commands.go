@@ -392,7 +392,7 @@ func (m Model) fetchErrorLogs() func() tea.Msg {
 	level := m.selectedLogLevel
 
 	return func() tea.Msg {
-		cmd := fmt.Sprintf("sudo journalctl -p %s --since '%s' --no-pager -q -o short --no-hostname 2>/dev/null | tail -500", level, since)
+		cmd := fmt.Sprintf("(sudo journalctl -p %s --since '%s' --no-pager -q -o short --no-hostname --reverse 2>/dev/null | head -500) | cat", level, since)
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchErrorLogsMsg{err: fmt.Errorf("error logs: %w", err)}

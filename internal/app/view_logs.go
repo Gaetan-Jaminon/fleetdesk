@@ -125,7 +125,15 @@ func (m Model) renderErrorLogList() string {
 		return s
 	}
 
-	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Logs"
+	// show which log level we're viewing
+	logLevelName := "Logs"
+	for _, l := range m.logLevels {
+		if l.Code == m.selectedLogLevel {
+			logLevelName = l.Level + " Logs"
+			break
+		}
+	}
+	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a " + logLevelName
 	filterInfo := ""
 	if m.filterText != "" {
 		filterInfo = fmt.Sprintf(" [filter: %s]", m.filterText)
