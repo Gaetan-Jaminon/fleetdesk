@@ -133,6 +133,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleUpdateListKeys(msg)
 	case viewDiskList:
 		return m.handleDiskListKeys(msg)
+	case viewAccountList:
+		return m.handleAccountListKeys(msg)
 	case viewSubscription:
 		return m.handleSubscriptionKeys(msg)
 	}
@@ -295,7 +297,10 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewSubscription
 			return m, m.fetchSubscription()
 		case 7: // Accounts
-			m.flash = "Accounts view coming in v0.5.0"
+			m.accountCursor = 0
+			m.accounts = nil
+			m.view = viewAccountList
+			return m, m.fetchAccounts()
 		case 8: // Network
 			m.flash = "Network view coming in v0.5.0"
 		}
@@ -585,6 +590,39 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.subscriptions = nil
 		m.flash = "Refreshing..."
 		return m, m.fetchSubscription()
+	case "esc":
+		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.accountCursor > 0 {
+			m.accountCursor--
+		}
+	case "down", "j":
+		accts := m.filteredAccounts()
+		if m.accountCursor < len(accts)-1 {
+			m.accountCursor++
+		}
+	case "i":
+		accts := m.filteredAccounts()
+		if len(accts) > 0 {
+			h := m.hosts[m.selectedHost]
+			user := accts[m.accountCursor].User
+			cmd := fmt.Sprintf("id '%s' && echo '---' && chage -l '%s' && echo '---' && lastlog -u '%s' && echo '---' && sudo -l -U '%s' 2>/dev/null", shellQuote(user), shellQuote(user), shellQuote(user), shellQuote(user))
+			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("account detail: %s on %s", user, h.Entry.Name))
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.accountCursor = 0
+	case "r":
+		m.accounts = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchAccounts()
 	case "esc":
 		m.view = viewResourcePicker
 	}

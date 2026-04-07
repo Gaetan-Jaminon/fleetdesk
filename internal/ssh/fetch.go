@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,6 +111,62 @@ func IsAuthError(err error) bool {
 	return strings.Contains(s, "unable to authenticate") ||
 		strings.Contains(s, "no supported methods remain") ||
 		strings.Contains(s, "handshake failed")
+}
+
+// ParseAccountLine parses a pipe-delimited account line:
+// user|uid|groups|shell|last_login|pw_status|expiry
+func ParseAccountLine(line string) config.Account {
+	if line == "" {
+		return config.Account{}
+	}
+	parts := strings.SplitN(line, "|", 7)
+	if len(parts) < 2 {
+		return config.Account{}
+	}
+
+	a := config.Account{
+		User: parts[0],
+	}
+	fmt.Sscanf(parts[1], "%d", &a.UID)
+
+	if len(parts) > 2 {
+		a.Groups = parts[2]
+	}
+	if len(parts) > 3 {
+		a.Shell = parts[3]
+	}
+	if len(parts) > 4 {
+		a.LastLogin = parts[4]
+	}
+	if len(parts) > 5 {
+		a.PasswordStatus = parts[5]
+	}
+	if len(parts) > 6 {
+		a.Expiry = parts[6]
+	}
+
+	// detect sudo: wheel or sudo group
+	groups := strings.Fields(a.Groups)
+	for _, g := range groups {
+		if g == "wheel" || g == "sudo" {
+			a.IsSudo = true
+			break
+		}
+	}
+
+	// detect locked status
+	a.IsLocked = a.PasswordStatus == "LK" || a.PasswordStatus == "L"
+
+	return a
+}
+
+// AccountStateOrder returns sort priority for account states.
+// Lower = shown first.
+func AccountStateOrder(a config.Account) int {
+	if a.IsLocked {
+		return 0
+	}
+	return 1
 }
 
 // ExpandPath expands ~ in paths.

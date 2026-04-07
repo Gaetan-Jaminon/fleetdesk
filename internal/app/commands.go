@@ -594,6 +594,51 @@ func (m Model) fetchSubscription() func() tea.Msg {
 	}
 }
 
+// --- Accounts ---
+
+type fetchAccountsMsg struct {
+	accounts []config.Account
+	err      error
+}
+
+func (m Model) fetchAccounts() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `getent passwd | awk -F: '$3 >= 1000 && $3 < 65534' | while IFS=: read user x uid gid desc home shell; do
+  groups=$(groups "$user" 2>/dev/null | cut -d: -f2 | xargs)
+  lastlog=$(lastlog -u "$user" 2>/dev/null | tail -1 | awk '{if ($NF ~ /in/) print "Never"; else print $4" "$5" "$6" "$9}')
+  pwstatus=$(sudo passwd -S "$user" 2>/dev/null | awk '{print $2}')
+  expiry=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+  echo "$user|$uid|$groups|$shell|$lastlog|$pwstatus|$expiry"
+done`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil {
+			return fetchAccountsMsg{err: fmt.Errorf("accounts: %w", err)}
+		}
+
+		var accounts []config.Account
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			a := ssh.ParseAccountLine(line)
+			if a.User != "" {
+				accounts = append(accounts, a)
+			}
+		}
+		sort.Slice(accounts, func(i, j int) bool {
+			oi, oj := ssh.AccountStateOrder(accounts[i]), ssh.AccountStateOrder(accounts[j])
+			if oi != oj {
+				return oi < oj
+			}
+			return accounts[i].User < accounts[j].User
+		})
+		return fetchAccountsMsg{accounts: accounts}
+	}
+}
+
 // --- Disk ---
 
 type fetchDiskMsg struct {

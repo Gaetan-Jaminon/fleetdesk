@@ -37,6 +37,7 @@ const (
 	viewUpdateList
 	viewDiskList
 	viewSubscription
+	viewAccountList
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -90,6 +91,10 @@ type Model struct {
 	// subscription
 	subscriptions      []config.Subscription
 	subscriptionCursor int
+
+	// accounts
+	accounts      []config.Account
+	accountCursor int
 
 	// filter / search
 	filterActive bool
@@ -248,6 +253,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchAccountsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.accounts == nil {
+				m.accounts = []config.Account{}
+			} else {
+				m.accounts = msg.accounts
+			}
+		}
+		return m, nil
+
 	case fetchDiskMsg:
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
@@ -297,6 +315,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewSubscription:
 			m.subscriptions = nil
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchSubscription())
+		case viewAccountList:
+			m.accounts = nil
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchAccounts())
 		}
 		return m, tea.EnterAltScreen
 
@@ -335,6 +356,8 @@ func (m Model) View() string {
 		return m.renderUpdateList()
 	case viewDiskList:
 		return m.renderDiskList()
+	case viewAccountList:
+		return m.renderAccountList()
 	case viewSubscription:
 		return m.renderSubscription()
 	}
