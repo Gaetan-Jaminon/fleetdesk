@@ -146,6 +146,10 @@ type Model struct {
 	filterActive bool
 	filterText   string
 
+	// column sort
+	sortColumn int  // 0 = default sort, 1+ = user-selected column
+	sortAsc    bool
+
 	// log detail
 	showLogDetail bool
 

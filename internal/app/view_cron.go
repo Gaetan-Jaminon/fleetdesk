@@ -46,7 +46,7 @@ func (m Model) renderCronList() string {
 		schedCol += 2
 		srcCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %s", schedCol, "SCHEDULE", srcCol, "SOURCE", "COMMAND")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s", schedCol, "SCHEDULE"+m.sortIndicator(1), srcCol, "SOURCE"+m.sortIndicator(2), "COMMAND"+m.sortIndicator(3))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -103,6 +103,7 @@ func (m Model) renderCronList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"1-3", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

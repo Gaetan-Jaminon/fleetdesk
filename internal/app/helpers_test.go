@@ -201,3 +201,109 @@ func TestFilteredRoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestSortIndicator(t *testing.T) {
+	tests := []struct {
+		name       string
+		sortColumn int
+		sortAsc    bool
+		col        int
+		want       string
+	}{
+		{"no sort", 0, true, 1, ""},
+		{"different column", 2, true, 1, ""},
+		{"ascending", 1, true, 1, " \u25b2"},
+		{"descending", 1, false, 1, " \u25bc"},
+		{"col 3 asc", 3, true, 3, " \u25b2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{sortColumn: tt.sortColumn, sortAsc: tt.sortAsc}
+			got := m.sortIndicator(tt.col)
+			if got != tt.want {
+				t.Errorf("sortIndicator(%d) = %q, want %q", tt.col, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortServices(t *testing.T) {
+	m := Model{
+		view: viewServiceList,
+		services: []config.Service{
+			{Name: "nginx", State: "running", Enabled: "enabled", Description: "Web server"},
+			{Name: "apache", State: "failed", Enabled: "disabled", Description: "HTTP server"},
+			{Name: "sshd", State: "running", Enabled: "enabled", Description: "SSH daemon"},
+		},
+	}
+
+	// sort by name ascending
+	m.sortColumn = 1
+	m.sortAsc = true
+	m.sortView()
+	if m.services[0].Name != "apache" || m.services[2].Name != "sshd" {
+		t.Errorf("sort by name asc: got %s, %s, %s", m.services[0].Name, m.services[1].Name, m.services[2].Name)
+	}
+
+	// sort by name descending
+	m.sortAsc = false
+	m.sortView()
+	if m.services[0].Name != "sshd" || m.services[2].Name != "apache" {
+		t.Errorf("sort by name desc: got %s, %s, %s", m.services[0].Name, m.services[1].Name, m.services[2].Name)
+	}
+
+	// sort by state ascending
+	m.sortColumn = 2
+	m.sortAsc = true
+	m.sortView()
+	if m.services[0].State != "failed" {
+		t.Errorf("sort by state asc: first should be failed, got %s", m.services[0].State)
+	}
+
+	// no sort (column 0) — should not change order
+	before := make([]config.Service, len(m.services))
+	copy(before, m.services)
+	m.sortColumn = 0
+	m.sortView()
+	for i := range before {
+		if before[i].Name != m.services[i].Name {
+			t.Errorf("sortColumn=0 changed order")
+			break
+		}
+	}
+}
+
+func TestSortContainers(t *testing.T) {
+	m := Model{
+		view: viewContainerList,
+		containers: []config.Container{
+			{Name: "redis", Image: "redis:7", Status: "Up 1h"},
+			{Name: "api", Image: "app:latest", Status: "Exited (1)"},
+			{Name: "nginx", Image: "nginx:latest", Status: "Up 3h"},
+		},
+		sortColumn: 1,
+		sortAsc:    true,
+	}
+	m.sortView()
+	if m.containers[0].Name != "api" || m.containers[2].Name != "redis" {
+		t.Errorf("sort containers by name asc: got %s, %s, %s", m.containers[0].Name, m.containers[1].Name, m.containers[2].Name)
+	}
+}
+
+func TestSortPorts(t *testing.T) {
+	m := Model{
+		view: viewNetworkPorts,
+		ports: []config.ListeningPort{
+			{Port: 443, Protocol: "tcp", Process: "nginx"},
+			{Port: 22, Protocol: "tcp", Process: "sshd"},
+			{Port: 80, Protocol: "tcp", Process: "nginx"},
+		},
+		sortColumn: 1,
+		sortAsc:    true,
+	}
+	m.sortView()
+	if m.ports[0].Port != 22 || m.ports[2].Port != 443 {
+		t.Errorf("sort ports by port asc: got %d, %d, %d", m.ports[0].Port, m.ports[1].Port, m.ports[2].Port)
+	}
+}

@@ -106,7 +106,7 @@ func (m Model) renderAccountList() string {
 		groupCol += 2
 		shellCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %s", userCol, "USER", uidCol, "UID", groupCol, "GROUPS", "SHELL")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %s", userCol, "USER"+m.sortIndicator(1), uidCol, "UID"+m.sortIndicator(2), groupCol, "GROUPS"+m.sortIndicator(3), "SHELL"+m.sortIndicator(4))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -164,6 +164,7 @@ func (m Model) renderAccountList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"1-4", "Sort"},
 {"Enter", "Detail"},
 		{"/", "Search"},
 		{"r", "Refresh"},

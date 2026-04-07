@@ -52,7 +52,7 @@ func (m Model) renderFailedLogins() string {
 			}
 		}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s", timeCol, "TIME", userCol, "USER", sourceCol, "SOURCE", methodCol, "METHOD")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s", timeCol, "TIME"+m.sortIndicator(1), userCol, "USER"+m.sortIndicator(2), sourceCol, "SOURCE"+m.sortIndicator(3), methodCol, "METHOD"+m.sortIndicator(4))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -97,6 +97,7 @@ func (m Model) renderFailedLogins() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"1-4", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

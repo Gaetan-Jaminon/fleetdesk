@@ -58,7 +58,7 @@ func (m Model) renderNetworkPorts() string {
 		procCol += 2
 		bindCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s", portCol, "PORT", protoCol, "PROTOCOL", procCol, "PROCESS", bindCol, "BIND ADDRESS")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s", portCol, "PORT"+m.sortIndicator(1), protoCol, "PROTOCOL"+m.sortIndicator(2), procCol, "PROCESS"+m.sortIndicator(3), bindCol, "BIND ADDRESS"+m.sortIndicator(4))
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -111,6 +111,7 @@ func (m Model) renderNetworkPorts() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"1-4", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
