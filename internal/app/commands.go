@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -8,26 +8,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
-)
-
-// Bridge functions to internal/ssh.
-var (
-	serviceStateOrder   = issh.ServiceStateOrder
-	containerStateOrder = issh.ContainerStateOrder
-	matchesFilter       = issh.MatchesFilter
-	extractPkgName      = issh.ExtractPkgName
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
 // fetchServicesMsg is sent when service list fetch completes.
 type fetchServicesMsg struct {
-	services []service
+	services []config.Service
 	err      error
 }
 
 // fetchContainersMsg is sent when container list fetch completes.
 type fetchContainersMsg struct {
-	containers []container
+	containers []config.Container
 	err        error
 }
 
@@ -39,7 +32,7 @@ type serviceActionMsg struct {
 }
 
 // fetchServices returns a tea.Cmd that fetches systemd services from a host.
-func (m model) fetchServices() func() tea.Msg {
+func (m Model) fetchServices() func() tea.Msg {
 	idx := m.selectedHost
 	h := m.hosts[idx]
 	sm := m.ssh
@@ -84,23 +77,23 @@ func (m model) fetchServices() func() tea.Msg {
 		}
 
 		// parse services from list-units
-		var services []service
+		var services []config.Service
 		for _, line := range strings.Split(strings.TrimSpace(unitsOut), "\n") {
 			if line == "" {
 				continue
 			}
-			svc := parseServiceLine(line)
+			svc := ssh.ParseServiceLine(line)
 			if svc.Name != "" {
 				if en, ok := enabledMap[svc.Name]; ok {
 					svc.Enabled = en
 				}
-				if matchesFilter(svc.Name, filters) {
+				if ssh.MatchesFilter(svc.Name, filters) {
 					services = append(services, svc)
 				}
 			}
 		}
 		sort.Slice(services, func(i, j int) bool {
-			oi, oj := serviceStateOrder(services[i].State), serviceStateOrder(services[j].State)
+			oi, oj := ssh.ServiceStateOrder(services[i].State), ssh.ServiceStateOrder(services[j].State)
 			if oi != oj {
 				return oi < oj
 			}
@@ -110,10 +103,8 @@ func (m model) fetchServices() func() tea.Msg {
 	}
 }
 
-var parseServiceLine = issh.ParseServiceLine
-
 // fetchContainers returns a tea.Cmd that fetches Podman containers from a host.
-func (m model) fetchContainers() func() tea.Msg {
+func (m Model) fetchContainers() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
 
@@ -124,7 +115,7 @@ func (m model) fetchContainers() func() tea.Msg {
 			return fetchContainersMsg{err: fmt.Errorf("list containers: %w", err)}
 		}
 
-		var containers []container
+		var containers []config.Container
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if line == "" {
 				continue
@@ -133,7 +124,7 @@ func (m model) fetchContainers() func() tea.Msg {
 			if len(parts) < 3 {
 				continue
 			}
-			c := container{
+			c := config.Container{
 				Name:   parts[0],
 				Image:  parts[1],
 				Status: parts[2],
@@ -144,7 +135,7 @@ func (m model) fetchContainers() func() tea.Msg {
 			containers = append(containers, c)
 		}
 		sort.Slice(containers, func(i, j int) bool {
-			oi, oj := containerStateOrder(containers[i].Status), containerStateOrder(containers[j].Status)
+			oi, oj := ssh.ContainerStateOrder(containers[i].Status), ssh.ContainerStateOrder(containers[j].Status)
 			if oi != oj {
 				return oi < oj
 			}
@@ -154,10 +145,9 @@ func (m model) fetchContainers() func() tea.Msg {
 	}
 }
 
-
-// svcAction returns a tea.Cmd that runs a systemctl action via terminal handover with sudo.
+// confirmSvcAction returns a tea.Cmd that runs a systemctl action via terminal handover with sudo.
 // After the action, it shows systemctl status so the user can see the result.
-func (m model) confirmSvcAction(action string) (tea.Model, tea.Cmd) {
+func (m Model) confirmSvcAction(action string) (tea.Model, tea.Cmd) {
 	h := m.hosts[m.selectedHost]
 	unit := m.services[m.serviceCursor].Name + ".service"
 
@@ -181,36 +171,14 @@ func (m model) confirmSvcAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) svcAction(action string) tea.Cmd {
-	h := m.hosts[m.selectedHost]
-	unit := m.services[m.serviceCursor].Name + ".service"
-
-	sysctl := "sudo systemctl"
-	statusctl := "sudo systemctl"
-	if h.Entry.SystemdMode == "user" {
-		sysctl = "systemctl --user"
-		statusctl = "systemctl --user"
-	}
-
-	cmd := fmt.Sprintf(
-		`%s %s %s; rc=$?; echo ''; if [ $rc -eq 0 ]; then echo '✓ %s %s succeeded'; else echo '✗ %s %s failed (exit '$rc')'; fi; echo ''; %s status %s --no-pager 2>&1; true`,
-		sysctl, action, unit,
-		action, unit,
-		action, unit,
-		statusctl, unit,
-	)
-	banner := fmt.Sprintf("%s %s on %s", action, unit, h.Entry.Name)
-	return sshHandover(h, []string{cmd}, banner)
-}
-
 // --- Cron Jobs ---
 
 type fetchCronMsg struct {
-	jobs []cronJob
+	jobs []config.CronJob
 	err  error
 }
 
-func (m model) fetchCronJobs() func() tea.Msg {
+func (m Model) fetchCronJobs() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
 
@@ -221,7 +189,7 @@ func (m model) fetchCronJobs() func() tea.Msg {
 			return fetchCronMsg{err: fmt.Errorf("cron: %w", err)}
 		}
 
-		var jobs []cronJob
+		var jobs []config.CronJob
 		parts := strings.SplitN(out, "===CROND===", 2)
 		crontabSection := ""
 		crondSection := ""
@@ -240,7 +208,7 @@ func (m model) fetchCronJobs() func() tea.Msg {
 			}
 			fields := strings.Fields(line)
 			if len(fields) >= 6 {
-				jobs = append(jobs, cronJob{
+				jobs = append(jobs, config.CronJob{
 					Schedule: strings.Join(fields[:5], " "),
 					Command:  strings.Join(fields[5:], " "),
 					Source:   "crontab",
@@ -261,7 +229,7 @@ func (m model) fetchCronJobs() func() tea.Msg {
 			}
 			fields := strings.Fields(line)
 			if len(fields) >= 7 { // 5 schedule + user + command
-				jobs = append(jobs, cronJob{
+				jobs = append(jobs, config.CronJob{
 					Schedule: strings.Join(fields[:5], " "),
 					Command:  strings.Join(fields[6:], " "),
 					Source:   currentFile,
@@ -286,11 +254,11 @@ func (m model) fetchCronJobs() func() tea.Msg {
 // --- Log Levels ---
 
 type fetchLogLevelsMsg struct {
-	levels []logLevelEntry
+	levels []config.LogLevelEntry
 	err    error
 }
 
-func (m model) fetchLogLevels() func() tea.Msg {
+func (m Model) fetchLogLevels() func() tea.Msg {
 	idx := m.selectedHost
 	h := m.hosts[idx]
 	sm := m.ssh
@@ -321,13 +289,13 @@ func (m model) fetchLogLevels() func() tea.Msg {
 		}
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")
-		var levels []logLevelEntry
+		var levels []config.LogLevelEntry
 		for i, n := range names {
 			count := 0
 			if i < len(lines) {
 				fmt.Sscanf(strings.TrimSpace(lines[i]), "%d", &count)
 			}
-			levels = append(levels, logLevelEntry{
+			levels = append(levels, config.LogLevelEntry{
 				Level: n.level,
 				Code:  n.code,
 				Count: count,
@@ -341,11 +309,11 @@ func (m model) fetchLogLevels() func() tea.Msg {
 // --- Error Logs ---
 
 type fetchErrorLogsMsg struct {
-	logs []errorLog
+	logs []config.ErrorLog
 	err  error
 }
 
-func (m model) fetchErrorLogs() func() tea.Msg {
+func (m Model) fetchErrorLogs() func() tea.Msg {
 	idx := m.selectedHost
 	h := m.hosts[idx]
 	sm := m.ssh
@@ -359,7 +327,7 @@ func (m model) fetchErrorLogs() func() tea.Msg {
 			return fetchErrorLogsMsg{err: fmt.Errorf("error logs: %w", err)}
 		}
 
-		var logs []errorLog
+		var logs []config.ErrorLog
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if line == "" {
 				continue
@@ -372,7 +340,7 @@ func (m model) fetchErrorLogs() func() tea.Msg {
 			timeStr := strings.Join(fields[:3], " ")
 			unit := strings.TrimSuffix(fields[3], ":")
 			msg := strings.Join(fields[4:], " ")
-			logs = append(logs, errorLog{
+			logs = append(logs, config.ErrorLog{
 				Time:    timeStr,
 				Unit:    unit,
 				Message: msg,
@@ -386,11 +354,11 @@ func (m model) fetchErrorLogs() func() tea.Msg {
 // --- Updates ---
 
 type fetchUpdatesMsg struct {
-	updates []update
+	updates []config.Update
 	err     error
 }
 
-func (m model) fetchUpdates() func() tea.Msg {
+func (m Model) fetchUpdates() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
 
@@ -424,20 +392,20 @@ func (m model) fetchUpdates() func() tea.Msg {
 				// extract package name: everything before the version
 				// NVR format: name-[epoch:]version-release
 				// Find the last two dashes that precede a digit
-				pkg := extractPkgName(nvra)
+				pkg := ssh.ExtractPkgName(nvra)
 				if pkg != "" {
 					secPkgs[pkg] = true
 				}
 			}
 		}
 
-		var updates []update
+		var updates []config.Update
 
 		// capture errors/warnings from dnf output
 		for _, line := range strings.Split(strings.TrimSpace(updatesSection), "\n") {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") {
-				updates = append(updates, update{
+				updates = append(updates, config.Update{
 					Package: line,
 					Version: "",
 					Type:    "error",
@@ -466,7 +434,7 @@ func (m model) fetchUpdates() func() tea.Msg {
 				if secPkgs[pkg] {
 					typ = "security"
 				}
-				updates = append(updates, update{
+				updates = append(updates, config.Update{
 					Package: pkg,
 					Version: ver,
 					Type:    typ,
@@ -492,11 +460,11 @@ func (m model) fetchUpdates() func() tea.Msg {
 // --- Subscription ---
 
 type fetchSubscriptionMsg struct {
-	subs []subscription
+	subs []config.Subscription
 	err  error
 }
 
-func (m model) fetchSubscription() func() tea.Msg {
+func (m Model) fetchSubscription() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
 
@@ -507,7 +475,7 @@ func (m model) fetchSubscription() func() tea.Msg {
 			return fetchSubscriptionMsg{err: fmt.Errorf("subscription: %w", err)}
 		}
 
-		var subs []subscription
+		var subs []config.Subscription
 
 		parts := strings.SplitN(out, "===STATUS===", 2)
 		identitySection := strings.Replace(parts[0], "===IDENTITY===", "", 1)
@@ -544,9 +512,9 @@ func (m model) fetchSubscription() func() tea.Msg {
 		} else if serverHost != "" {
 			regType = "Custom (" + serverHost + ")"
 		}
-		subs = append(subs, subscription{Field: "Registration", Value: regType})
+		subs = append(subs, config.Subscription{Field: "Registration", Value: regType})
 		if serverHost != "" {
-			subs = append(subs, subscription{Field: "Server", Value: serverHost})
+			subs = append(subs, config.Subscription{Field: "Server", Value: serverHost})
 		}
 
 		// parse identity
@@ -556,7 +524,7 @@ func (m model) fetchSubscription() func() tea.Msg {
 				continue
 			}
 			if idx := strings.Index(line, ": "); idx > 0 {
-				subs = append(subs, subscription{
+				subs = append(subs, config.Subscription{
 					Field: line[:idx],
 					Value: line[idx+2:],
 				})
@@ -570,12 +538,12 @@ func (m model) fetchSubscription() func() tea.Msg {
 				continue
 			}
 			if idx := strings.Index(line, ": "); idx > 0 {
-				subs = append(subs, subscription{
+				subs = append(subs, config.Subscription{
 					Field: line[:idx],
 					Value: line[idx+2:],
 				})
 			} else if strings.Contains(line, "Simple Content Access") {
-				subs = append(subs, subscription{
+				subs = append(subs, config.Subscription{
 					Field: "Content Access",
 					Value: "Simple Content Access",
 				})
@@ -615,7 +583,7 @@ func (m model) fetchSubscription() func() tea.Msg {
 				if repoErrors[repoID] {
 					status = "ERROR"
 				}
-				subs = append(subs, subscription{
+				subs = append(subs, config.Subscription{
 					Field: "Repo: " + repoID,
 					Value: status,
 				})
@@ -629,11 +597,11 @@ func (m model) fetchSubscription() func() tea.Msg {
 // --- Disk ---
 
 type fetchDiskMsg struct {
-	disks []disk
+	disks []config.Disk
 	err   error
 }
 
-func (m model) fetchDisk() func() tea.Msg {
+func (m Model) fetchDisk() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
 
@@ -644,14 +612,14 @@ func (m model) fetchDisk() func() tea.Msg {
 			return fetchDiskMsg{err: fmt.Errorf("disk: %w", err)}
 		}
 
-		var disks []disk
+		var disks []config.Disk
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			if line == "" {
 				continue
 			}
 			fields := strings.Fields(line)
 			if len(fields) >= 6 {
-				disks = append(disks, disk{
+				disks = append(disks, config.Disk{
 					Filesystem: fields[0],
 					Size:       fields[1],
 					Used:       fields[2],
