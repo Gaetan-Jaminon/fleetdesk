@@ -16,16 +16,24 @@ func (m Model) renderDiskList() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredDisks()
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Disk"
-	s := m.renderHeader(breadcrumb, m.diskCursor+1, len(m.disks)) + "\n"
+	s := m.renderHeader(breadcrumb, m.diskCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(m.disks) == 0 {
+	if m.filterText != "" {
+		filterLine := fmt.Sprintf("  Filter: %s", m.filterText)
+		s += borderedRow(filterLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
+		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	}
+
+	if len(filtered) == 0 {
 		s += borderedRow("  No partitions found.", iw, normalRowStyle) + "\n"
 	} else {
 		fsCol := len("FILESYSTEM")
 		mountCol := len("MOUNT")
-		for _, d := range m.disks {
+		for _, d := range filtered {
 			if len(d.Filesystem) > fsCol {
 				fsCol = len(d.Filesystem)
 			}
@@ -41,6 +49,9 @@ func (m Model) renderDiskList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
 		maxVisible := m.height - 8
+		if m.filterText != "" {
+			maxVisible -= 2
+		}
 		if maxVisible < 1 {
 			maxVisible = 1
 		}
@@ -49,12 +60,12 @@ func (m Model) renderDiskList() string {
 			offset = m.diskCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.disks) {
-			end = len(m.disks)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			d := m.disks[i]
+			d := filtered[i]
 			cur := "   "
 			if i == m.diskCursor {
 				cur = " \u25b8 "
@@ -89,6 +100,7 @@ func (m Model) renderDiskList() string {
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 	})

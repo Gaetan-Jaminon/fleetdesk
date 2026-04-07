@@ -16,20 +16,26 @@ func (m Model) renderUpdateList() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredUpdates()
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Updates"
-	s := m.renderHeader(breadcrumb, m.updateCursor+1, len(m.updates)) + "\n"
+	s := m.renderHeader(breadcrumb, m.updateCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(m.updates) == 0 {
-		if m.updates == nil {
-			s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-		} else {
-			s += borderedRow("  No pending updates.", iw, normalRowStyle) + "\n"
-		}
+	if m.filterText != "" {
+		filterLine := fmt.Sprintf("  Filter: %s", m.filterText)
+		s += borderedRow(filterLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
+		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	}
+
+	if m.updates == nil {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else if len(filtered) == 0 {
+		s += borderedRow("  No pending updates.", iw, normalRowStyle) + "\n"
 	} else {
 		pkgCol := len("PACKAGE")
 		verCol := len("VERSION")
-		for _, u := range m.updates {
+		for _, u := range filtered {
 			if len(u.Package) > pkgCol {
 				pkgCol = len(u.Package)
 			}
@@ -45,6 +51,9 @@ func (m Model) renderUpdateList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
 		maxVisible := m.height - 8
+		if m.filterText != "" {
+			maxVisible -= 2
+		}
 		if maxVisible < 1 {
 			maxVisible = 1
 		}
@@ -53,13 +62,13 @@ func (m Model) renderUpdateList() string {
 			offset = m.updateCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.updates) {
-			end = len(m.updates)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		lastType := ""
 		for i := offset; i < end; i++ {
-			u := m.updates[i]
+			u := filtered[i]
 
 			// group header when type changes
 			if u.Type != lastType {
@@ -97,6 +106,7 @@ func (m Model) renderUpdateList() string {
 	} else {
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
+			{"/", "Search"},
 			{"u", "Update All"},
 			{"p", "Security Only"},
 			{"r", "Refresh"},

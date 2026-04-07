@@ -16,16 +16,26 @@ func (m Model) renderCronList() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredCronJobs()
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Cron Jobs"
-	s := m.renderHeader(breadcrumb, m.cronCursor+1, len(m.cronJobs)) + "\n"
+	s := m.renderHeader(breadcrumb, m.cronCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(m.cronJobs) == 0 {
+	if m.filterText != "" {
+		filterLine := fmt.Sprintf("  Filter: %s", m.filterText)
+		s += borderedRow(filterLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
+		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	}
+
+	if m.cronJobs == nil {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else if len(filtered) == 0 {
 		s += borderedRow("  No cron jobs found.", iw, normalRowStyle) + "\n"
 	} else {
 		schedCol := len("SCHEDULE")
 		srcCol := len("SOURCE")
-		for _, j := range m.cronJobs {
+		for _, j := range filtered {
 			if len(j.Schedule) > schedCol {
 				schedCol = len(j.Schedule)
 			}
@@ -41,6 +51,9 @@ func (m Model) renderCronList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
 		maxVisible := m.height - 8
+		if m.filterText != "" {
+			maxVisible -= 2
+		}
 		if maxVisible < 1 {
 			maxVisible = 1
 		}
@@ -49,13 +62,13 @@ func (m Model) renderCronList() string {
 			offset = m.cronCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.cronJobs) {
-			end = len(m.cronJobs)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		lastGroup := ""
 		for i := offset; i < end; i++ {
-			j := m.cronJobs[i]
+			j := filtered[i]
 
 			// group header: crontab = User, anything else = System
 			group := "System"
@@ -90,6 +103,7 @@ func (m Model) renderCronList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 	})

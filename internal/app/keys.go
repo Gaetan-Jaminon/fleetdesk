@@ -31,6 +31,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sudoCursor = 0
 			m.selinuxCursor = 0
 			m.auditCursor = 0
+			m.containerCursor = 0
+			m.updateCursor = 0
+			m.cronCursor = 0
+			m.diskCursor = 0
+			m.interfaceCursor = 0
+			m.routeCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -44,6 +50,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sudoCursor = 0
 			m.selinuxCursor = 0
 			m.auditCursor = 0
+			m.containerCursor = 0
+			m.updateCursor = 0
+			m.cronCursor = 0
+			m.diskCursor = 0
+			m.interfaceCursor = 0
+			m.routeCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -57,6 +69,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.sudoCursor = 0
 				m.selinuxCursor = 0
 				m.auditCursor = 0
+				m.containerCursor = 0
+				m.updateCursor = 0
+				m.cronCursor = 0
+				m.diskCursor = 0
+				m.interfaceCursor = 0
+				m.routeCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -70,6 +88,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.sudoCursor = 0
 				m.selinuxCursor = 0
 				m.auditCursor = 0
+				m.containerCursor = 0
+				m.updateCursor = 0
+				m.cronCursor = 0
+				m.diskCursor = 0
+				m.interfaceCursor = 0
+				m.routeCursor = 0
 			}
 		}
 		return m, nil
@@ -485,9 +509,14 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.containerCursor--
 		}
 	case "down", "j":
-		if m.containerCursor < len(m.containers)-1 {
+		filtered := m.filteredContainers()
+		if m.containerCursor < len(filtered)-1 {
 			m.containerCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.containerCursor = 0
 	case "l":
 		if len(m.containers) > 0 {
 			h := m.hosts[m.selectedHost]
@@ -514,7 +543,12 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = "Refreshing..."
 		return m, m.fetchContainers()
 	case "esc":
-		m.view = viewResourcePicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.containerCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }
@@ -526,15 +560,25 @@ func (m Model) handleCronListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cronCursor--
 		}
 	case "down", "j":
-		if m.cronCursor < len(m.cronJobs)-1 {
+		filtered := m.filteredCronJobs()
+		if m.cronCursor < len(filtered)-1 {
 			m.cronCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.cronCursor = 0
 	case "r":
 		m.cronJobs = nil
 		m.flash = "Refreshing..."
 		return m, m.fetchCronJobs()
 	case "esc":
-		m.view = viewResourcePicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.cronCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }
@@ -618,9 +662,14 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateCursor--
 		}
 	case "down", "j":
-		if m.updateCursor < len(m.updates)-1 {
+		filtered := m.filteredUpdates()
+		if m.updateCursor < len(filtered)-1 {
 			m.updateCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.updateCursor = 0
 	case "u":
 		h := m.hosts[m.selectedHost]
 		m.showConfirm = true
@@ -638,7 +687,12 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = "Refreshing..."
 		return m, m.fetchUpdates()
 	case "esc":
-		m.view = viewResourcePicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.updateCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }
@@ -650,15 +704,25 @@ func (m Model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diskCursor--
 		}
 	case "down", "j":
-		if m.diskCursor < len(m.disks)-1 {
+		filtered := m.filteredDisks()
+		if m.diskCursor < len(filtered)-1 {
 			m.diskCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.diskCursor = 0
 	case "r":
 		m.disks = nil
 		m.flash = "Refreshing..."
 		return m, m.fetchDisk()
 	case "esc":
-		m.view = viewResourcePicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.diskCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }
@@ -789,15 +853,25 @@ func (m Model) handleInterfaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.interfaceCursor--
 		}
 	case "down", "j":
-		if m.interfaceCursor < len(m.interfaces)-1 {
+		filtered := m.filteredInterfaces()
+		if m.interfaceCursor < len(filtered)-1 {
 			m.interfaceCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.interfaceCursor = 0
 	case "r":
 		m.interfaces = nil
 		m.flash = "Refreshing..."
 		return m, m.fetchInterfaces()
 	case "esc":
-		m.view = viewNetworkPicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.interfaceCursor = 0
+		} else {
+			m.view = viewNetworkPicker
+		}
 	}
 	return m, nil
 }
@@ -872,15 +946,25 @@ func (m Model) handleRouteListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.routeCursor--
 		}
 	case "down", "j":
-		if m.routeCursor < len(m.routes)-1 {
+		filtered := m.filteredRoutes()
+		if m.routeCursor < len(filtered)-1 {
 			m.routeCursor++
 		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.routeCursor = 0
 	case "r":
 		m.routes = nil
 		m.flash = "Refreshing..."
 		return m, m.fetchRoutes()
 	case "esc":
-		m.view = viewNetworkPicker
+		if m.filterText != "" {
+			m.filterText = ""
+			m.routeCursor = 0
+		} else {
+			m.view = viewNetworkPicker
+		}
 	}
 	return m, nil
 }

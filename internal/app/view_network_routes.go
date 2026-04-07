@@ -16,9 +16,17 @@ func (m Model) renderNetworkRoutes() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredRoutes()
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Network \u203a Routes & DNS"
-	s := m.renderHeader(breadcrumb, m.routeCursor+1, len(m.routes)) + "\n"
+	s := m.renderHeader(breadcrumb, m.routeCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
+
+	if m.filterText != "" {
+		filterLine := fmt.Sprintf("  Filter: %s", m.filterText)
+		s += borderedRow(filterLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
+		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	}
 
 	// DNS header
 	dnsLine := "  DNS: "
@@ -35,7 +43,7 @@ func (m Model) renderNetworkRoutes() string {
 
 	if m.routes == nil {
 		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(m.routes) == 0 {
+	} else if len(filtered) == 0 {
 		s += borderedRow("  No routes found.", iw, normalRowStyle) + "\n"
 	} else {
 		// compute column widths
@@ -43,7 +51,7 @@ func (m Model) renderNetworkRoutes() string {
 		gwCol := len("GATEWAY")
 		ifCol := len("INTERFACE")
 		metCol := len("METRIC")
-		for _, r := range m.routes {
+		for _, r := range filtered {
 			if len(r.Destination) > destCol {
 				destCol = len(r.Destination)
 			}
@@ -69,6 +77,9 @@ func (m Model) renderNetworkRoutes() string {
 		boldStyle := lipgloss.NewStyle().Foreground(colorWhite).Bold(true)
 
 		maxVisible := m.height - 10 // account for DNS header + table header
+		if m.filterText != "" {
+			maxVisible -= 2
+		}
 		if maxVisible < 1 {
 			maxVisible = 1
 		}
@@ -77,12 +88,12 @@ func (m Model) renderNetworkRoutes() string {
 			offset = m.routeCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.routes) {
-			end = len(m.routes)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			r := m.routes[i]
+			r := filtered[i]
 
 			cur := "   "
 			if i == m.routeCursor {
@@ -109,6 +120,7 @@ func (m Model) renderNetworkRoutes() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 	})

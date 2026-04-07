@@ -16,13 +16,21 @@ func (m Model) renderNetworkInterfaces() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredInterfaces()
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Network \u203a Interfaces"
-	s := m.renderHeader(breadcrumb, m.interfaceCursor+1, len(m.interfaces)) + "\n"
+	s := m.renderHeader(breadcrumb, m.interfaceCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
+
+	if m.filterText != "" {
+		filterLine := fmt.Sprintf("  Filter: %s", m.filterText)
+		s += borderedRow(filterLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
+		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	}
 
 	if m.interfaces == nil {
 		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(m.interfaces) == 0 {
+	} else if len(filtered) == 0 {
 		s += borderedRow("  No interfaces found.", iw, normalRowStyle) + "\n"
 	} else {
 		// compute column widths
@@ -30,7 +38,7 @@ func (m Model) renderNetworkInterfaces() string {
 		stateCol := len("STATE")
 		ipCol := len("IP ADDRESS")
 		mtuCol := len("MTU")
-		for _, iface := range m.interfaces {
+		for _, iface := range filtered {
 			if len(iface.Name) > nameCol {
 				nameCol = len(iface.Name)
 			}
@@ -58,6 +66,9 @@ func (m Model) renderNetworkInterfaces() string {
 		stateStyleUnknown := lipgloss.NewStyle().Foreground(colorYellow)
 
 		maxVisible := m.height - 8
+		if m.filterText != "" {
+			maxVisible -= 2
+		}
 		if maxVisible < 1 {
 			maxVisible = 1
 		}
@@ -66,12 +77,12 @@ func (m Model) renderNetworkInterfaces() string {
 			offset = m.interfaceCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.interfaces) {
-			end = len(m.interfaces)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			iface := m.interfaces[i]
+			iface := filtered[i]
 
 			cur := "   "
 			if i == m.interfaceCursor {
@@ -107,6 +118,7 @@ func (m Model) renderNetworkInterfaces() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
+		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 	})
