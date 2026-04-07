@@ -1,7 +1,6 @@
 package app
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
@@ -308,6 +307,3 @@ func TestSortPorts(t *testing.T) {
 		t.Errorf("sort ports by port asc: got %d, %d, %d", m.ports[0].Port, m.ports[1].Port, m.ports[2].Port)
 	}
 }
-
-// ensure sort package is used
-var _ = sort.Slice

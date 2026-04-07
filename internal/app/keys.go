@@ -513,6 +513,7 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.services = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		return m, m.fetchServices()
 	case "esc":
@@ -578,6 +579,7 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.containers = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchContainers()
 	case "esc":
@@ -619,6 +621,7 @@ func (m Model) handleCronListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.cronJobs = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchCronJobs()
 	case "esc":
@@ -701,6 +704,7 @@ func (m Model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.errorLogs = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchErrorLogs()
@@ -755,6 +759,7 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.updates = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchUpdates()
 	case "esc":
@@ -796,6 +801,7 @@ func (m Model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.disks = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchDisk()
 	case "esc":
@@ -881,6 +887,7 @@ func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.accounts = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchAccounts()
 	case "esc":
@@ -909,22 +916,26 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 0: // Interfaces
 			m.interfaceCursor = 0
 			m.interfaces = nil
+			m.sortColumn = 0
 			m.view = viewNetworkInterfaces
 			return m, m.fetchInterfaces()
 		case 1: // Ports
 			m.portCursor = 0
 			m.ports = nil
+			m.sortColumn = 0
 			m.filterText = ""
 			m.view = viewNetworkPorts
 			return m, m.fetchPorts()
 		case 2: // Routes & DNS
 			m.routeCursor = 0
 			m.routes = nil
+			m.sortColumn = 0
 			m.view = viewNetworkRoutes
 			return m, m.fetchRoutes()
 		case 3: // Firewall
 			m.firewallCursor = 0
 			m.firewallRules = nil
+			m.sortColumn = 0
 			m.firewallBackend = ""
 			m.filterText = ""
 			m.view = viewNetworkFirewall
@@ -967,6 +978,7 @@ func (m Model) handleInterfaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.interfaces = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchInterfaces()
 	case "esc":
@@ -1009,6 +1021,7 @@ func (m Model) handlePortListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.ports = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchPorts()
@@ -1051,6 +1064,7 @@ func (m Model) handleFirewallListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.firewallRules = nil
+		m.sortColumn = 0
 		m.firewallBackend = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchFirewall()
@@ -1093,6 +1107,7 @@ func (m Model) handleRouteListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.routes = nil
+		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchRoutes()
 	case "esc":
@@ -1135,6 +1150,7 @@ func (m Model) handleFailedLoginKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.failedLogins = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchFailedLogins()
@@ -1178,6 +1194,7 @@ func (m Model) handleSudoKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.sudoEntries = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchSudoActivity()
@@ -1221,6 +1238,7 @@ func (m Model) handleSELinuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.selinuxDenials = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchSELinuxDenials()
@@ -1264,6 +1282,7 @@ func (m Model) handleAuditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.auditEvents = nil
+		m.sortColumn = 0
 		m.filterText = ""
 		m.flash = "Refreshing..."
 		return m, m.fetchAuditSummary()

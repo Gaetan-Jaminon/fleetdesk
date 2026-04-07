@@ -11,6 +11,13 @@ import (
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
+// parseNumericPrefix extracts the leading integer from a string like "200G" or "90%".
+func parseNumericPrefix(s string) int {
+	var n int
+	fmt.Sscanf(s, "%d", &n)
+	return n
+}
+
 // shellQuote escapes single quotes for safe shell interpolation inside single-quoted strings.
 func shellQuote(s string) string {
 	return strings.ReplaceAll(s, "'", "'\\''")
@@ -388,18 +395,33 @@ func (m *Model) sortUpdates() {
 
 func (m *Model) sortDisks() {
 	sort.Slice(m.disks, func(i, j int) bool {
-		var vi, vj string
 		switch m.sortColumn {
-		case 1: vi, vj = m.disks[i].Filesystem, m.disks[j].Filesystem
-		case 2: vi, vj = m.disks[i].Size, m.disks[j].Size
-		case 3: vi, vj = m.disks[i].Used, m.disks[j].Used
-		case 4: vi, vj = m.disks[i].Avail, m.disks[j].Avail
-		case 5: vi, vj = m.disks[i].UsePercent, m.disks[j].UsePercent
-		case 6: vi, vj = m.disks[i].Mount, m.disks[j].Mount
-		default: return false
+		case 1:
+			vi, vj := m.disks[i].Filesystem, m.disks[j].Filesystem
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		case 2:
+			ni, nj := parseNumericPrefix(m.disks[i].Size), parseNumericPrefix(m.disks[j].Size)
+			if m.sortAsc { return ni < nj }
+			return ni > nj
+		case 3:
+			ni, nj := parseNumericPrefix(m.disks[i].Used), parseNumericPrefix(m.disks[j].Used)
+			if m.sortAsc { return ni < nj }
+			return ni > nj
+		case 4:
+			ni, nj := parseNumericPrefix(m.disks[i].Avail), parseNumericPrefix(m.disks[j].Avail)
+			if m.sortAsc { return ni < nj }
+			return ni > nj
+		case 5:
+			ni, nj := parseNumericPrefix(m.disks[i].UsePercent), parseNumericPrefix(m.disks[j].UsePercent)
+			if m.sortAsc { return ni < nj }
+			return ni > nj
+		case 6:
+			vi, vj := m.disks[i].Mount, m.disks[j].Mount
+			if m.sortAsc { return vi < vj }
+			return vi > vj
 		}
-		if m.sortAsc { return vi < vj }
-		return vi > vj
+		return false
 	})
 }
 
@@ -459,16 +481,25 @@ func (m *Model) sortPorts() {
 
 func (m *Model) sortRoutes() {
 	sort.Slice(m.routes, func(i, j int) bool {
-		var vi, vj string
 		switch m.sortColumn {
-		case 1: vi, vj = m.routes[i].Destination, m.routes[j].Destination
-		case 2: vi, vj = m.routes[i].Gateway, m.routes[j].Gateway
-		case 3: vi, vj = m.routes[i].Interface, m.routes[j].Interface
-		case 4: vi, vj = m.routes[i].Metric, m.routes[j].Metric
-		default: return false
+		case 1:
+			vi, vj := m.routes[i].Destination, m.routes[j].Destination
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		case 2:
+			vi, vj := m.routes[i].Gateway, m.routes[j].Gateway
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		case 3:
+			vi, vj := m.routes[i].Interface, m.routes[j].Interface
+			if m.sortAsc { return vi < vj }
+			return vi > vj
+		case 4:
+			ni, nj := parseNumericPrefix(m.routes[i].Metric), parseNumericPrefix(m.routes[j].Metric)
+			if m.sortAsc { return ni < nj }
+			return ni > nj
 		}
-		if m.sortAsc { return vi < vj }
-		return vi > vj
+		return false
 	})
 }
 
