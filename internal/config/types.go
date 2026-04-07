@@ -227,6 +227,18 @@ type AuditEvent struct {
 	Message string
 }
 
+// ContainerDetail holds parsed podman inspect output.
+type ContainerDetail struct {
+	ID      string
+	Image   string
+	Created string
+	Status  string
+	Command string
+	Env     []string
+	Mounts  []string // "source:destination" format
+	Ports   []string // "hostPort:containerPort/proto" format
+}
+
 // ServiceStatus holds parsed systemctl show output for a service.
 type ServiceStatus struct {
 	Name        string

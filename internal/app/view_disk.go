@@ -18,6 +18,54 @@ func (m Model) renderDiskList() string {
 
 	filtered := m.filteredDisks()
 
+	// detail view
+	if m.showDiskDetail {
+		breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Disk \u203a Detail"
+		s := m.renderHeader(breadcrumb, m.diskDetailCursor+1, len(m.diskDetailLines)) + "\n"
+		s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
+
+		if len(m.diskDetailLines) == 0 {
+			s += borderedRow("  No details available.", iw, normalRowStyle) + "\n"
+		} else {
+			maxVisible := m.height - 6
+			if maxVisible < 1 {
+				maxVisible = 1
+			}
+			offset := 0
+			if m.diskDetailCursor >= offset+maxVisible {
+				offset = m.diskDetailCursor - maxVisible + 1
+			}
+			end := offset + maxVisible
+			if end > len(m.diskDetailLines) {
+				end = len(m.diskDetailLines)
+			}
+			for i := offset; i < end; i++ {
+				cur := "  "
+				if i == m.diskDetailCursor {
+					cur = "\u25b8 "
+				}
+				line := "  " + cur + m.diskDetailLines[i]
+				var style lipgloss.Style
+				if i == m.diskDetailCursor {
+					style = selectedRowStyle
+				} else if i%2 == 0 {
+					style = altRowStyle
+				} else {
+					style = normalRowStyle
+				}
+				s += borderedRow(line, iw, style) + "\n"
+			}
+		}
+
+		s = m.padToBottom(s, iw)
+		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
+		s += m.renderHintBar([][]string{
+			{"\u2191\u2193", "Scroll"},
+			{"Esc", "Back"},
+		})
+		return s
+	}
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Disk"
 	s := m.renderHeader(breadcrumb, m.diskCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
@@ -102,6 +150,7 @@ func (m Model) renderDiskList() string {
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"Enter", "Detail"},
 		{"1-6", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},

@@ -528,6 +528,12 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// detail mode — any key goes back
+	if m.showContainerDetail {
+		m.showContainerDetail = false
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if m.containerCursor > 0 {
@@ -537,6 +543,13 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredContainers()
 		if m.containerCursor < len(filtered)-1 {
 			m.containerCursor++
+		}
+	case "enter":
+		filtered := m.filteredContainers()
+		if len(filtered) > 0 && m.containerCursor < len(filtered) {
+			ctr := filtered[m.containerCursor].Name
+			m.flash = fmt.Sprintf("Loading %s...", ctr)
+			return m, m.fetchContainerDetail(ctr)
 		}
 	case "/":
 		m.filterActive = true
@@ -720,6 +733,24 @@ func (m Model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// detail mode
+	if m.showUpdateDetail {
+		switch msg.String() {
+		case "up", "k":
+			if m.updateDetailCursor > 0 {
+				m.updateDetailCursor--
+			}
+		case "down", "j":
+			if m.updateDetailCursor < len(m.updateDetailLines)-1 {
+				m.updateDetailCursor++
+			}
+		case "esc":
+			m.showUpdateDetail = false
+			m.updateDetailLines = nil
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if m.updateCursor > 0 {
@@ -729,6 +760,13 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredUpdates()
 		if m.updateCursor < len(filtered)-1 {
 			m.updateCursor++
+		}
+	case "enter":
+		filtered := m.filteredUpdates()
+		if len(filtered) > 0 && m.updateCursor < len(filtered) {
+			pkg := filtered[m.updateCursor].Package
+			m.flash = fmt.Sprintf("Loading %s...", pkg)
+			return m, m.fetchUpdateDetail(pkg)
 		}
 	case "/":
 		m.filterActive = true
@@ -774,6 +812,24 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// detail mode
+	if m.showDiskDetail {
+		switch msg.String() {
+		case "up", "k":
+			if m.diskDetailCursor > 0 {
+				m.diskDetailCursor--
+			}
+		case "down", "j":
+			if m.diskDetailCursor < len(m.diskDetailLines)-1 {
+				m.diskDetailCursor++
+			}
+		case "esc":
+			m.showDiskDetail = false
+			m.diskDetailLines = nil
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if m.diskCursor > 0 {
@@ -783,6 +839,13 @@ func (m Model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredDisks()
 		if m.diskCursor < len(filtered)-1 {
 			m.diskCursor++
+		}
+	case "enter":
+		filtered := m.filteredDisks()
+		if len(filtered) > 0 && m.diskCursor < len(filtered) {
+			mount := filtered[m.diskCursor].Mount
+			m.flash = fmt.Sprintf("Loading %s...", mount)
+			return m, m.fetchDiskDetail(mount)
 		}
 	case "/":
 		m.filterActive = true

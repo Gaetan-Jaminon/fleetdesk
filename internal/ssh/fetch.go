@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -732,6 +733,62 @@ func ParseServiceStatus(output string) config.ServiceStatus {
 	}
 
 	return s
+}
+
+// ParseContainerInspect parses podman inspect JSON output into ContainerDetail.
+func ParseContainerInspect(output string) config.ContainerDetail {
+	if output == "" {
+		return config.ContainerDetail{}
+	}
+
+	var raw []struct {
+		Id        string `json:"Id"`
+		Created   string `json:"Created"`
+		ImageName string `json:"ImageName"`
+		State     struct {
+			Status    string `json:"Status"`
+			StartedAt string `json:"StartedAt"`
+		} `json:"State"`
+		Config struct {
+			Env []string `json:"Env"`
+			Cmd []string `json:"Cmd"`
+		} `json:"Config"`
+		Mounts []struct {
+			Source      string `json:"Source"`
+			Destination string `json:"Destination"`
+		} `json:"Mounts"`
+		HostConfig struct {
+			PortBindings map[string][]struct {
+				HostPort string `json:"HostPort"`
+			} `json:"PortBindings"`
+		} `json:"HostConfig"`
+	}
+
+	if err := json.Unmarshal([]byte(output), &raw); err != nil || len(raw) == 0 {
+		return config.ContainerDetail{}
+	}
+
+	c := raw[0]
+	detail := config.ContainerDetail{
+		ID:      c.Id,
+		Image:   c.ImageName,
+		Created: c.Created,
+		Status:  c.State.Status,
+		Command: strings.Join(c.Config.Cmd, " "),
+		Env:     c.Config.Env,
+	}
+
+	for _, m := range c.Mounts {
+		detail.Mounts = append(detail.Mounts, m.Source+":"+m.Destination)
+	}
+
+	for containerPort, bindings := range c.HostConfig.PortBindings {
+		for _, b := range bindings {
+			detail.Ports = append(detail.Ports, b.HostPort+":"+containerPort)
+		}
+	}
+
+	return detail
 }
 
 // ExpandPath expands ~ in paths.
