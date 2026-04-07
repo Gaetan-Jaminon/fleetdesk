@@ -198,8 +198,8 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && `+
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l && `+
 			`getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {count++} END {print count+0}' && `+
-			`(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | while read u; do passwd -S "$u" 2>/dev/null; done | grep -c ' L ' || echo 0) && `+
-			`ip -br link | grep -c UP && `+
+			`(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | while read u; do sudo passwd -S "$u" 2>/dev/null; done | grep -c ' L ' || echo 0) && `+
+			`(ip -br link | grep -c UP || echo 0) && `+
 			`ip -br link | wc -l && `+
 			`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0)`,
 		sysctl, sysctl, sysctl, errorLogSince,

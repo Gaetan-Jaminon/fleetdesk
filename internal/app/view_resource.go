@@ -17,7 +17,6 @@ func (m Model) renderResourcePicker() string {
 	iw := w - 2
 
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name
-	resourceCount := 7
 	s := m.renderHeader(breadcrumb, m.resourceCursor+1, resourceCount) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
