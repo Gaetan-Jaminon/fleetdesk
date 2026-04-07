@@ -1,32 +1,19 @@
 package main
 
-import (
-	"strings"
+// Bridge file — delegates to internal/ssh.
+// Will be removed when app moves to internal/.
 
+import (
 	tea "github.com/charmbracelet/bubbletea"
+
+	issh "github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
-// passwordRetryResult is sent after retrying connection with a password.
-type passwordRetryResult struct {
-	index int
-	info  probeInfo
-	err   error
-}
-
-// isAuthError checks if an error is an SSH authentication failure.
-func isAuthError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "unable to authenticate") ||
-		strings.Contains(s, "no supported methods remain") ||
-		strings.Contains(s, "handshake failed")
-}
+var isAuthError = issh.IsAuthError
 
 // retryWithPassword attempts to connect a specific host using password auth.
-func (sm *sshManager) retryWithPassword(idx int, h host, password string) tea.Cmd {
+func retryWithPassword(sm *sshManager, idx int, h host, password string) tea.Cmd {
 	return func() tea.Msg {
-		return sm.connectWithPassword(idx, h, password)
+		return sm.ConnectWithPassword(idx, h, password)
 	}
 }

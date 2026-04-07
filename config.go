@@ -1,136 +1,28 @@
 package main
 
-import "time"
+// Type aliases bridging root package to internal/config.
+// These will be removed when all code moves to internal/.
 
-// fleet represents a parsed fleet configuration file.
-type fleet struct {
-	Name     string       `yaml:"name"`
-	Type     string       `yaml:"type"`
-	Path     string       `yaml:"-"` // path to the fleet file on disk
-	Defaults hostDefaults `yaml:"defaults"`
-	Groups   []hostGroup  `yaml:"groups"`
-	Hosts    []hostEntry  `yaml:"hosts"`
-}
+import "github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 
-// hostDefaults holds default values applied to all hosts in a fleet.
-type hostDefaults struct {
-	User           string        `yaml:"user"`
-	Port           int           `yaml:"port"`
-	Timeout        time.Duration `yaml:"timeout"`
-	SystemdMode    string        `yaml:"systemd_mode"`
-	ServiceFilter  []string      `yaml:"service_filter"`
-	ErrorLogSince  string
-	RefreshInterval string
-}
-
-// hostGroup provides visual grouping of hosts.
-type hostGroup struct {
-	Name  string      `yaml:"name"`
-	Hosts []hostEntry `yaml:"hosts"`
-}
-
-// hostEntry represents a single host definition in a fleet file.
-type hostEntry struct {
-	Name          string        `yaml:"name"`
-	Hostname      string        `yaml:"hostname"`
-	User          string        `yaml:"user"`
-	Port          int           `yaml:"port"`
-	Timeout       time.Duration `yaml:"timeout"`
-	SystemdMode   string        `yaml:"systemd_mode"`
-	ServiceFilter []string
-}
-
-// host is the runtime representation of a host with connection state.
-type host struct {
-	Entry         hostEntry
-	Group         string
-	Status        hostStatus
-	NeedsPassword bool   // true if key auth failed
-	ErrorLogSince string // configurable journalctl window
-
-	// probe results
-	FQDN             string
-	OS               string
-	UpSince          string
-	ServiceCount     int
-	ServiceRunning   int
-	ServiceFailed    int
-	ContainerCount   int
-	ContainerRunning int
-	CronCount        int
-	ErrorCount       int
-	UpdateCount      int
-	DiskCount        int
-	DiskHighCount    int
-	LastUpdate       string
-	LastSecurity     string
-	Error            string
-}
-
-type hostStatus int
+type fleet = config.Fleet
+type hostDefaults = config.HostDefaults
+type hostGroup = config.HostGroup
+type hostEntry = config.HostEntry
+type host = config.Host
+type hostStatus = config.HostStatus
 
 const (
-	hostConnecting hostStatus = iota
-	hostOnline
-	hostUnreachable
+	hostConnecting  = config.HostConnecting
+	hostOnline      = config.HostOnline
+	hostUnreachable = config.HostUnreachable
 )
 
-// service represents a systemd unit on a remote host.
-type service struct {
-	Name        string
-	State       string // active, inactive, failed
-	Enabled     string // enabled, disabled, static
-	Description string
-}
-
-// container represents a Podman container on a remote host.
-type container struct {
-	Name   string
-	Image  string
-	Status string // running, exited, etc.
-	ID     string
-}
-
-// cronJob represents a scheduled task.
-type cronJob struct {
-	Schedule string
-	Command  string
-	Source   string // "crontab" or filename from /etc/cron.d/
-}
-
-// logLevelEntry represents a log severity level with its count.
-type logLevelEntry struct {
-	Level string
-	Code  string // journalctl priority code (0-7)
-	Count int
-}
-
-// errorLog represents a journal error entry.
-type errorLog struct {
-	Time    string
-	Unit    string
-	Message string
-}
-
-// update represents a pending package update.
-type update struct {
-	Package string
-	Version string
-	Type    string // security, bugfix, enhancement, error
-}
-
-// subscription represents a key-value pair from subscription-manager.
-type subscription struct {
-	Field string
-	Value string
-}
-
-// disk represents a filesystem partition.
-type disk struct {
-	Filesystem string
-	Size       string
-	Used       string
-	Avail      string
-	UsePercent string
-	Mount      string
-}
+type service = config.Service
+type container = config.Container
+type cronJob = config.CronJob
+type logLevelEntry = config.LogLevelEntry
+type errorLog = config.ErrorLog
+type update = config.Update
+type subscription = config.Subscription
+type disk = config.Disk

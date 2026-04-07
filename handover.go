@@ -11,14 +11,24 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// sshHandoverFinishedMsg is sent when a terminal handover SSH command completes.
+type sshHandoverFinishedMsg struct {
+	Err error
+}
+
+// editFinishedMsg is sent when the editor returns.
+type editFinishedMsg struct {
+	Err error
+}
+
 // sshExec wraps an SSH command with terminal handover.
 type sshExec struct {
-	host    string
-	user    string
-	port    int
-	args    []string
-	banner  string
-	err     error
+	host   string
+	user   string
+	port   int
+	args   []string
+	banner string
+	err    error
 }
 
 func (s *sshExec) Run() error {
@@ -47,22 +57,12 @@ func (s *sshExec) Run() error {
 	fmt.Printf("\n%s\n%s\nPress Enter to return to fleetdesk...", sep, status)
 	bufio.NewReader(os.Stdin).ReadBytes('\n')
 
-	return nil // always return nil so TUI resumes
+	return nil
 }
 
 func (s *sshExec) SetStdin(_ io.Reader)  {}
 func (s *sshExec) SetStdout(_ io.Writer) {}
 func (s *sshExec) SetStderr(_ io.Writer) {}
-
-// sshHandoverFinishedMsg is sent when a terminal handover SSH command completes.
-type sshHandoverFinishedMsg struct {
-	err error
-}
-
-// editFinishedMsg is sent when the editor returns.
-type editFinishedMsg struct {
-	err error
-}
 
 // editorExec wraps an editor command for terminal handover.
 type editorExec struct {
@@ -96,7 +96,7 @@ func (m model) editFleetFile() tea.Cmd {
 	f := m.fleets[m.fleetCursor]
 	e := &editorExec{path: f.Path}
 	return tea.Exec(e, func(err error) tea.Msg {
-		return editFinishedMsg{err: e.err}
+		return editFinishedMsg{Err: e.err}
 	})
 }
 
@@ -110,6 +110,6 @@ func sshHandover(h host, args []string, banner string) tea.Cmd {
 		banner: banner,
 	}
 	return tea.Exec(e, func(err error) tea.Msg {
-		return sshHandoverFinishedMsg{err: e.err}
+		return sshHandoverFinishedMsg{Err: e.err}
 	})
 }
