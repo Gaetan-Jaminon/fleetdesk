@@ -465,6 +465,216 @@ func ParseNftablesOutput(output string) []config.FirewallRule {
 	return rules
 }
 
+// ParseFailedLoginLine parses a journalctl sshd line for failed/invalid login attempts.
+// Expected formats:
+//
+//	Apr 06 14:32:01 sshd[12345]: Failed password for user1 from 192.168.1.1 port 22 ssh2
+//	Apr 06 14:32:01 sshd[12345]: Invalid user admin from 192.168.1.1 port 22
+func ParseFailedLoginLine(line string) config.FailedLogin {
+	if line == "" {
+		return config.FailedLogin{}
+	}
+
+	fl := config.FailedLogin{}
+
+	// extract timestamp: first 15 characters (e.g. "Apr 06 14:32:01")
+	if len(line) >= 15 {
+		fl.Time = line[:15]
+	}
+
+	// detect method
+	if strings.Contains(line, "Failed password") {
+		fl.Method = "password"
+	} else if strings.Contains(line, "Failed publickey") {
+		fl.Method = "publickey"
+	} else if strings.Contains(line, "Invalid user") {
+		fl.Method = "invalid user"
+	} else {
+		fl.Method = "—"
+	}
+
+	// extract user: "for <user> from" or "Invalid user <user> from"
+	if idx := strings.Index(line, "Invalid user "); idx >= 0 {
+		rest := line[idx+len("Invalid user "):]
+		if fromIdx := strings.Index(rest, " from "); fromIdx >= 0 {
+			fl.User = rest[:fromIdx]
+		}
+	} else if idx := strings.Index(line, " for "); idx >= 0 {
+		rest := line[idx+5:]
+		if fromIdx := strings.Index(rest, " from "); fromIdx >= 0 {
+			fl.User = rest[:fromIdx]
+		}
+	}
+
+	// extract source IP: "from <IP> port"
+	if idx := strings.Index(line, " from "); idx >= 0 {
+		rest := line[idx+6:]
+		if spIdx := strings.Index(rest, " "); spIdx >= 0 {
+			fl.Source = rest[:spIdx]
+		} else {
+			fl.Source = rest
+		}
+	}
+
+	return fl
+}
+
+// ParseSudoLine parses a journalctl sudo line.
+// Expected format:
+//
+//	Apr 06 14:32:01 sudo[12345]: user1 : TTY=pts/0 ; PWD=/home/user1 ; USER=root ; COMMAND=/bin/ls
+func ParseSudoLine(line string) config.SudoEntry {
+	if line == "" {
+		return config.SudoEntry{}
+	}
+
+	se := config.SudoEntry{}
+
+	// timestamp
+	if len(line) >= 15 {
+		se.Time = line[:15]
+	}
+
+	// find the content after "sudo[...]: "
+	sudoIdx := strings.Index(line, "]: ")
+	if sudoIdx < 0 {
+		return se
+	}
+	content := line[sudoIdx+3:]
+
+	// user is first token before " : "
+	if colonIdx := strings.Index(content, " : "); colonIdx >= 0 {
+		se.User = content[:colonIdx]
+		rest := content[colonIdx+3:]
+
+		// check result
+		if strings.Contains(rest, "authentication failure") || strings.Contains(rest, "NOT in sudoers") || strings.Contains(rest, "command not allowed") {
+			se.Result = "failed"
+		} else {
+			se.Result = "success"
+		}
+
+		// extract COMMAND=
+		if cmdIdx := strings.Index(rest, "COMMAND="); cmdIdx >= 0 {
+			se.Command = rest[cmdIdx+8:]
+		}
+	}
+
+	return se
+}
+
+// ParseSELinuxDenialLine parses an AVC denial line from journalctl or ausearch.
+// Expected format:
+//
+//	... avc:  denied  { open } for ... scontext=...:httpd_t:... tcontext=...:default_t:... tclass=file ...
+func ParseSELinuxDenialLine(line string) config.SELinuxDenial {
+	if line == "" {
+		return config.SELinuxDenial{}
+	}
+
+	d := config.SELinuxDenial{}
+
+	// timestamp
+	if len(line) >= 15 {
+		d.Time = line[:15]
+	}
+
+	// action: { verb }
+	if braceStart := strings.Index(line, "{ "); braceStart >= 0 {
+		braceEnd := strings.Index(line[braceStart:], " }")
+		if braceEnd > 0 {
+			d.Action = line[braceStart+2 : braceStart+braceEnd]
+		}
+	}
+
+	// scontext type: third colon-delimited field
+	if idx := strings.Index(line, "scontext="); idx >= 0 {
+		sctx := line[idx+9:]
+		if spIdx := strings.Index(sctx, " "); spIdx >= 0 {
+			sctx = sctx[:spIdx]
+		}
+		parts := strings.Split(sctx, ":")
+		if len(parts) >= 3 {
+			d.Source = parts[2]
+		}
+	}
+
+	// tcontext type
+	if idx := strings.Index(line, "tcontext="); idx >= 0 {
+		tctx := line[idx+9:]
+		if spIdx := strings.Index(tctx, " "); spIdx >= 0 {
+			tctx = tctx[:spIdx]
+		}
+		parts := strings.Split(tctx, ":")
+		if len(parts) >= 3 {
+			d.Target = parts[2]
+		}
+	}
+
+	// tclass
+	if idx := strings.Index(line, "tclass="); idx >= 0 {
+		cls := line[idx+7:]
+		if spIdx := strings.Index(cls, " "); spIdx >= 0 {
+			cls = cls[:spIdx]
+		}
+		d.Class = cls
+	}
+
+	return d
+}
+
+// ParseAuditEventLine parses an aureport --auth line.
+// Expected format (aureport -i):
+//
+//	42. 04/06/2026 14:32:01 user1 pts/0 192.168.1.1 /usr/sbin/sshd yes 12345
+func ParseAuditEventLine(line string) config.AuditEvent {
+	if line == "" {
+		return config.AuditEvent{}
+	}
+
+	fields := strings.Fields(line)
+	if len(fields) < 5 {
+		return config.AuditEvent{}
+	}
+
+	ae := config.AuditEvent{
+		Type: "auth",
+	}
+
+	// skip line number (e.g. "42.")
+	offset := 0
+	if strings.HasSuffix(fields[0], ".") {
+		offset = 1
+	}
+
+	if offset+1 < len(fields) {
+		ae.Time = fields[offset]
+		if offset+2 <= len(fields) {
+			ae.Time += " " + fields[offset+1]
+		}
+	}
+	if offset+2 < len(fields) {
+		ae.User = fields[offset+2]
+	}
+
+	// result is the second-to-last field in aureport -i output
+	if len(fields) > 1 {
+		switch fields[len(fields)-2] {
+		case "yes":
+			ae.Result = "success"
+		case "no":
+			ae.Result = "failed"
+		}
+	}
+
+	// message: remaining fields for context
+	if offset+3 < len(fields) {
+		ae.Message = strings.Join(fields[offset+3:], " ")
+	}
+
+	return ae
+}
+
 // ParseServiceStatus parses `systemctl show` key=value output into ServiceStatus.
 func ParseServiceStatus(output string) config.ServiceStatus {
 	props := make(map[string]string)

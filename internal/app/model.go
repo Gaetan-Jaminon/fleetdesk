@@ -43,10 +43,14 @@ const (
 	viewNetworkPorts
 	viewNetworkRoutes
 	viewNetworkFirewall
+	viewSecurityFailedLogins
+	viewSecuritySudo
+	viewSecuritySELinux
+	viewSecurityAudit
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
-const resourceCount = 9
+const resourceCount = 13
 
 // networkSubViewCount is the number of sub-views in the network picker.
 const networkSubViewCount = 4
@@ -121,6 +125,16 @@ type Model struct {
 	firewallRules   []config.FirewallRule
 	firewallCursor  int
 	firewallBackend string // "firewalld", "nftables", "iptables", ""
+
+	// security / audit
+	failedLogins      []config.FailedLogin
+	failedLoginCursor int
+	sudoEntries       []config.SudoEntry
+	sudoCursor        int
+	selinuxDenials    []config.SELinuxDenial
+	selinuxCursor     int
+	auditEvents       []config.AuditEvent
+	auditCursor       int
 
 	// accounts
 	accounts           []config.Account
@@ -382,6 +396,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchFailedLoginsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.logins == nil {
+				m.failedLogins = []config.FailedLogin{}
+			} else {
+				m.failedLogins = msg.logins
+			}
+		}
+		return m, nil
+
+	case fetchSudoActivityMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.entries == nil {
+				m.sudoEntries = []config.SudoEntry{}
+			} else {
+				m.sudoEntries = msg.entries
+			}
+		}
+		return m, nil
+
+	case fetchSELinuxMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.denials == nil {
+				m.selinuxDenials = []config.SELinuxDenial{}
+			} else {
+				m.selinuxDenials = msg.denials
+			}
+		}
+		return m, nil
+
+	case fetchAuditSummaryMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.events == nil {
+				m.auditEvents = []config.AuditEvent{}
+			} else {
+				m.auditEvents = msg.events
+			}
+		}
+		return m, nil
+
 	case fetchDiskMsg:
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
@@ -491,6 +557,14 @@ func (m Model) View() string {
 		return m.renderNetworkFirewall()
 	case viewSubscription:
 		return m.renderSubscription()
+	case viewSecurityFailedLogins:
+		return m.renderFailedLogins()
+	case viewSecuritySudo:
+		return m.renderSudoActivity()
+	case viewSecuritySELinux:
+		return m.renderSELinuxDenials()
+	case viewSecurityAudit:
+		return m.renderAuditSummary()
 	}
 	return ""
 }

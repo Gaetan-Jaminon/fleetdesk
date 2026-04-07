@@ -201,7 +201,11 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 			`((getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while read u; do sudo passwd -S "$u" 2>/dev/null; done | { grep -c ' L ' || true; }) && `+
 			`(ip -br link | grep -c UP || echo 0) && `+
 			`ip -br link | wc -l && `+
-			`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0)`,
+			`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0) && `+
+			`(sudo journalctl -u sshd --no-pager -q 2>/dev/null | grep -ciE 'failed|invalid user' || echo 0) && `+
+			`(sudo journalctl _COMM=sudo --no-pager -q 2>/dev/null | wc -l || echo 0) && `+
+			`(sudo journalctl _TRANSPORT=audit --no-pager -q 2>/dev/null | grep -c 'avc:' || echo 0) && `+
+			`(sudo aureport --auth 2>/dev/null | grep -cE '^\s*[0-9]+\.' || echo 0)`,
 		sysctl, sysctl, sysctl, errorLogSince,
 	)
 

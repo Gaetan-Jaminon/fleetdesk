@@ -27,6 +27,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.portCursor = 0
 			m.firewallCursor = 0
 			m.serviceLogCursor = 0
+			m.failedLoginCursor = 0
+			m.sudoCursor = 0
+			m.selinuxCursor = 0
+			m.auditCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -36,6 +40,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.portCursor = 0
 			m.firewallCursor = 0
 			m.serviceLogCursor = 0
+			m.failedLoginCursor = 0
+			m.sudoCursor = 0
+			m.selinuxCursor = 0
+			m.auditCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -45,6 +53,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.portCursor = 0
 				m.firewallCursor = 0
 				m.serviceLogCursor = 0
+				m.failedLoginCursor = 0
+				m.sudoCursor = 0
+				m.selinuxCursor = 0
+				m.auditCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -54,6 +66,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.accountCursor = 0
 				m.portCursor = 0
 				m.serviceLogCursor = 0
+				m.failedLoginCursor = 0
+				m.sudoCursor = 0
+				m.selinuxCursor = 0
+				m.auditCursor = 0
 			}
 		}
 		return m, nil
@@ -162,6 +178,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFirewallListKeys(msg)
 	case viewSubscription:
 		return m.handleSubscriptionKeys(msg)
+	case viewSecurityFailedLogins:
+		return m.handleFailedLoginKeys(msg)
+	case viewSecuritySudo:
+		return m.handleSudoKeys(msg)
+	case viewSecuritySELinux:
+		return m.handleSELinuxKeys(msg)
+	case viewSecurityAudit:
+		return m.handleAuditKeys(msg)
 	}
 	return m, nil
 }
@@ -330,6 +354,30 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.networkCursor = 0
 			m.view = viewNetworkPicker
 			return m, m.fetchNetworkInfo()
+		case 9: // Failed Logins
+			m.failedLoginCursor = 0
+			m.failedLogins = nil
+			m.filterText = ""
+			m.view = viewSecurityFailedLogins
+			return m, m.fetchFailedLogins()
+		case 10: // Sudo Activity
+			m.sudoCursor = 0
+			m.sudoEntries = nil
+			m.filterText = ""
+			m.view = viewSecuritySudo
+			return m, m.fetchSudoActivity()
+		case 11: // SELinux Denials
+			m.selinuxCursor = 0
+			m.selinuxDenials = nil
+			m.filterText = ""
+			m.view = viewSecuritySELinux
+			return m, m.fetchSELinuxDenials()
+		case 12: // Audit Summary
+			m.auditCursor = 0
+			m.auditEvents = nil
+			m.filterText = ""
+			m.view = viewSecurityAudit
+			return m, m.fetchAuditSummary()
 		}
 	case "esc":
 		m.view = viewHostList
@@ -827,6 +875,134 @@ func (m Model) handleRouteListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetchRoutes()
 	case "esc":
 		m.view = viewNetworkPicker
+	}
+	return m, nil
+}
+
+func (m Model) handleFailedLoginKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredFailedLogins()
+
+	switch msg.String() {
+	case "up", "k":
+		if m.failedLoginCursor > 0 {
+			m.failedLoginCursor--
+		}
+	case "down", "j":
+		if m.failedLoginCursor < len(filtered)-1 {
+			m.failedLoginCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.failedLoginCursor = 0
+	case "r":
+		m.failedLogins = nil
+		m.filterText = ""
+		m.flash = "Refreshing..."
+		return m, m.fetchFailedLogins()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.failedLoginCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleSudoKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredSudoEntries()
+
+	switch msg.String() {
+	case "up", "k":
+		if m.sudoCursor > 0 {
+			m.sudoCursor--
+		}
+	case "down", "j":
+		if m.sudoCursor < len(filtered)-1 {
+			m.sudoCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.sudoCursor = 0
+	case "r":
+		m.sudoEntries = nil
+		m.filterText = ""
+		m.flash = "Refreshing..."
+		return m, m.fetchSudoActivity()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.sudoCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleSELinuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredSELinuxDenials()
+
+	switch msg.String() {
+	case "up", "k":
+		if m.selinuxCursor > 0 {
+			m.selinuxCursor--
+		}
+	case "down", "j":
+		if m.selinuxCursor < len(filtered)-1 {
+			m.selinuxCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.selinuxCursor = 0
+	case "r":
+		m.selinuxDenials = nil
+		m.filterText = ""
+		m.flash = "Refreshing..."
+		return m, m.fetchSELinuxDenials()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.selinuxCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleAuditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredAuditEvents()
+
+	switch msg.String() {
+	case "up", "k":
+		if m.auditCursor > 0 {
+			m.auditCursor--
+		}
+	case "down", "j":
+		if m.auditCursor < len(filtered)-1 {
+			m.auditCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.auditCursor = 0
+	case "r":
+		m.auditEvents = nil
+		m.filterText = ""
+		m.flash = "Refreshing..."
+		return m, m.fetchAuditSummary()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.auditCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }
