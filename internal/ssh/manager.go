@@ -196,7 +196,12 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 			`sudo journalctl -p err --since '%s' --no-pager -q 2>/dev/null | wc -l && `+
 			`dnf check-update --quiet 2>/dev/null | grep -E '^\S+\.\S+\s' | wc -l && `+
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && `+
-			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l`,
+			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l && `+
+			`getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {count++} END {print count+0}' && `+
+			`(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | while read u; do passwd -S "$u" 2>/dev/null; done | grep -c ' L ' || echo 0) && `+
+			`ip -br link | grep -c UP && `+
+			`ip -br link | wc -l && `+
+			`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0)`,
 		sysctl, sysctl, sysctl, errorLogSince,
 	)
 

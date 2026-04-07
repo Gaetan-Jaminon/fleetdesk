@@ -130,6 +130,11 @@ func (m *Model) applyProbeInfo(idx int, info ssh.ProbeInfo) {
 	m.hosts[idx].UpdateCount = info.UpdateCount
 	m.hosts[idx].DiskCount = info.DiskCount
 	m.hosts[idx].DiskHighCount = info.DiskHighCount
+	m.hosts[idx].UserCount = info.UserCount
+	m.hosts[idx].LockedUsers = info.LockedUsers
+	m.hosts[idx].InterfacesUp = info.InterfacesUp
+	m.hosts[idx].InterfacesTotal = info.InterfacesTotal
+	m.hosts[idx].ListeningPorts = info.ListeningPorts
 	m.hosts[idx].LastUpdate = info.LastUpdate
 	m.hosts[idx].LastSecurity = info.LastSecurity
 }

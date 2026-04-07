@@ -294,6 +294,10 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.subscriptions = nil
 			m.view = viewSubscription
 			return m, m.fetchSubscription()
+		case 7: // Accounts
+			m.flash = "Accounts view coming in v0.5.0"
+		case 8: // Network
+			m.flash = "Network view coming in v0.5.0"
 		}
 	case "esc":
 		m.view = viewHostList
