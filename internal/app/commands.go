@@ -862,7 +862,7 @@ func (m Model) fetchPorts() func() tea.Msg {
 	sm := m.ssh
 
 	return func() tea.Msg {
-		cmd := `sudo ss -tlnp | tail -n +2`
+		cmd := `ss -tlnp | tail -n +2`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
 			return fetchPortsMsg{err: fmt.Errorf("ports: %w", err)}

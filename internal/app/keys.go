@@ -676,6 +676,7 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 1: // Ports
 			m.portCursor = 0
 			m.ports = nil
+			m.filterText = ""
 			m.view = viewNetworkPorts
 			return m, m.fetchPorts()
 		case 2: // Routes & DNS
