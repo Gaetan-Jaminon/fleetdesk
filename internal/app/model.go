@@ -44,6 +44,9 @@ const (
 // resourceCount is the number of items in the resource picker (0-indexed).
 const resourceCount = 9
 
+// networkSubViewCount is the number of sub-views in the network picker.
+const networkSubViewCount = 4
+
 type Model struct {
 	view view
 

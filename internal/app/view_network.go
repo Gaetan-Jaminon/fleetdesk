@@ -34,7 +34,7 @@ func (m Model) renderNetworkPicker() string {
 
 	fwStatus := m.firewallType
 	if fwStatus == "" {
-		fwStatus = "none"
+		fwStatus = "…"
 	}
 
 	rows := []netRow{

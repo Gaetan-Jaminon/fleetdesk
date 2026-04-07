@@ -653,7 +653,7 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.networkCursor--
 		}
 	case "down", "j":
-		if m.networkCursor < 3 {
+		if m.networkCursor < networkSubViewCount-1 {
 			m.networkCursor++
 		}
 	case "enter":
