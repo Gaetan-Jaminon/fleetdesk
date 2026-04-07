@@ -254,7 +254,7 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resourceCursor--
 		}
 	case "down", "j":
-		if m.resourceCursor < 6 {
+		if m.resourceCursor < resourceCount-1 {
 			m.resourceCursor++
 		}
 	case "enter":
@@ -384,21 +384,21 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.containers) > 0 {
 			h := m.hosts[m.selectedHost]
 			ctr := m.containers[m.containerCursor].Name
-			cmd := fmt.Sprintf("podman logs -f %s", ctr)
+			cmd := fmt.Sprintf("podman logs -f '%s'", shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("logs %s on %s (Ctrl+C to stop)", ctr, h.Entry.Name))
 		}
 	case "i":
 		if len(m.containers) > 0 {
 			h := m.hosts[m.selectedHost]
 			ctr := m.containers[m.containerCursor].Name
-			cmd := fmt.Sprintf("podman inspect %s | less", ctr)
+			cmd := fmt.Sprintf("podman inspect '%s' | less", shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("inspect %s on %s", ctr, h.Entry.Name))
 		}
 	case "e":
 		if len(m.containers) > 0 {
 			h := m.hosts[m.selectedHost]
 			ctr := m.containers[m.containerCursor].Name
-			cmd := fmt.Sprintf("podman exec -it %s /bin/bash || podman exec -it %s /bin/sh", ctr, ctr)
+			cmd := fmt.Sprintf("podman exec -it '%s' /bin/bash || podman exec -it '%s' /bin/sh", shellQuote(ctr), shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("exec %s on %s", ctr, h.Entry.Name))
 		}
 	case "r":
@@ -573,7 +573,7 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				h := m.hosts[m.selectedHost]
 				m.showConfirm = true
 				m.confirmMessage = fmt.Sprintf("Disable repo %s? [Y/n]", repoID)
-				m.confirmCmd = fmt.Sprintf("sudo dnf config-manager --set-disabled %s && echo '' && echo '\u2713 Repo %s disabled'", repoID, repoID)
+				m.confirmCmd = fmt.Sprintf("sudo dnf config-manager --set-disabled '%s' && echo '' && echo '\u2713 Repo %s disabled'", shellQuote(repoID), repoID)
 				m.confirmBanner = fmt.Sprintf("disable %s on %s", repoID, h.Entry.Name)
 			}
 		}

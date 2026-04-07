@@ -171,28 +171,6 @@ func (m Model) confirmSvcAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) svcAction(action string) tea.Cmd {
-	h := m.hosts[m.selectedHost]
-	unit := m.services[m.serviceCursor].Name + ".service"
-
-	sysctl := "sudo systemctl"
-	statusctl := "sudo systemctl"
-	if h.Entry.SystemdMode == "user" {
-		sysctl = "systemctl --user"
-		statusctl = "systemctl --user"
-	}
-
-	cmd := fmt.Sprintf(
-		`%s %s %s; rc=$?; echo ''; if [ $rc -eq 0 ]; then echo '✓ %s %s succeeded'; else echo '✗ %s %s failed (exit '$rc')'; fi; echo ''; %s status %s --no-pager 2>&1; true`,
-		sysctl, action, unit,
-		action, unit,
-		action, unit,
-		statusctl, unit,
-	)
-	banner := fmt.Sprintf("%s %s on %s", action, unit, h.Entry.Name)
-	return sshHandover(h, []string{cmd}, banner)
-}
-
 // --- Cron Jobs ---
 
 type fetchCronMsg struct {

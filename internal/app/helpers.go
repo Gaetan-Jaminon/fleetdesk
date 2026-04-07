@@ -9,6 +9,11 @@ import (
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
+// shellQuote escapes single quotes for safe shell interpolation inside single-quoted strings.
+func shellQuote(s string) string {
+	return strings.ReplaceAll(s, "'", "'\\''")
+}
+
 func (m Model) filteredServices() []config.Service {
 	if m.filterText == "" {
 		return m.services

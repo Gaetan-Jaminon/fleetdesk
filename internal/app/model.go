@@ -39,6 +39,9 @@ const (
 	viewSubscription
 )
 
+// resourceCount is the number of items in the resource picker (0-indexed).
+const resourceCount = 7
+
 type Model struct {
 	view view
 
