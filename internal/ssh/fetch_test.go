@@ -221,7 +221,7 @@ func TestParseAccountLine(t *testing.T) {
 			name: "normal user",
 			line: "jaminong|1000|jaminong wheel docker|/bin/bash|Apr 06 2026|PS|never",
 			want: config.Account{
-				User: "jaminong", UID: 1000, Groups: "jaminong wheel docker",
+				User: "jaminong", UID: 1000, Groups: "wheel docker",
 				Shell: "/bin/bash", LastLogin: "Apr 06 2026", PasswordStatus: "PS",
 				Expiry: "never", IsSudo: true, IsLocked: false,
 			},
@@ -230,7 +230,7 @@ func TestParseAccountLine(t *testing.T) {
 			name: "locked user",
 			line: "svcaccount|1001|svcaccount|/sbin/nologin|Never|LK|never",
 			want: config.Account{
-				User: "svcaccount", UID: 1001, Groups: "svcaccount",
+				User: "svcaccount", UID: 1001, Groups: "",
 				Shell: "/sbin/nologin", LastLogin: "Never", PasswordStatus: "LK",
 				Expiry: "never", IsSudo: false, IsLocked: true,
 			},
@@ -239,7 +239,7 @@ func TestParseAccountLine(t *testing.T) {
 			name: "sudo group member",
 			line: "admin|1002|admin sudo|/bin/zsh|Mar 15 2026|PS|never",
 			want: config.Account{
-				User: "admin", UID: 1002, Groups: "admin sudo",
+				User: "admin", UID: 1002, Groups: "sudo",
 				Shell: "/bin/zsh", LastLogin: "Mar 15 2026", PasswordStatus: "PS",
 				Expiry: "never", IsSudo: true, IsLocked: false,
 			},
@@ -248,7 +248,7 @@ func TestParseAccountLine(t *testing.T) {
 			name: "L status (locked alternate)",
 			line: "olduser|1003|olduser|/bin/bash|Never|L|2025-12-31",
 			want: config.Account{
-				User: "olduser", UID: 1003, Groups: "olduser",
+				User: "olduser", UID: 1003, Groups: "",
 				Shell: "/bin/bash", LastLogin: "Never", PasswordStatus: "L",
 				Expiry: "2025-12-31", IsSudo: false, IsLocked: true,
 			},

@@ -18,6 +18,52 @@ func (m Model) renderAccountList() string {
 
 	accts := m.filteredAccounts()
 
+	// detail view
+	if m.showAccountDetail && m.accountCursor < len(accts) {
+		a := accts[m.accountCursor]
+		breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Accounts \u203a " + a.User
+		s := m.renderHeader(breadcrumb, 0, 0) + "\n"
+		s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
+
+		for si, sec := range m.accountDetailSections {
+			// section title
+			s += borderedRow("  "+sec.title, iw, colHeaderStyle) + "\n"
+
+			// find max key width for alignment
+			keyWidth := 0
+			for _, kv := range sec.items {
+				if len(kv[0]) > keyWidth {
+					keyWidth = len(kv[0])
+				}
+			}
+
+			for i, kv := range sec.items {
+				var line string
+				if kv[0] == "" {
+					line = "    " + kv[1]
+				} else {
+					line = fmt.Sprintf("    %-*s  %s", keyWidth, kv[0], kv[1])
+				}
+				var style lipgloss.Style
+				if i%2 == 0 {
+					style = altRowStyle
+				} else {
+					style = normalRowStyle
+				}
+				s += borderedRow(line, iw, style) + "\n"
+			}
+
+			if si < len(m.accountDetailSections)-1 {
+				s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+			}
+		}
+
+		s = m.padToBottom(s, iw)
+		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
+		s += hintBarStyle.Width(m.width).Render("  Press any key to return")
+		return s
+	}
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Accounts"
 	s := m.renderHeader(breadcrumb, m.accountCursor+1, len(accts)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
@@ -33,12 +79,16 @@ func (m Model) renderAccountList() string {
 	} else {
 		// compute dynamic column widths
 		userCol := len("USER")
+		uidCol := len("UID")
 		groupCol := len("GROUPS")
 		shellCol := len("SHELL")
-		loginCol := len("LAST LOGIN")
 		for _, a := range accts {
 			if len(a.User) > userCol {
 				userCol = len(a.User)
+			}
+			uidStr := fmt.Sprintf("%d", a.UID)
+			if len(uidStr) > uidCol {
+				uidCol = len(uidStr)
 			}
 			g := a.Groups
 			if a.IsSudo {
@@ -50,16 +100,13 @@ func (m Model) renderAccountList() string {
 			if len(a.Shell) > shellCol {
 				shellCol = len(a.Shell)
 			}
-			if len(a.LastLogin) > loginCol {
-				loginCol = len(a.LastLogin)
-			}
 		}
 		userCol += 2
+		uidCol += 2
 		groupCol += 2
 		shellCol += 2
-		loginCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %5s  %-*s  %-*s  %-*s  %s", userCol, "USER", "UID", groupCol, "GROUPS", shellCol, "SHELL", loginCol, "LAST LOGIN", "PASSWORD")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %s", userCol, "USER", uidCol, "UID", groupCol, "GROUPS", "SHELL")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -97,17 +144,7 @@ func (m Model) renderAccountList() string {
 				groups = "\u2605 " + groups
 			}
 
-			pw := a.PasswordStatus
-			switch pw {
-			case "PS":
-				pw = "Set"
-			case "LK", "L":
-				pw = "Locked"
-			case "NP":
-				pw = "No Password"
-			}
-
-			line := fmt.Sprintf("%s  %-*s  %5d  %-*s  %-*s  %-*s  %s", cur, userCol, user, a.UID, groupCol, groups, shellCol, a.Shell, loginCol, a.LastLogin, pw)
+			line := fmt.Sprintf("%s  %-*s  %-*d  %-*s  %s", cur, userCol, user, uidCol, a.UID, groupCol, groups, a.Shell)
 
 			var style lipgloss.Style
 			if i == m.accountCursor {
@@ -127,7 +164,7 @@ func (m Model) renderAccountList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Navigate"},
-		{"i", "Detail"},
+{"Enter", "Detail"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

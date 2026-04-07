@@ -93,8 +93,10 @@ type Model struct {
 	subscriptionCursor int
 
 	// accounts
-	accounts      []config.Account
-	accountCursor int
+	accounts           []config.Account
+	accountCursor      int
+	showAccountDetail    bool
+	accountDetailSections []accountDetailSection
 
 	// filter / search
 	filterActive bool
@@ -250,6 +252,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashError = true
 		} else {
 			m.subscriptions = msg.subs
+		}
+		return m, nil
+
+	case fetchAccountDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.accountDetailSections = msg.sections
+			m.showAccountDetail = true
 		}
 		return m, nil
 

@@ -606,12 +606,12 @@ func (m Model) fetchAccounts() func() tea.Msg {
 	sm := m.ssh
 
 	return func() tea.Msg {
-		cmd := `getent passwd | awk -F: '$3 >= 1000 && $3 < 65534' | while IFS=: read user x uid gid desc home shell; do
+		// Combine getent passwd (local users) + /home/* dirs (IPA/IDM users) for a complete list.
+		// Only fetch basic info here — details (lastlog, passwd status, chage) are fetched on demand.
+		cmd := `(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while read user; do
+  eval "$(getent passwd "$user" | awk -F: '{printf "uid=%s shell=%s\n", $3, $7}')"
   groups=$(groups "$user" 2>/dev/null | cut -d: -f2 | xargs)
-  lastlog=$(lastlog -u "$user" 2>/dev/null | tail -1 | awk '{if ($NF ~ /in/) print "Never"; else print $4" "$5" "$6" "$9}')
-  pwstatus=$(sudo passwd -S "$user" 2>/dev/null | awk '{print $2}')
-  expiry=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
-  echo "$user|$uid|$groups|$shell|$lastlog|$pwstatus|$expiry"
+  echo "$user|$uid|$groups|$shell"
 done`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
@@ -637,6 +637,121 @@ done`
 		})
 		return fetchAccountsMsg{accounts: accounts}
 	}
+}
+
+type accountDetailSection struct {
+	title string
+	items [][2]string // key-value pairs
+}
+
+type fetchAccountDetailMsg struct {
+	sections []accountDetailSection
+	err      error
+}
+
+func (m Model) fetchAccountDetail(user string) func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		u := shellQuote(user)
+		// Detect if IPA user (not in /etc/passwd) and adapt commands
+		cmd := fmt.Sprintf(
+			`echo '===IDENTITY===' && id '%s' 2>&1 && echo '===PASSWORD===' && (sudo chage -l '%s' 2>/dev/null || echo 'Managed by IPA') && echo '===LOGIN===' && (lastlog -u '%s' 2>/dev/null | tail -1 || echo 'N/A') && echo '===SUDO===' && sudo -l -U '%s' 2>/dev/null`,
+			u, u, u, u,
+		)
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchAccountDetailMsg{err: fmt.Errorf("account detail: %w", err)}
+		}
+
+		var sections []accountDetailSection
+
+		// Parse identity section
+		if part := extractSection(out, "===IDENTITY===", "===PASSWORD==="); part != "" {
+			sec := accountDetailSection{title: "Identity"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				sec.items = append(sec.items, [2]string{"", line})
+			}
+			sections = append(sections, sec)
+		}
+
+		// Parse password/chage section
+		if part := extractSection(out, "===PASSWORD===", "===LOGIN==="); part != "" {
+			sec := accountDetailSection{title: "Password Policy"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.Contains(line, "does not exist") {
+					continue
+				}
+				if line == "Managed by IPA" {
+					sec.items = append(sec.items, [2]string{"Source", "Managed by IPA/IDM"})
+					continue
+				}
+				if idx := strings.Index(line, ":"); idx > 0 {
+					key := strings.TrimSpace(line[:idx])
+					val := strings.TrimSpace(line[idx+1:])
+					sec.items = append(sec.items, [2]string{key, val})
+				}
+			}
+			if len(sec.items) > 0 {
+				sections = append(sections, sec)
+			}
+		}
+
+		// Parse login section
+		if part := extractSection(out, "===LOGIN===", "===SUDO==="); part != "" {
+			sec := accountDetailSection{title: "Last Login"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "Username") {
+					continue
+				}
+				sec.items = append(sec.items, [2]string{"", line})
+			}
+			if len(sec.items) > 0 {
+				sections = append(sections, sec)
+			}
+		}
+
+		// Parse sudo section
+		if sudoIdx := strings.Index(out, "===SUDO==="); sudoIdx >= 0 {
+			part := out[sudoIdx+len("===SUDO==="):]
+			sec := accountDetailSection{title: "Sudo Privileges"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "Matching Defaults") || strings.HasPrefix(line, "!visiblepw") {
+					continue
+				}
+				if strings.Contains(line, "env_keep") {
+					continue
+				}
+				sec.items = append(sec.items, [2]string{"", line})
+			}
+			if len(sec.items) > 0 {
+				sections = append(sections, sec)
+			}
+		}
+
+		return fetchAccountDetailMsg{sections: sections}
+	}
+}
+
+func extractSection(out, startMarker, endMarker string) string {
+	startIdx := strings.Index(out, startMarker)
+	if startIdx < 0 {
+		return ""
+	}
+	content := out[startIdx+len(startMarker):]
+	endIdx := strings.Index(content, endMarker)
+	if endIdx >= 0 {
+		content = content[:endIdx]
+	}
+	return content
 }
 
 // --- Disk ---

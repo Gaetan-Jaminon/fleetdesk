@@ -130,7 +130,14 @@ func ParseAccountLine(line string) config.Account {
 	fmt.Sscanf(parts[1], "%d", &a.UID)
 
 	if len(parts) > 2 {
-		a.Groups = parts[2]
+		// filter out the primary group (same name as user)
+		var filtered []string
+		for _, g := range strings.Fields(parts[2]) {
+			if g != a.User {
+				filtered = append(filtered, g)
+			}
+		}
+		a.Groups = strings.Join(filtered, " ")
 	}
 	if len(parts) > 3 {
 		a.Shell = parts[3]

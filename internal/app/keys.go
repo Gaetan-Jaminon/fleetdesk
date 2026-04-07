@@ -597,6 +597,11 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.showAccountDetail {
+		m.showAccountDetail = false
+		m.accountDetailSections = nil
+		return m, nil
+	}
 	switch msg.String() {
 	case "up", "k":
 		if m.accountCursor > 0 {
@@ -607,13 +612,12 @@ func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.accountCursor < len(accts)-1 {
 			m.accountCursor++
 		}
-	case "i":
+	case "enter":
 		accts := m.filteredAccounts()
 		if len(accts) > 0 {
-			h := m.hosts[m.selectedHost]
 			user := accts[m.accountCursor].User
-			cmd := fmt.Sprintf("id '%s' && echo '---' && chage -l '%s' && echo '---' && lastlog -u '%s' && echo '---' && sudo -l -U '%s' 2>/dev/null", shellQuote(user), shellQuote(user), shellQuote(user), shellQuote(user))
-			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("account detail: %s on %s", user, h.Entry.Name))
+			m.flash = fmt.Sprintf("Loading %s...", user)
+			return m, m.fetchAccountDetail(user)
 		}
 	case "/":
 		m.filterActive = true
