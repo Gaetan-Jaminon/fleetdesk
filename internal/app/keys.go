@@ -25,6 +25,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errorCursor = 0
 			m.accountCursor = 0
 			m.portCursor = 0
+			m.firewallCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -32,6 +33,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errorCursor = 0
 			m.accountCursor = 0
 			m.portCursor = 0
+			m.firewallCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -39,6 +41,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.errorCursor = 0
 				m.accountCursor = 0
 				m.portCursor = 0
+				m.firewallCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -151,6 +154,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePortListKeys(msg)
 	case viewNetworkRoutes:
 		return m.handleRouteListKeys(msg)
+	case viewNetworkFirewall:
+		return m.handleFirewallListKeys(msg)
 	case viewSubscription:
 		return m.handleSubscriptionKeys(msg)
 	}
@@ -685,7 +690,12 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewNetworkRoutes
 			return m, m.fetchRoutes()
 		case 3: // Firewall
-			m.flash = "Firewall view coming soon"
+			m.firewallCursor = 0
+			m.firewallRules = nil
+			m.firewallBackend = ""
+			m.filterText = ""
+			m.view = viewNetworkFirewall
+			return m, m.fetchFirewall()
 		}
 	case "r":
 		m.flash = "Refreshing..."
@@ -741,6 +751,37 @@ func (m Model) handlePortListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.filterText != "" {
 			m.filterText = ""
 			m.portCursor = 0
+		} else {
+			m.view = viewNetworkPicker
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleFirewallListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.firewallCursor > 0 {
+			m.firewallCursor--
+		}
+	case "down", "j":
+		rules := m.filteredFirewallRules()
+		if m.firewallCursor < len(rules)-1 {
+			m.firewallCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.firewallCursor = 0
+	case "r":
+		m.firewallRules = nil
+		m.firewallBackend = ""
+		m.flash = "Refreshing..."
+		return m, m.fetchFirewall()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.firewallCursor = 0
 		} else {
 			m.view = viewNetworkPicker
 		}

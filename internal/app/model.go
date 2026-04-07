@@ -42,6 +42,7 @@ const (
 	viewNetworkInterfaces
 	viewNetworkPorts
 	viewNetworkRoutes
+	viewNetworkFirewall
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -112,6 +113,9 @@ type Model struct {
 	routeCursor     int
 	dnsNameservers  []string
 	dnsSearch       string
+	firewallRules   []config.FirewallRule
+	firewallCursor  int
+	firewallBackend string // "firewalld", "nftables", "iptables", ""
 
 	// accounts
 	accounts           []config.Account
@@ -351,6 +355,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchFirewallMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.firewallRules = msg.rules
+			m.firewallBackend = msg.backend
+		}
+		return m, nil
+
 	case fetchDiskMsg:
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
@@ -453,6 +467,8 @@ func (m Model) View() string {
 		return m.renderNetworkPorts()
 	case viewNetworkRoutes:
 		return m.renderNetworkRoutes()
+	case viewNetworkFirewall:
+		return m.renderNetworkFirewall()
 	case viewSubscription:
 		return m.renderSubscription()
 	}
