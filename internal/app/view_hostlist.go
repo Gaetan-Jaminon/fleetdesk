@@ -131,6 +131,7 @@ func (m Model) renderHostList() string {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
 		s += m.renderHintBar([][]string{
+			{"↑↓", "Navigate"},
 			{"Enter", "Drill In"},
 			{"x", "Shell"},
 			{"R", "Reboot"},

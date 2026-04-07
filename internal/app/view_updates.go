@@ -96,6 +96,7 @@ func (m Model) renderUpdateList() string {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
 		s += m.renderHintBar([][]string{
+			{"↑↓", "Navigate"},
 			{"u", "Update All"},
 			{"p", "Security Only"},
 			{"r", "Refresh"},
