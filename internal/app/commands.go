@@ -969,7 +969,7 @@ func (m Model) fetchFirewall() func() tea.Msg {
 	sm := m.ssh
 
 	return func() tea.Msg {
-		cmd := `if systemctl is-active firewalld >/dev/null 2>&1; then echo '---FIREWALLD---'; sudo firewall-cmd --list-all-zones 2>/dev/null; elif command -v nft >/dev/null 2>&1 && sudo nft list ruleset 2>/dev/null | grep -q 'chain'; then echo '---NFTABLES---'; sudo nft list ruleset 2>/dev/null; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi`
+		cmd := `if systemctl is-active firewalld >/dev/null 2>&1; then echo '---FIREWALLD---'; sudo firewall-cmd --list-all-zones 2>/dev/null; elif command -v nft >/dev/null 2>&1; then _nft=$(sudo nft list ruleset 2>/dev/null); if echo "$_nft" | grep -q 'chain'; then echo '---NFTABLES---'; echo "$_nft"; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
 			return fetchFirewallMsg{err: fmt.Errorf("firewall: %w", err)}

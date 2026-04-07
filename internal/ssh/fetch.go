@@ -392,7 +392,7 @@ func ParseIptablesOutput(output string) []config.FirewallRule {
 		}
 
 		fields := strings.Fields(trimmed)
-		if len(fields) < 4 {
+		if len(fields) < 5 {
 			continue
 		}
 

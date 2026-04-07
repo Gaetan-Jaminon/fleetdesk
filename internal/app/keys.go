@@ -41,6 +41,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.errorCursor = 0
 				m.accountCursor = 0
 				m.portCursor = 0
+				m.firewallCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {

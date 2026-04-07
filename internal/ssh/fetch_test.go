@@ -591,6 +591,42 @@ num  target     prot opt source               destination
 	}
 }
 
+func TestParseNftablesOutput(t *testing.T) {
+	output := `table inet filter {
+	chain input {
+		type filter hook input priority filter; policy accept;
+		ct state established,related accept
+		iif "lo" accept
+		tcp dport 22 accept
+		ip saddr 10.0.0.0/8 tcp dport { 80, 443 } accept
+		counter drop
+	}
+	chain output {
+		type filter hook output priority filter; policy accept;
+	}
+}`
+
+	rules := ParseNftablesOutput(output)
+	if len(rules) < 3 {
+		t.Fatalf("got %d rules, want at least 3", len(rules))
+	}
+
+	// check we got accept and drop actions
+	actions := map[string]bool{}
+	for _, r := range rules {
+		actions[r.Action] = true
+		if r.Backend != "nftables" {
+			t.Errorf("Backend = %q, want %q", r.Backend, "nftables")
+		}
+	}
+	if !actions["accept"] {
+		t.Error("expected at least one accept rule")
+	}
+	if !actions["drop"] {
+		t.Error("expected at least one drop rule")
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 
