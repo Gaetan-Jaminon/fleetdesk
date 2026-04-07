@@ -627,6 +627,96 @@ func TestParseNftablesOutput(t *testing.T) {
 	}
 }
 
+func TestParseServiceStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   config.ServiceStatus
+	}{
+		{
+			name: "active running",
+			output: `MainPID=1617
+MemoryCurrent=10960896
+TasksCurrent=1
+Id=sshd.service
+Description=OpenSSH server daemon
+LoadState=loaded
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+ActiveEnterTimestamp=Tue 2026-04-07 00:40:03 UTC`,
+			want: config.ServiceStatus{
+				Name: "sshd.service", Description: "OpenSSH server daemon",
+				LoadState: "loaded", ActiveState: "active", SubState: "running",
+				PID: "1617", Memory: "10.5M", Tasks: "1",
+				Since: "Tue 2026-04-07 00:40:03 UTC", Enabled: "enabled",
+			},
+		},
+		{
+			name: "inactive dead",
+			output: `MainPID=0
+MemoryCurrent=[not set]
+TasksCurrent=[not set]
+Id=cups.service
+Description=CUPS Printing Service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+UnitFileState=disabled
+ActiveEnterTimestamp=`,
+			want: config.ServiceStatus{
+				Name: "cups.service", Description: "CUPS Printing Service",
+				LoadState: "loaded", ActiveState: "inactive", SubState: "dead",
+				PID: "—", Memory: "—", Tasks: "—",
+				Since: "—", Enabled: "disabled",
+			},
+		},
+		{
+			name: "failed",
+			output: `MainPID=0
+MemoryCurrent=0
+TasksCurrent=0
+Id=bad.service
+Description=Bad Service
+LoadState=loaded
+ActiveState=failed
+SubState=failed
+UnitFileState=enabled
+ActiveEnterTimestamp=Mon 2026-04-06 12:00:00 UTC`,
+			want: config.ServiceStatus{
+				Name: "bad.service", Description: "Bad Service",
+				LoadState: "loaded", ActiveState: "failed", SubState: "failed",
+				PID: "—", Memory: "0B", Tasks: "0",
+				Since: "Mon 2026-04-06 12:00:00 UTC", Enabled: "enabled",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseServiceStatus(tt.output)
+			if got.Name != tt.want.Name {
+				t.Errorf("Name = %q, want %q", got.Name, tt.want.Name)
+			}
+			if got.ActiveState != tt.want.ActiveState {
+				t.Errorf("ActiveState = %q, want %q", got.ActiveState, tt.want.ActiveState)
+			}
+			if got.SubState != tt.want.SubState {
+				t.Errorf("SubState = %q, want %q", got.SubState, tt.want.SubState)
+			}
+			if got.PID != tt.want.PID {
+				t.Errorf("PID = %q, want %q", got.PID, tt.want.PID)
+			}
+			if got.Memory != tt.want.Memory {
+				t.Errorf("Memory = %q, want %q", got.Memory, tt.want.Memory)
+			}
+			if got.Enabled != tt.want.Enabled {
+				t.Errorf("Enabled = %q, want %q", got.Enabled, tt.want.Enabled)
+			}
+		})
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 

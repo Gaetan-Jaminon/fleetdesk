@@ -188,3 +188,17 @@ type FirewallRule struct {
 	Action   string // allow, drop, reject
 	Backend  string // firewalld, nftables, iptables
 }
+
+// ServiceStatus holds parsed systemctl show output for a service.
+type ServiceStatus struct {
+	Name        string
+	Description string
+	LoadState   string // loaded, not-found, masked
+	ActiveState string // active, inactive, failed
+	SubState    string // running, dead, exited, waiting
+	PID         string
+	Memory      string
+	Tasks       string
+	Since       string
+	Enabled     string // enabled, disabled, static
+}

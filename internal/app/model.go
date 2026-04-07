@@ -68,8 +68,13 @@ type Model struct {
 	resourceCursor int
 
 	// service list
-	services      []config.Service
-	serviceCursor int
+	services           []config.Service
+	serviceCursor      int
+	showServiceDetail  bool
+	serviceDetailUnit  string // unit name being viewed
+	serviceStatus      config.ServiceStatus
+	serviceLogLines    []string
+	serviceLogCursor   int
 
 	// container list
 	containers      []config.Container
@@ -219,6 +224,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.services = msg.services
 			}
+		}
+		return m, nil
+
+	case fetchServiceDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.serviceStatus = msg.status
+			m.serviceLogLines = msg.logLines
+			m.showServiceDetail = true
+			m.flash = ""
 		}
 		return m, nil
 
@@ -403,6 +420,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// refresh list after terminal handover returns
 		switch m.view {
 		case viewServiceList:
+			if m.showServiceDetail && m.serviceDetailUnit != "" {
+				return m, tea.Batch(tea.EnterAltScreen, m.fetchServiceDetail(m.serviceDetailUnit))
+			}
 			m.serviceCursor = 0
 			m.services = nil
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchServices())

@@ -465,6 +465,65 @@ func ParseNftablesOutput(output string) []config.FirewallRule {
 	return rules
 }
 
+// ParseServiceStatus parses `systemctl show` key=value output into ServiceStatus.
+func ParseServiceStatus(output string) config.ServiceStatus {
+	props := make(map[string]string)
+	for _, line := range strings.Split(output, "\n") {
+		if idx := strings.Index(line, "="); idx > 0 {
+			props[line[:idx]] = line[idx+1:]
+		}
+	}
+
+	s := config.ServiceStatus{
+		Name:        props["Id"],
+		Description: props["Description"],
+		LoadState:   props["LoadState"],
+		ActiveState: props["ActiveState"],
+		SubState:    props["SubState"],
+		Enabled:     props["UnitFileState"],
+		Since:       props["ActiveEnterTimestamp"],
+	}
+
+	// PID: 0 means not running
+	if pid := props["MainPID"]; pid != "" && pid != "0" {
+		s.PID = pid
+	} else {
+		s.PID = "—"
+	}
+
+	// Memory: convert bytes to human-readable
+	if mem := props["MemoryCurrent"]; mem != "" && mem != "[not set]" {
+		var bytes uint64
+		fmt.Sscanf(mem, "%d", &bytes)
+		switch {
+		case bytes >= 1<<30:
+			s.Memory = fmt.Sprintf("%.1fG", float64(bytes)/float64(1<<30))
+		case bytes >= 1<<20:
+			s.Memory = fmt.Sprintf("%.1fM", float64(bytes)/float64(1<<20))
+		case bytes >= 1<<10:
+			s.Memory = fmt.Sprintf("%.1fK", float64(bytes)/float64(1<<10))
+		default:
+			s.Memory = fmt.Sprintf("%dB", bytes)
+		}
+	} else {
+		s.Memory = "—"
+	}
+
+	// Tasks
+	if tasks := props["TasksCurrent"]; tasks != "" && tasks != "[not set]" {
+		s.Tasks = tasks
+	} else {
+		s.Tasks = "—"
+	}
+
+	// Since: empty means never started
+	if s.Since == "" {
+		s.Since = "—"
+	}
+
+	return s
+}
+
 // ExpandPath expands ~ in paths.
 func ExpandPath(path string) string {
 	if len(path) > 1 && path[:2] == "~/" {

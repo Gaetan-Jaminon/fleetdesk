@@ -85,6 +85,20 @@ func (m Model) filteredPorts() []config.ListeningPort {
 	return filtered
 }
 
+func (m Model) filteredServiceLogs() []string {
+	if m.filterText == "" {
+		return m.serviceLogLines
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []string
+	for _, line := range m.serviceLogLines {
+		if strings.Contains(strings.ToLower(line), filter) {
+			filtered = append(filtered, line)
+		}
+	}
+	return filtered
+}
+
 func (m Model) filteredFirewallRules() []config.FirewallRule {
 	if m.filterText == "" {
 		return m.firewallRules

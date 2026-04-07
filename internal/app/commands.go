@@ -171,6 +171,78 @@ func (m Model) confirmSvcAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// --- Service Detail ---
+
+type fetchServiceDetailMsg struct {
+	status   config.ServiceStatus
+	logLines []string
+	err      error
+}
+
+// confirmDetailSvcAction triggers a service action from the detail view using the stored unit name.
+func (m Model) confirmDetailSvcAction(action string) (tea.Model, tea.Cmd) {
+	h := m.hosts[m.selectedHost]
+	unit := m.serviceDetailUnit
+
+	sysctl := "sudo systemctl"
+	statusctl := "sudo systemctl"
+	if h.Entry.SystemdMode == "user" {
+		sysctl = "systemctl --user"
+		statusctl = "systemctl --user"
+	}
+
+	m.showConfirm = true
+	m.confirmMessage = fmt.Sprintf("%s %s? [Y/n]", action, unit)
+	m.confirmCmd = fmt.Sprintf(
+		`%s %s %s; rc=$?; echo ''; if [ $rc -eq 0 ]; then echo '✓ %s %s succeeded'; else echo '✗ %s %s failed (exit '$rc')'; fi; echo ''; %s status %s --no-pager 2>&1; true`,
+		sysctl, action, unit,
+		action, unit,
+		action, unit,
+		statusctl, unit,
+	)
+	m.confirmBanner = fmt.Sprintf("%s %s on %s", action, unit, h.Entry.Name)
+	return m, nil
+}
+
+func (m Model) fetchServiceDetail(unit string) func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+	h := m.hosts[idx]
+	mode := h.Entry.SystemdMode
+
+	return func() tea.Msg {
+		sysctl := "systemctl"
+		journal := "sudo journalctl -u"
+		if mode == "user" {
+			sysctl = "systemctl --user"
+			journal = "journalctl --user-unit"
+		}
+
+		cmd := fmt.Sprintf(
+			"(%s show '%s' --property=Id,Description,LoadState,ActiveState,SubState,MainPID,MemoryCurrent,TasksCurrent,ActiveEnterTimestamp,UnitFileState --no-pager; echo '---LOGS---'; %s '%s' --no-pager -n 50 -q --reverse 2>/dev/null) | cat",
+			sysctl, shellQuote(unit), journal, shellQuote(unit),
+		)
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchServiceDetailMsg{err: fmt.Errorf("service detail: %w", err)}
+		}
+
+		parts := strings.SplitN(out, "---LOGS---", 2)
+		status := ssh.ParseServiceStatus(parts[0])
+
+		var logLines []string
+		if len(parts) > 1 {
+			for _, line := range strings.Split(strings.TrimSpace(parts[1]), "\n") {
+				if line != "" {
+					logLines = append(logLines, line)
+				}
+			}
+		}
+
+		return fetchServiceDetailMsg{status: status, logLines: logLines}
+	}
+}
+
 // --- Cron Jobs ---
 
 type fetchCronMsg struct {
