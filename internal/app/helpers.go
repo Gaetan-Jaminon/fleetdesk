@@ -54,6 +54,21 @@ func (m Model) filteredErrorLogs() []config.ErrorLog {
 	return filtered
 }
 
+func (m Model) filteredAccounts() []config.Account {
+	if m.filterText == "" {
+		return m.accounts
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.Account
+	for _, a := range m.accounts {
+		line := strings.ToLower(a.User + " " + a.Groups + " " + a.Shell + " " + a.PasswordStatus)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, a)
+		}
+	}
+	return filtered
+}
+
 // parseLogFields parses structured key=value pairs from a log message.
 // Handles both simple key=value and key="quoted value" formats.
 func parseLogFields(msg string) [][2]string {

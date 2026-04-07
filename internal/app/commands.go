@@ -594,6 +594,168 @@ func (m Model) fetchSubscription() func() tea.Msg {
 	}
 }
 
+// --- Accounts ---
+
+type fetchAccountsMsg struct {
+	accounts []config.Account
+	err      error
+}
+
+func (m Model) fetchAccounts() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		// Combine getent passwd (local users) + /home/* dirs (IPA/IDM users) for a complete list.
+		// Only fetch basic info here — details (lastlog, passwd status, chage) are fetched on demand.
+		cmd := `(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while IFS= read -r user; do
+  entry=$(getent passwd "$user")
+  uid=$(printf '%s' "$entry" | cut -d: -f3)
+  shell=$(printf '%s' "$entry" | cut -d: -f7)
+  groups=$(groups "$user" 2>/dev/null | cut -d: -f2 | xargs)
+  echo "$user|$uid|$groups|$shell"
+done`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil {
+			return fetchAccountsMsg{err: fmt.Errorf("accounts: %w", err)}
+		}
+
+		var accounts []config.Account
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			a := ssh.ParseAccountLine(line)
+			if a.User != "" {
+				accounts = append(accounts, a)
+			}
+		}
+		sort.Slice(accounts, func(i, j int) bool {
+			oi, oj := ssh.AccountStateOrder(accounts[i]), ssh.AccountStateOrder(accounts[j])
+			if oi != oj {
+				return oi < oj
+			}
+			return accounts[i].User < accounts[j].User
+		})
+		return fetchAccountsMsg{accounts: accounts}
+	}
+}
+
+type accountDetailSection struct {
+	title string
+	items [][2]string // key-value pairs
+}
+
+type fetchAccountDetailMsg struct {
+	sections []accountDetailSection
+	err      error
+}
+
+func (m Model) fetchAccountDetail(user string) func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		u := shellQuote(user)
+		// Detect if IPA user (not in /etc/passwd) and adapt commands
+		cmd := fmt.Sprintf(
+			`echo '===IDENTITY===' && id '%s' 2>&1 && echo '===PASSWORD===' && (sudo chage -l '%s' 2>/dev/null || echo 'Managed by IPA') && echo '===LOGIN===' && (lastlog -u '%s' 2>/dev/null | tail -1 || echo 'N/A') && echo '===SUDO===' && sudo -l -U '%s' 2>/dev/null`,
+			u, u, u, u,
+		)
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchAccountDetailMsg{err: fmt.Errorf("account detail: %w", err)}
+		}
+
+		var sections []accountDetailSection
+
+		// Parse identity section
+		if part := extractSection(out, "===IDENTITY===", "===PASSWORD==="); part != "" {
+			sec := accountDetailSection{title: "Identity"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				sec.items = append(sec.items, [2]string{"", line})
+			}
+			sections = append(sections, sec)
+		}
+
+		// Parse password/chage section
+		if part := extractSection(out, "===PASSWORD===", "===LOGIN==="); part != "" {
+			sec := accountDetailSection{title: "Password Policy"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.Contains(line, "does not exist") {
+					continue
+				}
+				if line == "Managed by IPA" {
+					sec.items = append(sec.items, [2]string{"Source", "Managed by IPA/IDM"})
+					continue
+				}
+				if idx := strings.Index(line, ":"); idx > 0 {
+					key := strings.TrimSpace(line[:idx])
+					val := strings.TrimSpace(line[idx+1:])
+					sec.items = append(sec.items, [2]string{key, val})
+				}
+			}
+			if len(sec.items) > 0 {
+				sections = append(sections, sec)
+			}
+		}
+
+		// Parse login section
+		if part := extractSection(out, "===LOGIN===", "===SUDO==="); part != "" {
+			sec := accountDetailSection{title: "Last Login"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "Username") {
+					continue
+				}
+				sec.items = append(sec.items, [2]string{"", line})
+			}
+			if len(sec.items) > 0 {
+				sections = append(sections, sec)
+			}
+		}
+
+		// Parse sudo section
+		if sudoIdx := strings.Index(out, "===SUDO==="); sudoIdx >= 0 {
+			part := out[sudoIdx+len("===SUDO==="):]
+			sec := accountDetailSection{title: "Sudo Privileges"}
+			for _, line := range strings.Split(strings.TrimSpace(part), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "Matching Defaults") || strings.HasPrefix(line, "!visiblepw") {
+					continue
+				}
+				if strings.Contains(line, "env_keep") {
+					continue
+				}
+				sec.items = append(sec.items, [2]string{"", line})
+			}
+			if len(sec.items) > 0 {
+				sections = append(sections, sec)
+			}
+		}
+
+		return fetchAccountDetailMsg{sections: sections}
+	}
+}
+
+func extractSection(out, startMarker, endMarker string) string {
+	startIdx := strings.Index(out, startMarker)
+	if startIdx < 0 {
+		return ""
+	}
+	content := out[startIdx+len(startMarker):]
+	endIdx := strings.Index(content, endMarker)
+	if endIdx >= 0 {
+		content = content[:endIdx]
+	}
+	return content
+}
+
 // --- Disk ---
 
 type fetchDiskMsg struct {

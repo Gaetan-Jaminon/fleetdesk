@@ -23,22 +23,26 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterActive = false
 			m.serviceCursor = 0
 			m.errorCursor = 0
+			m.accountCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
 			m.serviceCursor = 0
 			m.errorCursor = 0
+			m.accountCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
 				m.serviceCursor = 0
 				m.errorCursor = 0
+				m.accountCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
 				m.filterText += string(msg.Runes)
 				m.serviceCursor = 0
 				m.errorCursor = 0
+				m.accountCursor = 0
 			}
 		}
 		return m, nil
@@ -133,6 +137,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleUpdateListKeys(msg)
 	case viewDiskList:
 		return m.handleDiskListKeys(msg)
+	case viewAccountList:
+		return m.handleAccountListKeys(msg)
 	case viewSubscription:
 		return m.handleSubscriptionKeys(msg)
 	}
@@ -295,7 +301,10 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewSubscription
 			return m, m.fetchSubscription()
 		case 7: // Accounts
-			m.flash = "Accounts view coming in v0.5.0"
+			m.accountCursor = 0
+			m.accounts = nil
+			m.view = viewAccountList
+			return m, m.fetchAccounts()
 		case 8: // Network
 			m.flash = "Network view coming in v0.5.0"
 		}
@@ -587,6 +596,48 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetchSubscription()
 	case "esc":
 		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.showAccountDetail {
+		m.showAccountDetail = false
+		m.accountDetailSections = nil
+		return m, nil
+	}
+	switch msg.String() {
+	case "up", "k":
+		if m.accountCursor > 0 {
+			m.accountCursor--
+		}
+	case "down", "j":
+		accts := m.filteredAccounts()
+		if m.accountCursor < len(accts)-1 {
+			m.accountCursor++
+		}
+	case "enter":
+		accts := m.filteredAccounts()
+		if len(accts) > 0 {
+			user := accts[m.accountCursor].User
+			m.flash = fmt.Sprintf("Loading %s...", user)
+			return m, m.fetchAccountDetail(user)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.accountCursor = 0
+	case "r":
+		m.accounts = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchAccounts()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.accountCursor = 0
+		} else {
+			m.view = viewResourcePicker
+		}
 	}
 	return m, nil
 }

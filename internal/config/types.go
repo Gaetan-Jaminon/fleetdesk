@@ -140,3 +140,16 @@ type Disk struct {
 	UsePercent string
 	Mount      string
 }
+
+// Account represents a local user account on a remote host.
+type Account struct {
+	User           string
+	UID            int
+	Groups         string
+	Shell          string
+	LastLogin      string
+	PasswordStatus string // PS (set), LK (locked), NP (no password)
+	Expiry         string
+	IsSudo         bool // true if groups contains "wheel" or "sudo"
+	IsLocked       bool // true if PasswordStatus == "LK" or "L"
+}

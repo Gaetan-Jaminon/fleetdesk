@@ -211,6 +211,103 @@ func TestExtractPkgName(t *testing.T) {
 	}
 }
 
+func TestParseAccountLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.Account
+	}{
+		{
+			name: "normal user",
+			line: "jaminong|1000|jaminong wheel docker|/bin/bash|Apr 06 2026|PS|never",
+			want: config.Account{
+				User: "jaminong", UID: 1000, Groups: "wheel docker",
+				Shell: "/bin/bash", LastLogin: "Apr 06 2026", PasswordStatus: "PS",
+				Expiry: "never", IsSudo: true, IsLocked: false,
+			},
+		},
+		{
+			name: "locked user",
+			line: "svcaccount|1001|svcaccount|/sbin/nologin|Never|LK|never",
+			want: config.Account{
+				User: "svcaccount", UID: 1001, Groups: "",
+				Shell: "/sbin/nologin", LastLogin: "Never", PasswordStatus: "LK",
+				Expiry: "never", IsSudo: false, IsLocked: true,
+			},
+		},
+		{
+			name: "sudo group member",
+			line: "admin|1002|admin sudo|/bin/zsh|Mar 15 2026|PS|never",
+			want: config.Account{
+				User: "admin", UID: 1002, Groups: "sudo",
+				Shell: "/bin/zsh", LastLogin: "Mar 15 2026", PasswordStatus: "PS",
+				Expiry: "never", IsSudo: true, IsLocked: false,
+			},
+		},
+		{
+			name: "L status (locked alternate)",
+			line: "olduser|1003|olduser|/bin/bash|Never|L|2025-12-31",
+			want: config.Account{
+				User: "olduser", UID: 1003, Groups: "",
+				Shell: "/bin/bash", LastLogin: "Never", PasswordStatus: "L",
+				Expiry: "2025-12-31", IsSudo: false, IsLocked: true,
+			},
+		},
+		{
+			name: "missing fields",
+			line: "partial|1004",
+			want: config.Account{User: "partial", UID: 1004},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.Account{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseAccountLine(tt.line)
+			if got.User != tt.want.User {
+				t.Errorf("User = %q, want %q", got.User, tt.want.User)
+			}
+			if got.UID != tt.want.UID {
+				t.Errorf("UID = %d, want %d", got.UID, tt.want.UID)
+			}
+			if got.Groups != tt.want.Groups {
+				t.Errorf("Groups = %q, want %q", got.Groups, tt.want.Groups)
+			}
+			if got.Shell != tt.want.Shell {
+				t.Errorf("Shell = %q, want %q", got.Shell, tt.want.Shell)
+			}
+			if got.LastLogin != tt.want.LastLogin {
+				t.Errorf("LastLogin = %q, want %q", got.LastLogin, tt.want.LastLogin)
+			}
+			if got.PasswordStatus != tt.want.PasswordStatus {
+				t.Errorf("PasswordStatus = %q, want %q", got.PasswordStatus, tt.want.PasswordStatus)
+			}
+			if got.Expiry != tt.want.Expiry {
+				t.Errorf("Expiry = %q, want %q", got.Expiry, tt.want.Expiry)
+			}
+			if got.IsSudo != tt.want.IsSudo {
+				t.Errorf("IsSudo = %v, want %v", got.IsSudo, tt.want.IsSudo)
+			}
+			if got.IsLocked != tt.want.IsLocked {
+				t.Errorf("IsLocked = %v, want %v", got.IsLocked, tt.want.IsLocked)
+			}
+		})
+	}
+}
+
+func TestAccountStateOrder(t *testing.T) {
+	locked := config.Account{IsLocked: true}
+	normal := config.Account{}
+
+	if AccountStateOrder(locked) >= AccountStateOrder(normal) {
+		t.Error("locked should sort before normal")
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 
