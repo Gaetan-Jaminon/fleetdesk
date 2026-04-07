@@ -153,3 +153,28 @@ type Account struct {
 	IsSudo         bool // true if groups contains "wheel" or "sudo"
 	IsLocked       bool // true if PasswordStatus == "LK" or "L"
 }
+
+// NetInterface represents a network interface on a remote host.
+type NetInterface struct {
+	Name  string
+	State string // UP, DOWN, UNKNOWN
+	IPs   string // space-separated, CIDR stripped
+	MTU   string
+}
+
+// ListeningPort represents a listening TCP port on a remote host.
+type ListeningPort struct {
+	Port        int
+	Protocol    string
+	Process     string
+	BindAddress string
+}
+
+// Route represents a network route on a remote host.
+type Route struct {
+	Destination string
+	Gateway     string
+	Interface   string
+	Metric      string
+	IsDefault   bool
+}

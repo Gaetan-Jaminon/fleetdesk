@@ -176,6 +176,123 @@ func AccountStateOrder(a config.Account) int {
 	return 1
 }
 
+// ParseInterfaceLine parses a line from `ip -br addr` output.
+// Format: INTERFACE STATE [IP/PREFIX ...]
+func ParseInterfaceLine(line string) config.NetInterface {
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return config.NetInterface{}
+	}
+	iface := config.NetInterface{
+		Name:  fields[0],
+		State: fields[1],
+	}
+	// strip CIDR prefix from IPs
+	var ips []string
+	for _, f := range fields[2:] {
+		if idx := strings.Index(f, "/"); idx > 0 {
+			ips = append(ips, f[:idx])
+		} else {
+			ips = append(ips, f)
+		}
+	}
+	iface.IPs = strings.Join(ips, " ")
+	return iface
+}
+
+// InterfaceStateOrder returns sort priority for interface states.
+// Lower = shown first.
+func InterfaceStateOrder(state string) int {
+	switch state {
+	case "UP":
+		return 0
+	case "UNKNOWN":
+		return 1
+	case "DOWN":
+		return 2
+	default:
+		return 3
+	}
+}
+
+// ParsePortLine parses a line from `ss -tlnp` output.
+// Format: State Recv-Q Send-Q Local_Address:Port Peer_Address:Port [Process]
+func ParsePortLine(line string) config.ListeningPort {
+	fields := strings.Fields(line)
+	if len(fields) < 5 {
+		return config.ListeningPort{}
+	}
+
+	local := fields[3] // e.g. "0.0.0.0:22", "[::]:80", "127.0.0.1:5432"
+	var bindAddr string
+	var port int
+
+	if strings.HasPrefix(local, "[") {
+		// IPv6: [::]:80 or [::1]:9090
+		bracket := strings.LastIndex(local, "]:")
+		if bracket > 0 {
+			bindAddr = local[1:bracket]
+			fmt.Sscanf(local[bracket+2:], "%d", &port)
+		}
+	} else {
+		// IPv4: 0.0.0.0:22
+		lastColon := strings.LastIndex(local, ":")
+		if lastColon > 0 {
+			bindAddr = local[:lastColon]
+			fmt.Sscanf(local[lastColon+1:], "%d", &port)
+		}
+	}
+
+	// extract process name from users:(("name",pid=X,fd=Y))
+	process := "—"
+	for _, f := range fields[5:] {
+		if strings.HasPrefix(f, "users:") {
+			if start := strings.Index(f, "((\""); start >= 0 {
+				end := strings.Index(f[start+3:], "\"")
+				if end > 0 {
+					process = f[start+3 : start+3+end]
+				}
+			}
+			break
+		}
+	}
+
+	return config.ListeningPort{
+		Port:        port,
+		Protocol:    "tcp",
+		Process:     process,
+		BindAddress: bindAddr,
+	}
+}
+
+// ParseRouteLine parses a line from `ip route` output.
+func ParseRouteLine(line string) config.Route {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return config.Route{}
+	}
+
+	r := config.Route{
+		Destination: fields[0],
+		Gateway:     "direct",
+		Metric:      "—",
+		IsDefault:   fields[0] == "default",
+	}
+
+	for i := 1; i < len(fields)-1; i++ {
+		switch fields[i] {
+		case "via":
+			r.Gateway = fields[i+1]
+		case "dev":
+			r.Interface = fields[i+1]
+		case "metric":
+			r.Metric = fields[i+1]
+		}
+	}
+
+	return r
+}
+
 // ExpandPath expands ~ in paths.
 func ExpandPath(path string) string {
 	if len(path) > 1 && path[:2] == "~/" {

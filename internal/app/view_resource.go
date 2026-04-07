@@ -83,7 +83,7 @@ func (m Model) renderResourcePicker() string {
 		{"Disk", h.DiskCount, 0, h.DiskHighCount},
 		{"Subscription", 0, 0, 0},
 		{"Accounts", h.UserCount, 0, h.LockedUsers},
-		{"Network", h.InterfacesTotal, h.InterfacesUp, h.ListeningPorts},
+		{"Network", h.InterfacesTotal, h.InterfacesUp, 0},
 	}
 	for i, r := range rows {
 		cur := "   "
