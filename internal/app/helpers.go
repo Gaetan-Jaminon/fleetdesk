@@ -85,6 +85,21 @@ func (m Model) filteredPorts() []config.ListeningPort {
 	return filtered
 }
 
+func (m Model) filteredFirewallRules() []config.FirewallRule {
+	if m.filterText == "" {
+		return m.firewallRules
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.FirewallRule
+	for _, r := range m.firewallRules {
+		line := strings.ToLower(r.Zone + " " + r.Service + " " + r.Protocol + " " + r.Action)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
 // parseLogFields parses structured key=value pairs from a log message.
 // Handles both simple key=value and key="quoted value" formats.
 func parseLogFields(msg string) [][2]string {
