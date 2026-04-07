@@ -39,6 +39,9 @@ const (
 	viewSubscription
 	viewAccountList
 	viewNetworkPicker
+	viewNetworkInterfaces
+	viewNetworkPorts
+	viewNetworkRoutes
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -97,10 +100,18 @@ type Model struct {
 	subscriptionCursor int
 
 	// network
-	networkCursor int
-	routeCount    int
-	firewallType  string
-	firewallCount int
+	networkCursor   int
+	routeCount      int
+	firewallType    string
+	firewallCount   int
+	interfaces      []config.NetInterface
+	interfaceCursor int
+	ports           []config.ListeningPort
+	portCursor      int
+	routes          []config.Route
+	routeCursor     int
+	dnsNameservers  []string
+	dnsSearch       string
 
 	// accounts
 	accounts           []config.Account
@@ -288,6 +299,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchPortsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.ports == nil {
+				m.ports = []config.ListeningPort{}
+			} else {
+				m.ports = msg.ports
+			}
+		}
+		return m, nil
+
+	case fetchRoutesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.routes == nil {
+				m.routes = []config.Route{}
+			} else {
+				m.routes = msg.routes
+			}
+			m.dnsNameservers = msg.nameservers
+			m.dnsSearch = msg.search
+		}
+		return m, nil
+
+	case fetchInterfacesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			if msg.interfaces == nil {
+				m.interfaces = []config.NetInterface{}
+			} else {
+				m.interfaces = msg.interfaces
+			}
+		}
+		return m, nil
+
 	case fetchNetworkInfoMsg:
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
@@ -395,6 +447,12 @@ func (m Model) View() string {
 		return m.renderAccountList()
 	case viewNetworkPicker:
 		return m.renderNetworkPicker()
+	case viewNetworkInterfaces:
+		return m.renderNetworkInterfaces()
+	case viewNetworkPorts:
+		return m.renderNetworkPorts()
+	case viewNetworkRoutes:
+		return m.renderNetworkRoutes()
 	case viewSubscription:
 		return m.renderSubscription()
 	}

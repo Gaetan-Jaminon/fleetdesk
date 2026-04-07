@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -64,6 +65,21 @@ func (m Model) filteredAccounts() []config.Account {
 		line := strings.ToLower(a.User + " " + a.Groups + " " + a.Shell + " " + a.PasswordStatus)
 		if strings.Contains(line, filter) {
 			filtered = append(filtered, a)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredPorts() []config.ListeningPort {
+	if m.filterText == "" {
+		return m.ports
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.ListeningPort
+	for _, p := range m.ports {
+		line := strings.ToLower(fmt.Sprintf("%d %s %s", p.Port, p.Process, p.BindAddress))
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, p)
 		}
 	}
 	return filtered

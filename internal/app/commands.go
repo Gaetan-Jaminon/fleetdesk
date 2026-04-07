@@ -791,6 +791,171 @@ func (m Model) fetchNetworkInfo() func() tea.Msg {
 	}
 }
 
+// --- Network Interfaces ---
+
+type fetchInterfacesMsg struct {
+	interfaces []config.NetInterface
+	err        error
+}
+
+func (m Model) fetchInterfaces() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `ip -br addr && echo '---MTU---' && ip -o link | awk '{print $2, $5}'`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil {
+			return fetchInterfacesMsg{err: fmt.Errorf("interfaces: %w", err)}
+		}
+
+		parts := strings.SplitN(out, "---MTU---", 2)
+		addrSection := parts[0]
+		mtuSection := ""
+		if len(parts) > 1 {
+			mtuSection = parts[1]
+		}
+
+		// parse MTU map
+		mtuMap := make(map[string]string)
+		for _, line := range strings.Split(strings.TrimSpace(mtuSection), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				name := strings.TrimSuffix(fields[0], ":")
+				mtuMap[name] = fields[1]
+			}
+		}
+
+		var interfaces []config.NetInterface
+		for _, line := range strings.Split(strings.TrimSpace(addrSection), "\n") {
+			if line == "" {
+				continue
+			}
+			iface := ssh.ParseInterfaceLine(line)
+			if iface.Name != "" {
+				if mtu, ok := mtuMap[iface.Name]; ok {
+					iface.MTU = mtu
+				}
+				interfaces = append(interfaces, iface)
+			}
+		}
+		sort.Slice(interfaces, func(i, j int) bool {
+			oi, oj := ssh.InterfaceStateOrder(interfaces[i].State), ssh.InterfaceStateOrder(interfaces[j].State)
+			if oi != oj {
+				return oi < oj
+			}
+			return interfaces[i].Name < interfaces[j].Name
+		})
+		return fetchInterfacesMsg{interfaces: interfaces}
+	}
+}
+
+// --- Ports ---
+
+type fetchPortsMsg struct {
+	ports []config.ListeningPort
+	err   error
+}
+
+func (m Model) fetchPorts() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `sudo ss -tlnp | tail -n +2`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil {
+			return fetchPortsMsg{err: fmt.Errorf("ports: %w", err)}
+		}
+
+		var ports []config.ListeningPort
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			if line == "" {
+				continue
+			}
+			p := ssh.ParsePortLine(line)
+			if p.Port > 0 {
+				ports = append(ports, p)
+			}
+		}
+		sort.Slice(ports, func(i, j int) bool {
+			return ports[i].Port < ports[j].Port
+		})
+		return fetchPortsMsg{ports: ports}
+	}
+}
+
+// --- Routes & DNS ---
+
+type fetchRoutesMsg struct {
+	routes      []config.Route
+	nameservers []string
+	search      string
+	err         error
+}
+
+func (m Model) fetchRoutes() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `ip route 2>/dev/null && echo '---DNS---' && cat /etc/resolv.conf 2>/dev/null | grep -E '^(nameserver|search|domain)'`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil {
+			return fetchRoutesMsg{err: fmt.Errorf("routes: %w", err)}
+		}
+
+		parts := strings.SplitN(out, "---DNS---", 2)
+		routeSection := parts[0]
+		dnsSection := ""
+		if len(parts) > 1 {
+			dnsSection = parts[1]
+		}
+
+		var routes []config.Route
+		for _, line := range strings.Split(strings.TrimSpace(routeSection), "\n") {
+			if line == "" {
+				continue
+			}
+			r := ssh.ParseRouteLine(line)
+			if r.Destination != "" {
+				routes = append(routes, r)
+			}
+		}
+		// sort: default first, then alphabetical by destination
+		sort.Slice(routes, func(i, j int) bool {
+			if routes[i].IsDefault != routes[j].IsDefault {
+				return routes[i].IsDefault
+			}
+			return routes[i].Destination < routes[j].Destination
+		})
+
+		// parse DNS
+		var nameservers []string
+		var search string
+		for _, line := range strings.Split(strings.TrimSpace(dnsSection), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "nameserver") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					nameservers = append(nameservers, fields[1])
+				}
+			} else if strings.HasPrefix(line, "search") || strings.HasPrefix(line, "domain") {
+				fields := strings.Fields(line)
+				if len(fields) >= 2 {
+					search = strings.Join(fields[1:], " ")
+				}
+			}
+		}
+
+		return fetchRoutesMsg{
+			routes:      routes,
+			nameservers: nameservers,
+			search:      search,
+		}
+	}
+}
+
 // --- Disk ---
 
 type fetchDiskMsg struct {

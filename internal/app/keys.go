@@ -24,18 +24,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.serviceCursor = 0
 			m.errorCursor = 0
 			m.accountCursor = 0
+			m.portCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
 			m.serviceCursor = 0
 			m.errorCursor = 0
 			m.accountCursor = 0
+			m.portCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
 				m.serviceCursor = 0
 				m.errorCursor = 0
 				m.accountCursor = 0
+				m.portCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -43,6 +46,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.serviceCursor = 0
 				m.errorCursor = 0
 				m.accountCursor = 0
+				m.portCursor = 0
 			}
 		}
 		return m, nil
@@ -141,6 +145,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAccountListKeys(msg)
 	case viewNetworkPicker:
 		return m.handleNetworkPickerKeys(msg)
+	case viewNetworkInterfaces:
+		return m.handleInterfaceListKeys(msg)
+	case viewNetworkPorts:
+		return m.handlePortListKeys(msg)
+	case viewNetworkRoutes:
+		return m.handleRouteListKeys(msg)
 	case viewSubscription:
 		return m.handleSubscriptionKeys(msg)
 	}
@@ -659,11 +669,20 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		switch m.networkCursor {
 		case 0: // Interfaces
-			m.flash = "Interfaces view coming soon"
+			m.interfaceCursor = 0
+			m.interfaces = nil
+			m.view = viewNetworkInterfaces
+			return m, m.fetchInterfaces()
 		case 1: // Ports
-			m.flash = "Ports view coming soon"
+			m.portCursor = 0
+			m.ports = nil
+			m.view = viewNetworkPorts
+			return m, m.fetchPorts()
 		case 2: // Routes & DNS
-			m.flash = "Routes view coming soon"
+			m.routeCursor = 0
+			m.routes = nil
+			m.view = viewNetworkRoutes
+			return m, m.fetchRoutes()
 		case 3: // Firewall
 			m.flash = "Firewall view coming soon"
 		}
@@ -672,6 +691,78 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetchNetworkInfo()
 	case "esc":
 		m.view = viewResourcePicker
+	}
+	return m, nil
+}
+
+func (m Model) handleInterfaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.interfaceCursor > 0 {
+			m.interfaceCursor--
+		}
+	case "down", "j":
+		if m.interfaceCursor < len(m.interfaces)-1 {
+			m.interfaceCursor++
+		}
+	case "r":
+		m.interfaces = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchInterfaces()
+	case "esc":
+		m.view = viewNetworkPicker
+	}
+	return m, nil
+}
+
+func (m Model) handlePortListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredPorts()
+
+	switch msg.String() {
+	case "up", "k":
+		if m.portCursor > 0 {
+			m.portCursor--
+		}
+	case "down", "j":
+		if m.portCursor < len(filtered)-1 {
+			m.portCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.portCursor = 0
+	case "r":
+		m.ports = nil
+		m.filterText = ""
+		m.flash = "Refreshing..."
+		return m, m.fetchPorts()
+	case "esc":
+		if m.filterText != "" {
+			m.filterText = ""
+			m.portCursor = 0
+		} else {
+			m.view = viewNetworkPicker
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleRouteListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.routeCursor > 0 {
+			m.routeCursor--
+		}
+	case "down", "j":
+		if m.routeCursor < len(m.routes)-1 {
+			m.routeCursor++
+		}
+	case "r":
+		m.routes = nil
+		m.flash = "Refreshing..."
+		return m, m.fetchRoutes()
+	case "esc":
+		m.view = viewNetworkPicker
 	}
 	return m, nil
 }

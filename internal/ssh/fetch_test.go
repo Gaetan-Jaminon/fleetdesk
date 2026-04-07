@@ -308,6 +308,163 @@ func TestAccountStateOrder(t *testing.T) {
 	}
 }
 
+func TestParseInterfaceLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.NetInterface
+	}{
+		{
+			name: "UP with single IP",
+			line: "eth0             UP             10.0.0.1/24",
+			want: config.NetInterface{Name: "eth0", State: "UP", IPs: "10.0.0.1"},
+		},
+		{
+			name: "UNKNOWN with multiple IPs",
+			line: "lo               UNKNOWN        127.0.0.1/8 ::1/128",
+			want: config.NetInterface{Name: "lo", State: "UNKNOWN", IPs: "127.0.0.1 ::1"},
+		},
+		{
+			name: "DOWN no IPs",
+			line: "eth1             DOWN",
+			want: config.NetInterface{Name: "eth1", State: "DOWN", IPs: ""},
+		},
+		{
+			name: "UP with IPv6",
+			line: "eth0             UP             10.138.1.132/24 fe80::7e1e:52ff:fe60:268d/64",
+			want: config.NetInterface{Name: "eth0", State: "UP", IPs: "10.138.1.132 fe80::7e1e:52ff:fe60:268d"},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.NetInterface{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseInterfaceLine(tt.line)
+			if got.Name != tt.want.Name {
+				t.Errorf("Name = %q, want %q", got.Name, tt.want.Name)
+			}
+			if got.State != tt.want.State {
+				t.Errorf("State = %q, want %q", got.State, tt.want.State)
+			}
+			if got.IPs != tt.want.IPs {
+				t.Errorf("IPs = %q, want %q", got.IPs, tt.want.IPs)
+			}
+		})
+	}
+}
+
+func TestInterfaceStateOrder(t *testing.T) {
+	if InterfaceStateOrder("UP") >= InterfaceStateOrder("UNKNOWN") {
+		t.Error("UP should sort before UNKNOWN")
+	}
+	if InterfaceStateOrder("UNKNOWN") >= InterfaceStateOrder("DOWN") {
+		t.Error("UNKNOWN should sort before DOWN")
+	}
+}
+
+func TestParsePortLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.ListeningPort
+	}{
+		{
+			name: "sshd with process",
+			line: `LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1234,fd=3))`,
+			want: config.ListeningPort{Port: 22, Protocol: "tcp", Process: "sshd", BindAddress: "0.0.0.0"},
+		},
+		{
+			name: "postgres no process",
+			line: `LISTEN 0 128 127.0.0.1:5432 0.0.0.0:*`,
+			want: config.ListeningPort{Port: 5432, Protocol: "tcp", Process: "—", BindAddress: "127.0.0.1"},
+		},
+		{
+			name: "IPv6 with process",
+			line: `LISTEN 0 128 [::]:80 [::]:* users:(("nginx",pid=567,fd=6))`,
+			want: config.ListeningPort{Port: 80, Protocol: "tcp", Process: "nginx", BindAddress: "::"},
+		},
+		{
+			name: "IPv6 localhost",
+			line: `LISTEN 0 128 [::1]:9090 [::]:*`,
+			want: config.ListeningPort{Port: 9090, Protocol: "tcp", Process: "—", BindAddress: "::1"},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.ListeningPort{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParsePortLine(tt.line)
+			if got.Port != tt.want.Port {
+				t.Errorf("Port = %d, want %d", got.Port, tt.want.Port)
+			}
+			if got.Process != tt.want.Process {
+				t.Errorf("Process = %q, want %q", got.Process, tt.want.Process)
+			}
+			if got.BindAddress != tt.want.BindAddress {
+				t.Errorf("BindAddress = %q, want %q", got.BindAddress, tt.want.BindAddress)
+			}
+		})
+	}
+}
+
+func TestParseRouteLine(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want config.Route
+	}{
+		{
+			name: "default route",
+			line: "default via 10.0.0.1 dev eth0 proto static metric 100",
+			want: config.Route{Destination: "default", Gateway: "10.0.0.1", Interface: "eth0", Metric: "100", IsDefault: true},
+		},
+		{
+			name: "connected route",
+			line: "10.0.0.0/24 dev eth0 proto kernel scope link src 10.0.0.5",
+			want: config.Route{Destination: "10.0.0.0/24", Gateway: "direct", Interface: "eth0", Metric: "—", IsDefault: false},
+		},
+		{
+			name: "route with metric",
+			line: "172.16.0.0/16 via 10.0.0.254 dev eth1 metric 200",
+			want: config.Route{Destination: "172.16.0.0/16", Gateway: "10.0.0.254", Interface: "eth1", Metric: "200", IsDefault: false},
+		},
+		{
+			name: "empty line",
+			line: "",
+			want: config.Route{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseRouteLine(tt.line)
+			if got.Destination != tt.want.Destination {
+				t.Errorf("Destination = %q, want %q", got.Destination, tt.want.Destination)
+			}
+			if got.Gateway != tt.want.Gateway {
+				t.Errorf("Gateway = %q, want %q", got.Gateway, tt.want.Gateway)
+			}
+			if got.Interface != tt.want.Interface {
+				t.Errorf("Interface = %q, want %q", got.Interface, tt.want.Interface)
+			}
+			if got.Metric != tt.want.Metric {
+				t.Errorf("Metric = %q, want %q", got.Metric, tt.want.Metric)
+			}
+			if got.IsDefault != tt.want.IsDefault {
+				t.Errorf("IsDefault = %v, want %v", got.IsDefault, tt.want.IsDefault)
+			}
+		})
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 
