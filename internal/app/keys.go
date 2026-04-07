@@ -139,6 +139,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDiskListKeys(msg)
 	case viewAccountList:
 		return m.handleAccountListKeys(msg)
+	case viewNetworkPicker:
+		return m.handleNetworkPickerKeys(msg)
 	case viewSubscription:
 		return m.handleSubscriptionKeys(msg)
 	}
@@ -306,7 +308,9 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewAccountList
 			return m, m.fetchAccounts()
 		case 8: // Network
-			m.flash = "Network view coming in v0.5.0"
+			m.networkCursor = 0
+			m.view = viewNetworkPicker
+			return m, m.fetchNetworkInfo()
 		}
 	case "esc":
 		m.view = viewHostList
@@ -638,6 +642,36 @@ func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.view = viewResourcePicker
 		}
+	}
+	return m, nil
+}
+
+func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.networkCursor > 0 {
+			m.networkCursor--
+		}
+	case "down", "j":
+		if m.networkCursor < networkSubViewCount-1 {
+			m.networkCursor++
+		}
+	case "enter":
+		switch m.networkCursor {
+		case 0: // Interfaces
+			m.flash = "Interfaces view coming soon"
+		case 1: // Ports
+			m.flash = "Ports view coming soon"
+		case 2: // Routes & DNS
+			m.flash = "Routes view coming soon"
+		case 3: // Firewall
+			m.flash = "Firewall view coming soon"
+		}
+	case "r":
+		m.flash = "Refreshing..."
+		return m, m.fetchNetworkInfo()
+	case "esc":
+		m.view = viewResourcePicker
 	}
 	return m, nil
 }

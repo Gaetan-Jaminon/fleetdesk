@@ -756,6 +756,41 @@ func extractSection(out, startMarker, endMarker string) string {
 	return content
 }
 
+// --- Network Info ---
+
+type fetchNetworkInfoMsg struct {
+	routeCount    int
+	firewallType  string
+	firewallCount int
+	err           error
+}
+
+func (m Model) fetchNetworkInfo() func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := `ip route 2>/dev/null | wc -l && if systemctl is-active firewalld >/dev/null 2>&1; then echo "firewalld"; (firewall-cmd --list-all-zones 2>/dev/null | grep -cE 'services:|ports:' || echo 0); elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'chain'; then echo "nftables"; (nft list ruleset 2>/dev/null | grep -c 'rule' || echo 0); else echo "iptables"; (sudo iptables -L -n 2>/dev/null | tail -n+3 | grep -cv '^$' || echo 0); fi`
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchNetworkInfoMsg{err: fmt.Errorf("network info: %w", err)}
+		}
+
+		lines := strings.Split(strings.TrimSpace(out), "\n")
+		msg := fetchNetworkInfoMsg{}
+		if len(lines) > 0 {
+			fmt.Sscanf(lines[0], "%d", &msg.routeCount)
+		}
+		if len(lines) > 1 {
+			msg.firewallType = strings.TrimSpace(lines[1])
+		}
+		if len(lines) > 2 {
+			fmt.Sscanf(strings.TrimSpace(lines[2]), "%d", &msg.firewallCount)
+		}
+		return msg
+	}
+}
+
 // --- Disk ---
 
 type fetchDiskMsg struct {

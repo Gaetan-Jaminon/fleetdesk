@@ -38,10 +38,14 @@ const (
 	viewDiskList
 	viewSubscription
 	viewAccountList
+	viewNetworkPicker
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
 const resourceCount = 9
+
+// networkSubViewCount is the number of sub-views in the network picker.
+const networkSubViewCount = 4
 
 type Model struct {
 	view view
@@ -91,6 +95,12 @@ type Model struct {
 	// subscription
 	subscriptions      []config.Subscription
 	subscriptionCursor int
+
+	// network
+	networkCursor int
+	routeCount    int
+	firewallType  string
+	firewallCount int
 
 	// accounts
 	accounts           []config.Account
@@ -278,6 +288,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchNetworkInfoMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.routeCount = msg.routeCount
+			m.firewallType = msg.firewallType
+			m.firewallCount = msg.firewallCount
+		}
+		return m, nil
+
 	case fetchDiskMsg:
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
@@ -330,6 +351,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewAccountList:
 			m.accounts = nil
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchAccounts())
+		case viewNetworkPicker:
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchNetworkInfo())
 		}
 		return m, tea.EnterAltScreen
 
@@ -370,6 +393,8 @@ func (m Model) View() string {
 		return m.renderDiskList()
 	case viewAccountList:
 		return m.renderAccountList()
+	case viewNetworkPicker:
+		return m.renderNetworkPicker()
 	case viewSubscription:
 		return m.renderSubscription()
 	}
