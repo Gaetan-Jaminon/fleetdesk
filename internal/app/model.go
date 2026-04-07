@@ -81,8 +81,11 @@ type Model struct {
 	serviceLogCursor   int
 
 	// container list
-	containers      []config.Container
-	containerCursor int
+	containers          []config.Container
+	containerCursor     int
+	showContainerDetail  bool
+	containerDetail      config.ContainerDetail
+	containerDetailCursor int
 
 	// cron jobs
 	cronJobs   []config.CronJob
@@ -98,12 +101,18 @@ type Model struct {
 	selectedLogLevel string
 
 	// updates
-	updates      []config.Update
-	updateCursor int
+	updates            []config.Update
+	updateCursor       int
+	showUpdateDetail   bool
+	updateDetailLines  []string
+	updateDetailCursor int
 
 	// disk
-	disks      []config.Disk
-	diskCursor int
+	disks            []config.Disk
+	diskCursor       int
+	showDiskDetail   bool
+	diskDetailLines  []string
+	diskDetailCursor int
 
 	// subscription
 	subscriptions      []config.Subscription
@@ -266,6 +275,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fetchContainerDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.containerDetail = msg.detail
+			m.showContainerDetail = true
+			m.containerDetailCursor = 0
+		}
+		return m, nil
+
 	case fetchCronMsg:
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
@@ -303,6 +323,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.updates = msg.updates
 			}
+		}
+		return m, nil
+
+	case fetchUpdateDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.updateDetailLines = msg.lines
+			m.showUpdateDetail = true
+			m.updateDetailCursor = 0
 		}
 		return m, nil
 
@@ -458,6 +489,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashError = true
 		} else {
 			m.disks = msg.disks
+		}
+		return m, nil
+
+	case fetchDiskDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.diskDetailLines = msg.lines
+			m.showDiskDetail = true
+			m.diskDetailCursor = 0
 		}
 		return m, nil
 

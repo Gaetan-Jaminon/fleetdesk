@@ -892,6 +892,89 @@ func TestParseAuditEventLine(t *testing.T) {
 	}
 }
 
+func TestParseContainerInspect(t *testing.T) {
+	input := `[
+  {
+    "Id": "abc123def456",
+    "Created": "2026-04-01T10:00:00.000000000Z",
+    "State": {
+      "Status": "running",
+      "Running": true,
+      "StartedAt": "2026-04-01T10:00:01.000000000Z"
+    },
+    "ImageName": "nginx:latest",
+    "Config": {
+      "Env": ["PATH=/usr/local/sbin:/usr/local/bin", "NGINX_VERSION=1.25.0"],
+      "Cmd": ["nginx", "-g", "daemon off;"]
+    },
+    "Mounts": [
+      {"Source": "/data/nginx", "Destination": "/usr/share/nginx/html", "Type": "bind"}
+    ],
+    "HostConfig": {
+      "PortBindings": {
+        "80/tcp": [{"HostIp": "", "HostPort": "8080"}],
+        "443/tcp": [{"HostIp": "", "HostPort": "8443"}]
+      }
+    }
+  }
+]`
+	detail := ParseContainerInspect(input)
+	if detail.ID == "" {
+		t.Fatal("ID should not be empty")
+	}
+	if detail.ID != "abc123def456" {
+		t.Errorf("ID = %q, want %q", detail.ID, "abc123def456")
+	}
+	if detail.Image != "nginx:latest" {
+		t.Errorf("Image = %q, want %q", detail.Image, "nginx:latest")
+	}
+	if detail.Status != "running" {
+		t.Errorf("Status = %q, want %q", detail.Status, "running")
+	}
+	if len(detail.Env) != 2 {
+		t.Errorf("Env count = %d, want 2", len(detail.Env))
+	}
+	if len(detail.Mounts) != 1 {
+		t.Errorf("Mounts count = %d, want 1", len(detail.Mounts))
+	} else if detail.Mounts[0] != "/data/nginx:/usr/share/nginx/html" {
+		t.Errorf("Mount = %q, want %q", detail.Mounts[0], "/data/nginx:/usr/share/nginx/html")
+	}
+	if len(detail.Ports) != 2 {
+		t.Errorf("Ports count = %d, want 2", len(detail.Ports))
+	}
+	if detail.Command != "nginx -g daemon off;" {
+		t.Errorf("Command = %q, want %q", detail.Command, "nginx -g daemon off;")
+	}
+}
+
+func TestParseContainerInspect_Empty(t *testing.T) {
+	detail := ParseContainerInspect("")
+	if detail.ID != "" {
+		t.Errorf("expected empty detail for empty input, got ID=%q", detail.ID)
+	}
+}
+
+func TestParseContainerInspect_InvalidJSON(t *testing.T) {
+	detail := ParseContainerInspect("not json")
+	if detail.ID != "" {
+		t.Errorf("expected empty detail for invalid JSON, got ID=%q", detail.ID)
+	}
+}
+
+func TestParseContainerInspect_NoPorts(t *testing.T) {
+	input := `[{"Id": "minimal123", "ImageName": "alpine:latest", "State": {"Status": "exited"}, "Config": {"Env": [], "Cmd": ["sh"]}, "Mounts": [], "HostConfig": {"PortBindings": {}}}]`
+	detail := ParseContainerInspect(input)
+	if detail.ID != "minimal123" {
+		t.Errorf("ID = %q, want %q", detail.ID, "minimal123")
+	}
+	if len(detail.Ports) != 0 {
+		t.Errorf("Ports = %d, want 0", len(detail.Ports))
+	}
+	if len(detail.Mounts) != 0 {
+		t.Errorf("Mounts = %d, want 0", len(detail.Mounts))
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 

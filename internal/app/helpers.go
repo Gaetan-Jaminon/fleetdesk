@@ -740,6 +740,37 @@ func (m Model) fleetHostCount(f config.Fleet) int {
 	return count
 }
 
+// containerDetailLines builds a flat line list for the container detail view.
+func (m Model) containerDetailLines() []string {
+	d := m.containerDetail
+	var lines []string
+	lines = append(lines, "--- Details ---")
+	lines = append(lines, fmt.Sprintf("  %-12s  %s", "ID", d.ID))
+	lines = append(lines, fmt.Sprintf("  %-12s  %s", "Image", d.Image))
+	lines = append(lines, fmt.Sprintf("  %-12s  %s", "Status", d.Status))
+	lines = append(lines, fmt.Sprintf("  %-12s  %s", "Created", d.Created))
+	lines = append(lines, fmt.Sprintf("  %-12s  %s", "Command", d.Command))
+	if len(d.Ports) > 0 {
+		lines = append(lines, "--- Ports ---")
+		for _, p := range d.Ports {
+			lines = append(lines, "    "+p)
+		}
+	}
+	if len(d.Mounts) > 0 {
+		lines = append(lines, "--- Mounts ---")
+		for _, mt := range d.Mounts {
+			lines = append(lines, "    "+mt)
+		}
+	}
+	if len(d.Env) > 0 {
+		lines = append(lines, "--- Environment ---")
+		for _, e := range d.Env {
+			lines = append(lines, "    "+e)
+		}
+	}
+	return lines
+}
+
 // retryWithPassword attempts to connect a specific host using password auth.
 func retryWithPassword(sm *ssh.Manager, idx int, h config.Host, password string) tea.Cmd {
 	return func() tea.Msg {

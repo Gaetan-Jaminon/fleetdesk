@@ -16,6 +16,61 @@ func (m Model) renderContainerList() string {
 	}
 	iw := w - 2
 
+	// detail view
+	if m.showContainerDetail {
+		d := m.containerDetail
+		name := d.ID
+		if len(name) > 12 {
+			name = name[:12]
+		}
+		breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Containers \u203a " + name
+
+		lines := m.containerDetailLines()
+
+		s := m.renderHeader(breadcrumb, m.containerDetailCursor+1, len(lines)) + "\n"
+		s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
+
+		maxVisible := m.height - 6
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		offset := 0
+		if m.containerDetailCursor >= offset+maxVisible {
+			offset = m.containerDetailCursor - maxVisible + 1
+		}
+		end := offset + maxVisible
+		if end > len(lines) {
+			end = len(lines)
+		}
+		for i := offset; i < end; i++ {
+			cur := "  "
+			if i == m.containerDetailCursor {
+				cur = "\u25b8 "
+			}
+			line := "  " + cur + lines[i]
+
+			var style lipgloss.Style
+			if i == m.containerDetailCursor {
+				style = selectedRowStyle
+			} else if strings.HasPrefix(lines[i], "---") {
+				style = colHeaderStyle
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+
+		s = m.padToBottom(s, iw)
+		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
+		s += m.renderHintBar([][]string{
+			{"\u2191\u2193", "Scroll"},
+			{"Esc", "Back"},
+		})
+		return s
+	}
+
 	filtered := m.filteredContainers()
 
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Containers"
@@ -94,6 +149,7 @@ func (m Model) renderContainerList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"Enter", "Detail"},
 		{"1-3", "Sort"},
 		{"/", "Search"},
 		{"l", "Logs"},

@@ -1241,3 +1241,75 @@ func (m Model) fetchAuditSummary() func() tea.Msg {
 		return fetchAuditSummaryMsg{events: events}
 	}
 }
+
+// --- Update Detail ---
+
+type fetchUpdateDetailMsg struct {
+	lines []string
+	err   error
+}
+
+func (m Model) fetchUpdateDetail(pkg string) func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := fmt.Sprintf("dnf info '%s' 2>/dev/null", shellQuote(pkg))
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchUpdateDetailMsg{err: fmt.Errorf("info %s: %w", pkg, err)}
+		}
+		var lines []string
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			lines = append(lines, line)
+		}
+		return fetchUpdateDetailMsg{lines: lines}
+	}
+}
+
+// --- Disk Detail ---
+
+type fetchDiskDetailMsg struct {
+	lines []string
+	err   error
+}
+
+func (m Model) fetchDiskDetail(mount string) func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := fmt.Sprintf("df -h '%s' 2>/dev/null && echo '---' && (sudo tune2fs -l $(findmnt -n -o SOURCE '%s') 2>/dev/null || lsblk -f $(findmnt -n -o SOURCE '%s') 2>/dev/null || echo 'No additional details available')", shellQuote(mount), shellQuote(mount), shellQuote(mount))
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil && out == "" {
+			return fetchDiskDetailMsg{err: fmt.Errorf("disk detail %s: %w", mount, err)}
+		}
+		var lines []string
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			lines = append(lines, line)
+		}
+		return fetchDiskDetailMsg{lines: lines}
+	}
+}
+
+// --- Container Detail ---
+
+type fetchContainerDetailMsg struct {
+	detail config.ContainerDetail
+	err    error
+}
+
+func (m Model) fetchContainerDetail(name string) func() tea.Msg {
+	idx := m.selectedHost
+	sm := m.ssh
+
+	return func() tea.Msg {
+		cmd := fmt.Sprintf("podman inspect '%s' 2>/dev/null", shellQuote(name))
+		out, err := sm.RunCommand(idx, cmd)
+		if err != nil {
+			return fetchContainerDetailMsg{err: fmt.Errorf("inspect %s: %w", name, err)}
+		}
+		detail := ssh.ParseContainerInspect(out)
+		return fetchContainerDetailMsg{detail: detail}
+	}
+}

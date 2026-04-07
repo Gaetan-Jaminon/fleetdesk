@@ -18,6 +18,54 @@ func (m Model) renderUpdateList() string {
 
 	filtered := m.filteredUpdates()
 
+	// detail view
+	if m.showUpdateDetail {
+		breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Updates \u203a Detail"
+		s := m.renderHeader(breadcrumb, m.updateDetailCursor+1, len(m.updateDetailLines)) + "\n"
+		s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
+
+		if len(m.updateDetailLines) == 0 {
+			s += borderedRow("  No details available.", iw, normalRowStyle) + "\n"
+		} else {
+			maxVisible := m.height - 6
+			if maxVisible < 1 {
+				maxVisible = 1
+			}
+			offset := 0
+			if m.updateDetailCursor >= offset+maxVisible {
+				offset = m.updateDetailCursor - maxVisible + 1
+			}
+			end := offset + maxVisible
+			if end > len(m.updateDetailLines) {
+				end = len(m.updateDetailLines)
+			}
+			for i := offset; i < end; i++ {
+				cur := "  "
+				if i == m.updateDetailCursor {
+					cur = "\u25b8 "
+				}
+				line := "  " + cur + m.updateDetailLines[i]
+				var style lipgloss.Style
+				if i == m.updateDetailCursor {
+					style = selectedRowStyle
+				} else if i%2 == 0 {
+					style = altRowStyle
+				} else {
+					style = normalRowStyle
+				}
+				s += borderedRow(line, iw, style) + "\n"
+			}
+		}
+
+		s = m.padToBottom(s, iw)
+		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
+		s += m.renderHintBar([][]string{
+			{"\u2191\u2193", "Scroll"},
+			{"Esc", "Back"},
+		})
+		return s
+	}
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Updates"
 	s := m.renderHeader(breadcrumb, m.updateCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
@@ -106,6 +154,7 @@ func (m Model) renderUpdateList() string {
 	} else {
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
+			{"Enter", "Detail"},
 			{"1-3", "Sort"},
 			{"/", "Search"},
 			{"u", "Update All"},
