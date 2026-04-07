@@ -69,8 +69,10 @@ type Model struct {
 	hostCursor    int
 
 	// metrics dashboard
-	metrics       map[int]config.HostMetrics
-	metricsCursor int
+	metrics          map[int]config.HostMetrics
+	metricsCursor    int
+	metricsSortedIdx []int          // sorted host indices for metrics view
+	metricErrors     map[int]bool   // hosts where metrics fetch failed
 
 	// resource picker
 	selectedHost   int
@@ -247,7 +249,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.retryRemainingPasswordHosts()
 
 	case fetchMetricsMsg:
-		if msg.err == nil {
+		if msg.err != nil {
+			if m.metricErrors == nil {
+				m.metricErrors = make(map[int]bool)
+			}
+			m.metricErrors[msg.index] = true
+		} else {
 			if m.metrics == nil {
 				m.metrics = make(map[int]config.HostMetrics)
 			}

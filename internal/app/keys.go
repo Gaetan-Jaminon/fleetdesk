@@ -297,8 +297,10 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		m.metrics = make(map[int]config.HostMetrics)
+		m.metricErrors = make(map[int]bool)
 		m.metricsCursor = 0
 		m.sortColumn = 0
+		m.metricsSortedIdx = nil
 		m.view = viewMetrics
 		m.flash = "Fetching metrics..."
 		return m, m.fetchAllMetrics()
@@ -1399,9 +1401,11 @@ func (m Model) handleMetricsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sortColumn = col
 			m.sortAsc = true
 		}
-		// sort is applied in render via sorted index
+		m.sortView()
 	case "r":
 		m.metrics = make(map[int]config.HostMetrics)
+		m.metricErrors = make(map[int]bool)
+		m.metricsSortedIdx = nil
 		m.sortColumn = 0
 		m.flash = "Refreshing..."
 		return m, m.fetchAllMetrics()

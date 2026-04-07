@@ -289,6 +289,8 @@ func (m *Model) sortView() {
 		return
 	}
 	switch m.view {
+	case viewMetrics:
+		m.sortMetricsIdx()
 	case viewServiceList:
 		m.sortServices()
 	case viewContainerList:
@@ -320,6 +322,43 @@ func (m *Model) sortView() {
 	case viewSecurityAudit:
 		m.sortAuditEvents()
 	}
+}
+
+func (m *Model) sortMetricsIdx() {
+	// build index slice
+	m.metricsSortedIdx = make([]int, len(m.hosts))
+	for i := range m.hosts {
+		m.metricsSortedIdx[i] = i
+	}
+	if m.sortColumn == 0 {
+		return
+	}
+	sort.Slice(m.metricsSortedIdx, func(a, b int) bool {
+		ia, ib := m.metricsSortedIdx[a], m.metricsSortedIdx[b]
+		ma, mb := m.metrics[ia], m.metrics[ib]
+		var less bool
+		switch m.sortColumn {
+		case 1: // HOST
+			less = m.hosts[ia].Entry.Name < m.hosts[ib].Entry.Name
+		case 2: // CPU%
+			less = ma.CPUPercent < mb.CPUPercent
+		case 3: // MEM%
+			less = ma.MemPercent < mb.MemPercent
+		case 4: // DISK%
+			less = ma.DiskPercent < mb.DiskPercent
+		case 5: // LOAD
+			var la, lb float64
+			fmt.Sscanf(ma.Load, "%f", &la)
+			fmt.Sscanf(mb.Load, "%f", &lb)
+			less = la < lb
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
 }
 
 func (m *Model) sortServices() {

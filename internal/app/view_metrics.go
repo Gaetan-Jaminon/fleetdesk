@@ -16,8 +16,17 @@ func (m Model) renderMetrics() string {
 	}
 	iw := w - 2
 
+	// use sorted index if available, otherwise natural order
+	hostIdx := m.metricsSortedIdx
+	if len(hostIdx) != len(m.hosts) {
+		hostIdx = make([]int, len(m.hosts))
+		for i := range hostIdx {
+			hostIdx[i] = i
+		}
+	}
+
 	breadcrumb := f.Name + " \u203a Metrics"
-	s := m.renderHeader(breadcrumb, m.metricsCursor+1, len(m.hosts)) + "\n"
+	s := m.renderHeader(breadcrumb, m.metricsCursor+1, len(hostIdx)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
 	// compute host name column width
@@ -39,13 +48,16 @@ func (m Model) renderMetrics() string {
 	s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 	s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
-	// build group start map (same as host list)
+	// build group start map (only used when not sorting)
+	sorted := m.sortColumn != 0
 	groupStarts := make(map[int]string)
-	lastGroup := ""
-	for i, h := range m.hosts {
-		if h.Group != "" && h.Group != lastGroup {
-			groupStarts[i] = h.Group
-			lastGroup = h.Group
+	if !sorted {
+		lastGroup := ""
+		for i, h := range m.hosts {
+			if h.Group != "" && h.Group != lastGroup {
+				groupStarts[i] = h.Group
+				lastGroup = h.Group
+			}
 		}
 	}
 
@@ -58,15 +70,17 @@ func (m Model) renderMetrics() string {
 		offset = m.metricsCursor - maxVisible + 1
 	}
 	end := offset + maxVisible
-	if end > len(m.hosts) {
-		end = len(m.hosts)
+	if end > len(hostIdx) {
+		end = len(hostIdx)
 	}
 
 	warnStyle := lipgloss.NewStyle().Foreground(colorYellow)
 	critStyle := lipgloss.NewStyle().Foreground(colorRed)
 
-	for i := offset; i < end; i++ {
-		// group header
+	for pos := offset; pos < end; pos++ {
+		i := hostIdx[pos]
+
+		// group header (only when not sorting by a column)
 		if group, ok := groupStarts[i]; ok {
 			groupLine := fmt.Sprintf("  \u2500\u2500 %s \u2500\u2500", group)
 			s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
@@ -74,17 +88,29 @@ func (m Model) renderMetrics() string {
 
 		h := m.hosts[i]
 		cur := "   "
-		if i == m.metricsCursor {
+		if pos == m.metricsCursor {
 			cur = " \u25b8 "
 		}
 
 		if h.Status != config.HostOnline {
 			line := fmt.Sprintf("%s  %-*s  %6s  %6s  %6s  %6s  %s", cur, hostCol, h.Entry.Name, "\u2014", "\u2014", "\u2014", "\u2014", "\u2014")
 			var style lipgloss.Style
-			if i == m.metricsCursor {
+			if pos == m.metricsCursor {
 				style = selectedRowStyle
 			} else {
 				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+			continue
+		}
+
+		if m.metricErrors[i] {
+			line := fmt.Sprintf("%s  %-*s  %6s  %6s  %6s  %6s  %s", cur, hostCol, h.Entry.Name, "err", "err", "err", "err", "err")
+			var style lipgloss.Style
+			if pos == m.metricsCursor {
+				style = selectedRowStyle
+			} else {
+				style = critStyle
 			}
 			s += borderedRow(line, iw, style) + "\n"
 			continue
@@ -95,7 +121,7 @@ func (m Model) renderMetrics() string {
 			// still loading
 			line := fmt.Sprintf("%s  %-*s  %6s  %6s  %6s  %6s  %s", cur, hostCol, h.Entry.Name, "...", "...", "...", "...", "...")
 			var style lipgloss.Style
-			if i == m.metricsCursor {
+			if pos == m.metricsCursor {
 				style = selectedRowStyle
 			} else {
 				style = normalRowStyle
@@ -114,13 +140,13 @@ func (m Model) renderMetrics() string {
 			cpuStr, memStr, diskStr, met.Load, met.Uptime)
 
 		var style lipgloss.Style
-		if i == m.metricsCursor {
+		if pos == m.metricsCursor {
 			style = selectedRowStyle
 		} else if met.CPUPercent >= 90 || met.MemPercent >= 90 || met.DiskPercent >= 90 {
 			style = critStyle
 		} else if met.CPUPercent >= 80 || met.MemPercent >= 80 || met.DiskPercent >= 80 {
 			style = warnStyle
-		} else if i%2 == 0 {
+		} else if pos%2 == 0 {
 			style = altRowStyle
 		} else {
 			style = normalRowStyle
