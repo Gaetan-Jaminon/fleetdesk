@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
@@ -695,23 +696,8 @@ ActiveEnterTimestamp=Mon 2026-04-06 12:00:00 UTC`,
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ParseServiceStatus(tt.output)
-			if got.Name != tt.want.Name {
-				t.Errorf("Name = %q, want %q", got.Name, tt.want.Name)
-			}
-			if got.ActiveState != tt.want.ActiveState {
-				t.Errorf("ActiveState = %q, want %q", got.ActiveState, tt.want.ActiveState)
-			}
-			if got.SubState != tt.want.SubState {
-				t.Errorf("SubState = %q, want %q", got.SubState, tt.want.SubState)
-			}
-			if got.PID != tt.want.PID {
-				t.Errorf("PID = %q, want %q", got.PID, tt.want.PID)
-			}
-			if got.Memory != tt.want.Memory {
-				t.Errorf("Memory = %q, want %q", got.Memory, tt.want.Memory)
-			}
-			if got.Enabled != tt.want.Enabled {
-				t.Errorf("Enabled = %q, want %q", got.Enabled, tt.want.Enabled)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got  %+v\nwant %+v", got, tt.want)
 			}
 		})
 	}
