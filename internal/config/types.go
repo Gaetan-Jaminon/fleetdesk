@@ -178,3 +178,13 @@ type Route struct {
 	Metric      string
 	IsDefault   bool
 }
+
+// FirewallRule represents a firewall rule from any backend.
+type FirewallRule struct {
+	Zone     string // zone name (firewalld) or chain name (iptables/nft)
+	Service  string // service name or port/proto
+	Protocol string // tcp, udp, or —
+	Source   string // source IP or —
+	Action   string // allow, drop, reject
+	Backend  string // firewalld, nftables, iptables
+}

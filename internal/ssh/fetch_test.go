@@ -465,6 +465,132 @@ func TestParseRouteLine(t *testing.T) {
 	}
 }
 
+func TestDetectFirewallBackend(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{"firewalld", "---FIREWALLD---\npublic (active)\n  services: ssh", "firewalld"},
+		{"nftables", "---NFTABLES---\ntable inet filter {", "nftables"},
+		{"iptables", "---IPTABLES---\nChain INPUT (policy ACCEPT)", "iptables"},
+		{"empty", "", ""},
+		{"no marker", "some random output", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DetectFirewallBackend(tt.output)
+			if got != tt.want {
+				t.Errorf("DetectFirewallBackend() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseFirewalldOutput(t *testing.T) {
+	output := `public (active)
+  target: default
+  icmp-block-inversion: no
+  interfaces: eth0
+  sources:
+  services: cockpit dhcpv6-client ssh
+  ports: 8080/tcp 9090/tcp
+  protocols:
+  forward: yes
+  masquerade: no
+  forward-ports:
+  source-ports:
+  icmp-blocks:
+  rich rules:
+
+block
+  target: %%REJECT%%
+  icmp-block-inversion: no
+  interfaces:
+  sources:
+  services:
+  ports:
+  protocols:
+  forward: yes
+  masquerade: no
+  forward-ports:
+  source-ports:
+  icmp-blocks:
+  rich rules:
+`
+
+	rules := ParseFirewalldOutput(output)
+
+	// public zone has 3 services + 2 ports = 5 rules
+	if len(rules) != 5 {
+		t.Fatalf("got %d rules, want 5", len(rules))
+	}
+
+	// check first rule
+	if rules[0].Zone != "public" {
+		t.Errorf("rules[0].Zone = %q, want %q", rules[0].Zone, "public")
+	}
+	if rules[0].Service != "cockpit" {
+		t.Errorf("rules[0].Service = %q, want %q", rules[0].Service, "cockpit")
+	}
+	if rules[0].Action != "allow" {
+		t.Errorf("rules[0].Action = %q, want %q", rules[0].Action, "allow")
+	}
+	if rules[0].Backend != "firewalld" {
+		t.Errorf("rules[0].Backend = %q, want %q", rules[0].Backend, "firewalld")
+	}
+
+	// check port rule
+	found := false
+	for _, r := range rules {
+		if r.Service == "8080/tcp" {
+			found = true
+			if r.Zone != "public" {
+				t.Errorf("port rule Zone = %q, want %q", r.Zone, "public")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected port rule 8080/tcp not found")
+	}
+
+	// block zone should be skipped (no services, no ports)
+}
+
+func TestParseFirewalldOutput_Empty(t *testing.T) {
+	rules := ParseFirewalldOutput("")
+	if len(rules) != 0 {
+		t.Errorf("got %d rules for empty input, want 0", len(rules))
+	}
+}
+
+func TestParseIptablesOutput(t *testing.T) {
+	output := `Chain INPUT (policy ACCEPT)
+num  target     prot opt source               destination
+1    ACCEPT     tcp  --  0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+2    DROP       all  --  10.0.0.0/8           0.0.0.0/0
+
+Chain FORWARD (policy DROP)
+num  target     prot opt source               destination
+
+Chain OUTPUT (policy ACCEPT)
+num  target     prot opt source               destination
+`
+
+	rules := ParseIptablesOutput(output)
+	if len(rules) < 2 {
+		t.Fatalf("got %d rules, want at least 2", len(rules))
+	}
+
+	if rules[0].Zone != "INPUT" {
+		t.Errorf("rules[0].Zone = %q, want %q", rules[0].Zone, "INPUT")
+	}
+	if rules[0].Action != "ACCEPT" {
+		t.Errorf("rules[0].Action = %q, want %q", rules[0].Action, "ACCEPT")
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 

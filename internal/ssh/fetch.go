@@ -293,6 +293,178 @@ func ParseRouteLine(line string) config.Route {
 	return r
 }
 
+// DetectFirewallBackend returns the firewall backend from probe output markers.
+func DetectFirewallBackend(output string) string {
+	if strings.Contains(output, "---FIREWALLD---") {
+		return "firewalld"
+	}
+	if strings.Contains(output, "---NFTABLES---") {
+		return "nftables"
+	}
+	if strings.Contains(output, "---IPTABLES---") {
+		return "iptables"
+	}
+	return ""
+}
+
+// ParseFirewalldOutput parses `firewall-cmd --list-all-zones` output into rules.
+// Skips zones with no services and no ports.
+func ParseFirewalldOutput(output string) []config.FirewallRule {
+	var rules []config.FirewallRule
+	var zoneName string
+	var services, ports []string
+
+	flush := func() {
+		if zoneName == "" {
+			return
+		}
+		for _, svc := range services {
+			rules = append(rules, config.FirewallRule{
+				Zone: zoneName, Service: svc, Protocol: "—", Source: "—",
+				Action: "allow", Backend: "firewalld",
+			})
+		}
+		for _, port := range ports {
+			rules = append(rules, config.FirewallRule{
+				Zone: zoneName, Service: port, Protocol: "—", Source: "—",
+				Action: "allow", Backend: "firewalld",
+			})
+		}
+		zoneName = ""
+		services = nil
+		ports = nil
+	}
+
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+
+		// zone header: starts at column 0 (not indented)
+		if line != "" && line[0] != ' ' && line[0] != '\t' {
+			flush()
+			// strip "(active)" suffix
+			name := strings.TrimSpace(strings.Replace(trimmed, "(active)", "", 1))
+			if name != "" {
+				zoneName = name
+			}
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, "services:") {
+			svcLine := strings.TrimPrefix(trimmed, "services:")
+			for _, s := range strings.Fields(svcLine) {
+				services = append(services, s)
+			}
+		} else if strings.HasPrefix(trimmed, "ports:") {
+			portLine := strings.TrimPrefix(trimmed, "ports:")
+			for _, p := range strings.Fields(portLine) {
+				ports = append(ports, p)
+			}
+		}
+	}
+	flush()
+
+	return rules
+}
+
+// ParseIptablesOutput parses `iptables -L -n --line-numbers` output into rules.
+func ParseIptablesOutput(output string) []config.FirewallRule {
+	var rules []config.FirewallRule
+	var chain string
+
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		// chain header: "Chain INPUT (policy ACCEPT)"
+		if strings.HasPrefix(trimmed, "Chain ") {
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				chain = parts[1]
+			}
+			continue
+		}
+
+		// skip column header line
+		if strings.HasPrefix(trimmed, "num") || strings.HasPrefix(trimmed, "target") {
+			continue
+		}
+
+		fields := strings.Fields(trimmed)
+		if len(fields) < 4 {
+			continue
+		}
+
+		// fields: num target prot opt source destination [extras]
+		action := fields[1]
+		protocol := fields[2]
+		source := fields[4]
+		if source == "0.0.0.0/0" {
+			source = "—"
+		}
+
+		// extract dpt:PORT if present
+		service := "—"
+		for _, f := range fields[6:] {
+			if strings.HasPrefix(f, "dpt:") {
+				service = strings.TrimPrefix(f, "dpt:")
+				break
+			}
+		}
+
+		rules = append(rules, config.FirewallRule{
+			Zone:     chain,
+			Service:  service,
+			Protocol: protocol,
+			Source:   source,
+			Action:   action,
+			Backend:  "iptables",
+		})
+	}
+
+	return rules
+}
+
+// ParseNftablesOutput provides basic parsing of `nft list ruleset` output.
+func ParseNftablesOutput(output string) []config.FirewallRule {
+	var rules []config.FirewallRule
+	var chain string
+
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "chain ") {
+			parts := strings.Fields(trimmed)
+			if len(parts) >= 2 {
+				chain = parts[1]
+			}
+			continue
+		}
+
+		// rule lines contain keywords like "accept", "drop", "reject"
+		if chain != "" && (strings.Contains(trimmed, "accept") || strings.Contains(trimmed, "drop") || strings.Contains(trimmed, "reject")) {
+			action := "—"
+			if strings.Contains(trimmed, "accept") {
+				action = "accept"
+			} else if strings.Contains(trimmed, "drop") {
+				action = "drop"
+			} else if strings.Contains(trimmed, "reject") {
+				action = "reject"
+			}
+
+			rules = append(rules, config.FirewallRule{
+				Zone:    chain,
+				Service: trimmed,
+				Action:  action,
+				Backend: "nftables",
+			})
+		}
+	}
+
+	return rules
+}
+
 // ExpandPath expands ~ in paths.
 func ExpandPath(path string) string {
 	if len(path) > 1 && path[:2] == "~/" {
