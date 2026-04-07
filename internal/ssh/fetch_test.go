@@ -961,6 +961,20 @@ func TestParseContainerInspect_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParseContainerInspect_NoPorts(t *testing.T) {
+	input := `[{"Id": "minimal123", "ImageName": "alpine:latest", "State": {"Status": "exited"}, "Config": {"Env": [], "Cmd": ["sh"]}, "Mounts": [], "HostConfig": {"PortBindings": {}}}]`
+	detail := ParseContainerInspect(input)
+	if detail.ID != "minimal123" {
+		t.Errorf("ID = %q, want %q", detail.ID, "minimal123")
+	}
+	if len(detail.Ports) != 0 {
+		t.Errorf("Ports = %d, want 0", len(detail.Ports))
+	}
+	if len(detail.Mounts) != 0 {
+		t.Errorf("Mounts = %d, want 0", len(detail.Mounts))
+	}
+}
+
 // errString is a simple error type for testing.
 type errString string
 

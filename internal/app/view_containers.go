@@ -24,51 +24,49 @@ func (m Model) renderContainerList() string {
 			name = name[:12]
 		}
 		breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Containers \u203a " + name
-		s := m.renderHeader(breadcrumb, 0, 0) + "\n"
+
+		lines := m.containerDetailLines()
+
+		s := m.renderHeader(breadcrumb, m.containerDetailCursor+1, len(lines)) + "\n"
 		s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-		s += borderedRow("  Details", iw, colHeaderStyle) + "\n"
-
-		items := []struct{ key, val string }{
-			{"ID", d.ID},
-			{"Image", d.Image},
-			{"Status", d.Status},
-			{"Created", d.Created},
-			{"Command", d.Command},
+		maxVisible := m.height - 6
+		if maxVisible < 1 {
+			maxVisible = 1
 		}
-		for _, item := range items {
-			line := fmt.Sprintf("  %-12s  %s", item.key, item.val)
-			s += borderedRow(line, iw, normalRowStyle) + "\n"
+		offset := 0
+		if m.containerDetailCursor >= offset+maxVisible {
+			offset = m.containerDetailCursor - maxVisible + 1
 		}
-
-		if len(d.Ports) > 0 {
-			s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-			s += borderedRow("  Ports", iw, colHeaderStyle) + "\n"
-			for _, p := range d.Ports {
-				s += borderedRow("    "+p, iw, normalRowStyle) + "\n"
+		end := offset + maxVisible
+		if end > len(lines) {
+			end = len(lines)
+		}
+		for i := offset; i < end; i++ {
+			cur := "  "
+			if i == m.containerDetailCursor {
+				cur = "\u25b8 "
 			}
-		}
+			line := "  " + cur + lines[i]
 
-		if len(d.Mounts) > 0 {
-			s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-			s += borderedRow("  Mounts", iw, colHeaderStyle) + "\n"
-			for _, mt := range d.Mounts {
-				s += borderedRow("    "+mt, iw, normalRowStyle) + "\n"
+			var style lipgloss.Style
+			if i == m.containerDetailCursor {
+				style = selectedRowStyle
+			} else if strings.HasPrefix(lines[i], "---") {
+				style = colHeaderStyle
+			} else if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
 			}
-		}
-
-		if len(d.Env) > 0 {
-			s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-			s += borderedRow("  Environment", iw, colHeaderStyle) + "\n"
-			for _, e := range d.Env {
-				s += borderedRow("    "+e, iw, normalRowStyle) + "\n"
-			}
+			s += borderedRow(line, iw, style) + "\n"
 		}
 
 		s = m.padToBottom(s, iw)
 		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 		s += m.renderHintBar([][]string{
-			{"any key", "Back"},
+			{"\u2191\u2193", "Scroll"},
+			{"Esc", "Back"},
 		})
 		return s
 	}

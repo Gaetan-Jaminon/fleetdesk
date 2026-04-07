@@ -83,8 +83,9 @@ type Model struct {
 	// container list
 	containers          []config.Container
 	containerCursor     int
-	showContainerDetail bool
-	containerDetail     config.ContainerDetail
+	showContainerDetail  bool
+	containerDetail      config.ContainerDetail
+	containerDetailCursor int
 
 	// cron jobs
 	cronJobs   []config.CronJob
@@ -281,6 +282,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.containerDetail = msg.detail
 			m.showContainerDetail = true
+			m.containerDetailCursor = 0
 		}
 		return m, nil
 

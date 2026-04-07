@@ -528,9 +528,21 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// detail mode — any key goes back
+	// detail mode
 	if m.showContainerDetail {
-		m.showContainerDetail = false
+		switch msg.String() {
+		case "up", "k":
+			if m.containerDetailCursor > 0 {
+				m.containerDetailCursor--
+			}
+		case "down", "j":
+			lines := m.containerDetailLines()
+			if m.containerDetailCursor < len(lines)-1 {
+				m.containerDetailCursor++
+			}
+		case "esc":
+			m.showContainerDetail = false
+		}
 		return m, nil
 	}
 

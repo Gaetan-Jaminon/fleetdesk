@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
@@ -787,6 +788,7 @@ func ParseContainerInspect(output string) config.ContainerDetail {
 			detail.Ports = append(detail.Ports, b.HostPort+":"+containerPort)
 		}
 	}
+	sort.Strings(detail.Ports)
 
 	return detail
 }

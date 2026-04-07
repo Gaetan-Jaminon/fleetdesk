@@ -1261,9 +1261,7 @@ func (m Model) fetchUpdateDetail(pkg string) func() tea.Msg {
 		}
 		var lines []string
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-			if line != "" {
-				lines = append(lines, line)
-			}
+			lines = append(lines, line)
 		}
 		return fetchUpdateDetailMsg{lines: lines}
 	}
@@ -1288,9 +1286,7 @@ func (m Model) fetchDiskDetail(mount string) func() tea.Msg {
 		}
 		var lines []string
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-			if line != "" {
-				lines = append(lines, line)
-			}
+			lines = append(lines, line)
 		}
 		return fetchDiskDetailMsg{lines: lines}
 	}
