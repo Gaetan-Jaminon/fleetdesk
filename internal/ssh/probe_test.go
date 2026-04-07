@@ -45,7 +45,12 @@ Red Hat Enterprise Linux 9.5 (Plow)
 3
 7
 6
-1`
+1
+4
+1
+3
+5
+8`
 
 	info, err := ParseProbeOutput(output, "system")
 	if err != nil {
@@ -97,6 +102,21 @@ Red Hat Enterprise Linux 9.5 (Plow)
 	if info.DiskHighCount != 1 {
 		t.Errorf("DiskHighCount = %d, want 1", info.DiskHighCount)
 	}
+	if info.UserCount != 4 {
+		t.Errorf("UserCount = %d, want 4", info.UserCount)
+	}
+	if info.LockedUsers != 1 {
+		t.Errorf("LockedUsers = %d, want 1", info.LockedUsers)
+	}
+	if info.InterfacesUp != 3 {
+		t.Errorf("InterfacesUp = %d, want 3", info.InterfacesUp)
+	}
+	if info.InterfacesTotal != 5 {
+		t.Errorf("InterfacesTotal = %d, want 5", info.InterfacesTotal)
+	}
+	if info.ListeningPorts != 8 {
+		t.Errorf("ListeningPorts = %d, want 8", info.ListeningPorts)
+	}
 	if info.SystemdMode != "system" {
 		t.Errorf("SystemdMode = %q, want %q", info.SystemdMode, "system")
 	}
@@ -121,6 +141,48 @@ RHEL 9
 	}
 	if info.SystemdMode != "user" {
 		t.Errorf("SystemdMode = %q, want %q", info.SystemdMode, "user")
+	}
+}
+
+func TestParseProbeOutput_OldFormat(t *testing.T) {
+	// 15 lines (pre-v0.5.0 format without accounts/network) — new fields default to 0
+	output := `host1
+2026-01-01 00:00
+RHEL 9
+10
+8
+0
+2
+4
+unknown
+unknown
+5
+1
+3
+2
+0`
+
+	info, err := ParseProbeOutput(output, "system")
+	if err != nil {
+		t.Fatalf("ParseProbeOutput() error = %v", err)
+	}
+	if info.ServiceCount != 10 {
+		t.Errorf("ServiceCount = %d, want 10", info.ServiceCount)
+	}
+	if info.UserCount != 0 {
+		t.Errorf("UserCount = %d, want 0 (missing in old format)", info.UserCount)
+	}
+	if info.LockedUsers != 0 {
+		t.Errorf("LockedUsers = %d, want 0 (missing in old format)", info.LockedUsers)
+	}
+	if info.InterfacesUp != 0 {
+		t.Errorf("InterfacesUp = %d, want 0 (missing in old format)", info.InterfacesUp)
+	}
+	if info.InterfacesTotal != 0 {
+		t.Errorf("InterfacesTotal = %d, want 0 (missing in old format)", info.InterfacesTotal)
+	}
+	if info.ListeningPorts != 0 {
+		t.Errorf("ListeningPorts = %d, want 0 (missing in old format)", info.ListeningPorts)
 	}
 }
 

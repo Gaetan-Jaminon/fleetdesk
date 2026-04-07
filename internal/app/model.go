@@ -40,7 +40,7 @@ const (
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
-const resourceCount = 7
+const resourceCount = 9
 
 type Model struct {
 	view view

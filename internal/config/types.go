@@ -62,6 +62,11 @@ type Host struct {
 	UpdateCount      int
 	DiskCount        int
 	DiskHighCount    int
+	UserCount        int
+	LockedUsers      int
+	InterfacesUp     int
+	InterfacesTotal  int
+	ListeningPorts   int
 	LastUpdate       string
 	LastSecurity     string
 	Error            string

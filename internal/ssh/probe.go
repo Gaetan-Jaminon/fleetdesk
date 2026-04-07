@@ -24,6 +24,11 @@ type ProbeInfo struct {
 	DiskHighCount    int
 	LastUpdate       string
 	LastSecurity     string
+	UserCount        int
+	LockedUsers      int
+	InterfacesUp     int
+	InterfacesTotal  int
+	ListeningPorts   int
 	SystemdMode      string
 }
 
@@ -85,6 +90,11 @@ func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 		UpdateCount:      getInt(12),
 		DiskCount:        getInt(13),
 		DiskHighCount:    getInt(14),
+		UserCount:        getInt(15),
+		LockedUsers:      getInt(16),
+		InterfacesUp:     getInt(17),
+		InterfacesTotal:  getInt(18),
+		ListeningPorts:   getInt(19),
 		SystemdMode:      systemdMode,
 	}, nil
 }

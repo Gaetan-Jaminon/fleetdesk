@@ -17,7 +17,6 @@ func (m Model) renderResourcePicker() string {
 	iw := w - 2
 
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name
-	resourceCount := 7
 	s := m.renderHeader(breadcrumb, m.resourceCursor+1, resourceCount) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
@@ -83,6 +82,8 @@ func (m Model) renderResourcePicker() string {
 		{"Updates", updTotal, 0, updFailed},
 		{"Disk", h.DiskCount, 0, h.DiskHighCount},
 		{"Subscription", 0, 0, 0},
+		{"Accounts", h.UserCount, 0, h.LockedUsers},
+		{"Network", h.InterfacesTotal, h.InterfacesUp, h.ListeningPorts},
 	}
 	for i, r := range rows {
 		cur := "   "
