@@ -376,9 +376,11 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "esc":
 			if m.filterText != "" {
+				m.filterActive = false
 				m.filterText = ""
 				m.serviceLogCursor = 0
 			} else {
+				m.filterActive = false
 				m.showServiceDetail = false
 				m.serviceLogCursor = 0
 			}
