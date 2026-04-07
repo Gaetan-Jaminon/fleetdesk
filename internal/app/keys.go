@@ -518,23 +518,26 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterText = ""
 		m.containerCursor = 0
 	case "l":
-		if len(m.containers) > 0 {
+		filtered := m.filteredContainers()
+		if len(filtered) > 0 && m.containerCursor < len(filtered) {
 			h := m.hosts[m.selectedHost]
-			ctr := m.containers[m.containerCursor].Name
+			ctr := filtered[m.containerCursor].Name
 			cmd := fmt.Sprintf("podman logs -f '%s'", shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("logs %s on %s (Ctrl+C to stop)", ctr, h.Entry.Name))
 		}
 	case "i":
-		if len(m.containers) > 0 {
+		filtered := m.filteredContainers()
+		if len(filtered) > 0 && m.containerCursor < len(filtered) {
 			h := m.hosts[m.selectedHost]
-			ctr := m.containers[m.containerCursor].Name
+			ctr := filtered[m.containerCursor].Name
 			cmd := fmt.Sprintf("podman inspect '%s' | less", shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("inspect %s on %s", ctr, h.Entry.Name))
 		}
 	case "e":
-		if len(m.containers) > 0 {
+		filtered := m.filteredContainers()
+		if len(filtered) > 0 && m.containerCursor < len(filtered) {
 			h := m.hosts[m.selectedHost]
-			ctr := m.containers[m.containerCursor].Name
+			ctr := filtered[m.containerCursor].Name
 			cmd := fmt.Sprintf("podman exec -it '%s' /bin/bash || podman exec -it '%s' /bin/sh", shellQuote(ctr), shellQuote(ctr))
 			return m, sshHandover(h, []string{cmd}, fmt.Sprintf("exec %s on %s", ctr, h.Entry.Name))
 		}
