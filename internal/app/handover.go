@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bufio"
@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
 
 // sshHandoverFinishedMsg is sent when a terminal handover SSH command completes.
@@ -32,8 +34,8 @@ type sshExec struct {
 }
 
 func (s *sshExec) Run() error {
-	sep := strings.Repeat("━", 50)
-	fmt.Printf("\n%s\n▶ %s\n%s\n\n", sep, s.banner, sep)
+	sep := strings.Repeat("\u2501", 50)
+	fmt.Printf("\n%s\n\u25b6 %s\n%s\n\n", sep, s.banner, sep)
 
 	sshArgs := []string{
 		"-t",
@@ -50,9 +52,9 @@ func (s *sshExec) Run() error {
 
 	s.err = c.Run()
 
-	status := "✓ done"
+	status := "\u2713 done"
 	if s.err != nil {
-		status = fmt.Sprintf("✗ %v", s.err)
+		status = fmt.Sprintf("\u2717 %v", s.err)
 	}
 	fmt.Printf("\n%s\n%s\nPress Enter to return to fleetdesk...", sep, status)
 	bufio.NewReader(os.Stdin).ReadBytes('\n')
@@ -92,7 +94,7 @@ func (e *editorExec) SetStdout(_ io.Writer) {}
 func (e *editorExec) SetStderr(_ io.Writer) {}
 
 // editFleetFile opens the selected fleet file in the user's editor.
-func (m model) editFleetFile() tea.Cmd {
+func (m Model) editFleetFile() tea.Cmd {
 	f := m.fleets[m.fleetCursor]
 	e := &editorExec{path: f.Path}
 	return tea.Exec(e, func(err error) tea.Msg {
@@ -101,7 +103,7 @@ func (m model) editFleetFile() tea.Cmd {
 }
 
 // sshHandover creates a tea.Cmd for terminal handover to an SSH command.
-func sshHandover(h host, args []string, banner string) tea.Cmd {
+func sshHandover(h config.Host, args []string, banner string) tea.Cmd {
 	e := &sshExec{
 		host:   h.Entry.Hostname,
 		user:   h.Entry.User,

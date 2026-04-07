@@ -5,6 +5,9 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/app"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
 
 var (
@@ -18,13 +21,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	fleets, err := scanFleets()
+	fleets, err := config.ScanFleets()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error scanning fleets: %v\n", err)
 		os.Exit(1)
 	}
 
-	m := newModel(fleets)
+	m := app.NewModel(fleets)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
