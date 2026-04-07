@@ -198,7 +198,7 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && `+
 			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l && `+
 			`(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | wc -l && `+
-			`((getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while read u; do sudo passwd -S "$u" 2>/dev/null; done | grep -c ' L ' || echo 0) && `+
+			`((getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while read u; do sudo passwd -S "$u" 2>/dev/null; done | { grep -c ' L ' || true; }) && `+
 			`(ip -br link | grep -c UP || echo 0) && `+
 			`ip -br link | wc -l && `+
 			`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0)`,
