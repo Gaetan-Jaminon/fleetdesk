@@ -174,6 +174,96 @@ func (m Model) filteredAuditEvents() []config.AuditEvent {
 	return filtered
 }
 
+func (m Model) filteredContainers() []config.Container {
+	if m.filterText == "" {
+		return m.containers
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.Container
+	for _, c := range m.containers {
+		line := strings.ToLower(c.Name + " " + c.Image + " " + c.Status)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredUpdates() []config.Update {
+	if m.filterText == "" {
+		return m.updates
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.Update
+	for _, u := range m.updates {
+		line := strings.ToLower(u.Package + " " + u.Version + " " + u.Type)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, u)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredCronJobs() []config.CronJob {
+	if m.filterText == "" {
+		return m.cronJobs
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.CronJob
+	for _, cj := range m.cronJobs {
+		line := strings.ToLower(cj.Schedule + " " + cj.Source + " " + cj.Command)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, cj)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredDisks() []config.Disk {
+	if m.filterText == "" {
+		return m.disks
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.Disk
+	for _, d := range m.disks {
+		line := strings.ToLower(d.Filesystem + " " + d.Mount + " " + d.UsePercent)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredInterfaces() []config.NetInterface {
+	if m.filterText == "" {
+		return m.interfaces
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.NetInterface
+	for _, ni := range m.interfaces {
+		line := strings.ToLower(ni.Name + " " + ni.State + " " + ni.IPs)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, ni)
+		}
+	}
+	return filtered
+}
+
+func (m Model) filteredRoutes() []config.Route {
+	if m.filterText == "" {
+		return m.routes
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []config.Route
+	for _, r := range m.routes {
+		line := strings.ToLower(r.Destination + " " + r.Gateway + " " + r.Interface)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
 // parseLogFields parses structured key=value pairs from a log message.
 // Handles both simple key=value and key="quoted value" formats.
 func parseLogFields(msg string) [][2]string {

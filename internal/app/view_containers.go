@@ -16,16 +16,26 @@ func (m Model) renderContainerList() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredContainers()
+
 	breadcrumb := f.Name + " \u203a " + h.Entry.Name + " \u203a Containers"
-	s := m.renderHeader(breadcrumb, m.containerCursor+1, len(m.containers)) + "\n"
+	s := m.renderHeader(breadcrumb, m.containerCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(m.containers) == 0 {
+	if m.filterText != "" {
+		filterLine := fmt.Sprintf("  Filter: %s", m.filterText)
+		s += borderedRow(filterLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
+		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	}
+
+	if m.containers == nil {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else if len(filtered) == 0 {
 		s += borderedRow("  No containers found.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("CONTAINER")
 		imgCol := len("IMAGE")
-		for _, c := range m.containers {
+		for _, c := range filtered {
 			if len(c.Name) > nameCol {
 				nameCol = len(c.Name)
 			}
@@ -41,6 +51,9 @@ func (m Model) renderContainerList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
 		maxVisible := m.height - 8
+		if m.filterText != "" {
+			maxVisible -= 2
+		}
 		if maxVisible < 1 {
 			maxVisible = 1
 		}
@@ -49,12 +62,12 @@ func (m Model) renderContainerList() string {
 			offset = m.containerCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.containers) {
-			end = len(m.containers)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			c := m.containers[i]
+			c := filtered[i]
 			cur := "   "
 			if i == m.containerCursor {
 				cur = " \u25b8 "
@@ -81,6 +94,7 @@ func (m Model) renderContainerList() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
+		{"/", "Search"},
 		{"l", "Logs"},
 		{"i", "Inspect"},
 		{"e", "Exec"},
