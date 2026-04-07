@@ -206,7 +206,7 @@ type SudoEntry struct {
 	Time    string
 	User    string
 	Command string
-	Result  string // success, failure
+	Result  string // success, failed
 }
 
 // SELinuxDenial represents an SELinux AVC denial.

@@ -657,14 +657,13 @@ func ParseAuditEventLine(line string) config.AuditEvent {
 		ae.User = fields[offset+2]
 	}
 
-	// result: "yes"/"no" is typically the second-to-last field
-	for _, f := range fields {
-		if f == "yes" {
+	// result is the second-to-last field in aureport -i output
+	if len(fields) > 1 {
+		switch fields[len(fields)-2] {
+		case "yes":
 			ae.Result = "success"
-			break
-		} else if f == "no" {
+		case "no":
 			ae.Result = "failed"
-			break
 		}
 	}
 
