@@ -1629,3 +1629,58 @@ func (m Model) fetchK8sNodePods(nodeName string) tea.Cmd {
 		return fetchK8sNodePodsMsg{pods: pods, err: err}
 	}
 }
+
+// fetchK8sNamespaces fetches namespace list (fast, ~200ms).
+func (m Model) fetchK8sNamespaces() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		ns, err := k8s.FetchNamespaces(km, ctxName, logger)
+		return fetchK8sNamespacesMsg{namespaces: ns, err: err}
+	}
+}
+
+// fetchK8sNamespaceCounts fetches resource counts per namespace (slow, background).
+func (m Model) fetchK8sNamespaceCounts() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		counts, err := k8s.FetchNamespaceCounts(km, ctxName, logger)
+		return fetchK8sNamespaceCountsMsg{counts: counts, err: err}
+	}
+}
+
+// fetchK8sWorkloads fetches workloads in a namespace.
+func (m Model) fetchK8sWorkloads(namespace string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		workloads, err := k8s.FetchWorkloads(km, ctxName, namespace, logger)
+		return fetchK8sWorkloadsMsg{workloads: workloads, err: err}
+	}
+}
+
+// fetchK8sPods fetches pods for a workload in a namespace.
+func (m Model) fetchK8sPods(namespace, workloadName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		pods, err := k8s.FetchPods(km, ctxName, namespace, workloadName, logger)
+		return fetchK8sPodsMsg{pods: pods, err: err}
+	}
+}
+
+// fetchK8sPodDetail fetches extended pod properties.
+func (m Model) fetchK8sPodDetail(namespace, podName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		detail, err := k8s.FetchPodDetail(km, ctxName, namespace, podName, logger)
+		return fetchK8sPodDetailMsg{detail: detail, err: err}
+	}
+}

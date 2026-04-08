@@ -98,6 +98,31 @@ type fetchK8sNodePodsMsg struct {
 	err  error
 }
 
+type fetchK8sNamespacesMsg struct {
+	namespaces []k8s.K8sNamespace
+	err        error
+}
+
+type fetchK8sNamespaceCountsMsg struct {
+	counts map[string][4]int
+	err    error
+}
+
+type fetchK8sWorkloadsMsg struct {
+	workloads []k8s.K8sWorkload
+	err       error
+}
+
+type fetchK8sPodsMsg struct {
+	pods []k8s.K8sPod
+	err  error
+}
+
+type fetchK8sPodDetailMsg struct {
+	detail k8s.K8sPodDetail
+	err    error
+}
+
 type fetchAzureActivityLogMsg struct {
 	entries []azure.ActivityLogEntry
 	err     error
@@ -149,6 +174,10 @@ const (
 	viewK8sResourcePicker
 	viewK8sNodeList
 	viewK8sNodeDetail
+	viewK8sNamespaceList
+	viewK8sWorkloadList
+	viewK8sPodList
+	viewK8sPodDetail
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -217,6 +246,18 @@ type Model struct {
 	k8sNodeUsage  *k8s.K8sNodeUsage // nil = loading
 	k8sNodePods   []k8s.K8sNodePod // nil = loading
 	k8sNodePodCursor int
+
+	// k8s workloads
+	k8sNamespaces         []k8s.K8sNamespace
+	k8sNamespaceCursor    int
+	selectedK8sNamespace  int
+	k8sWorkloads          []k8s.K8sWorkload
+	k8sWorkloadCursor     int
+	selectedK8sWorkload   int
+	k8sPodList            []k8s.K8sPod
+	k8sPodCursor          int
+	k8sPodDetail          k8s.K8sPodDetail
+	k8sPodContainerCursor int
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -573,6 +614,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchK8sNodePodsMsg:
 		if msg.err == nil {
 			m.k8sNodePods = msg.pods
+		}
+		return m, nil
+
+	case fetchK8sNamespacesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sNamespaces = msg.namespaces
+			m.flash = ""
+		}
+		// Start background count fetch
+		return m, m.fetchK8sNamespaceCounts()
+
+	case fetchK8sNamespaceCountsMsg:
+		if msg.err == nil && msg.counts != nil {
+			for i := range m.k8sNamespaces {
+				if c, ok := msg.counts[m.k8sNamespaces[i].Name]; ok {
+					m.k8sNamespaces[i].PodCount = c[0]
+					m.k8sNamespaces[i].DeployCount = c[1]
+					m.k8sNamespaces[i].STSCount = c[2]
+					m.k8sNamespaces[i].DSCount = c[3]
+				}
+			}
+		}
+		return m, nil
+
+	case fetchK8sWorkloadsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sWorkloads = msg.workloads
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sPodsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sPodList = msg.pods
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sPodDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sPodDetail = msg.detail
+			m.view = viewK8sPodDetail
+			m.flash = ""
 		}
 		return m, nil
 
@@ -1021,6 +1117,14 @@ func (m Model) View() string {
 		return m.renderK8sNodeList()
 	case viewK8sNodeDetail:
 		return m.renderK8sNodeDetail()
+	case viewK8sNamespaceList:
+		return m.renderK8sNamespaceList()
+	case viewK8sWorkloadList:
+		return m.renderK8sWorkloadList()
+	case viewK8sPodList:
+		return m.renderK8sPodList()
+	case viewK8sPodDetail:
+		return m.renderK8sPodDetail()
 	}
 	return ""
 }

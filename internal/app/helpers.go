@@ -335,6 +335,12 @@ func (m *Model) sortView() {
 		m.sortK8sNodes()
 	case viewK8sNodeDetail:
 		m.sortK8sNodePods()
+	case viewK8sNamespaceList:
+		m.sortK8sNamespaces()
+	case viewK8sWorkloadList:
+		m.sortK8sWorkloads()
+	case viewK8sPodList:
+		m.sortK8sPodList()
 	}
 }
 
@@ -1175,4 +1181,92 @@ func (m Model) filteredK8sContexts() []k8s.K8sContext {
 		}
 	}
 	return filtered
+}
+
+// filteredK8sNamespaces returns namespaces matching the current filter.
+func (m Model) filteredK8sNamespaces() []k8s.K8sNamespace {
+	if m.k8sNamespaces == nil { return nil }
+	if m.filterText == "" { return m.k8sNamespaces }
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sNamespace
+	for _, ns := range m.k8sNamespaces {
+		if strings.Contains(strings.ToLower(ns.Name+" "+ns.Status), filter) { filtered = append(filtered, ns) }
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sNamespaces() {
+	sort.Slice(m.k8sNamespaces, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1: less = m.k8sNamespaces[i].Name < m.k8sNamespaces[j].Name
+		case 2: less = m.k8sNamespaces[i].Status < m.k8sNamespaces[j].Status
+		case 3: less = m.k8sNamespaces[i].PodCount < m.k8sNamespaces[j].PodCount
+		case 4: less = m.k8sNamespaces[i].DeployCount < m.k8sNamespaces[j].DeployCount
+		case 5: less = m.k8sNamespaces[i].STSCount < m.k8sNamespaces[j].STSCount
+		case 6: less = m.k8sNamespaces[i].DSCount < m.k8sNamespaces[j].DSCount
+		case 7: less = m.k8sNamespaces[i].Age < m.k8sNamespaces[j].Age
+		default: return false
+		}
+		if m.sortAsc { return less }
+		return !less
+	})
+}
+
+// filteredK8sWorkloads returns workloads matching the current filter.
+func (m Model) filteredK8sWorkloads() []k8s.K8sWorkload {
+	if m.k8sWorkloads == nil { return nil }
+	if m.filterText == "" { return m.k8sWorkloads }
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sWorkload
+	for _, w := range m.k8sWorkloads {
+		if strings.Contains(strings.ToLower(w.Kind+" "+w.Name+" "+w.Ready), filter) { filtered = append(filtered, w) }
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sWorkloads() {
+	sort.Slice(m.k8sWorkloads, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1: less = m.k8sWorkloads[i].Name < m.k8sWorkloads[j].Name
+		case 2: less = m.k8sWorkloads[i].Ready < m.k8sWorkloads[j].Ready
+		case 3: less = m.k8sWorkloads[i].UpToDate < m.k8sWorkloads[j].UpToDate
+		case 4: less = m.k8sWorkloads[i].Available < m.k8sWorkloads[j].Available
+		case 5: less = m.k8sWorkloads[i].Age < m.k8sWorkloads[j].Age
+		default: return false
+		}
+		if m.sortAsc { return less }
+		return !less
+	})
+}
+
+// filteredK8sPodList returns pods matching the current filter.
+func (m Model) filteredK8sPodList() []k8s.K8sPod {
+	if m.k8sPodList == nil { return nil }
+	if m.filterText == "" { return m.k8sPodList }
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sPod
+	for _, p := range m.k8sPodList {
+		line := strings.ToLower(p.Name + " " + p.Status + " " + p.Node)
+		if strings.Contains(line, filter) { filtered = append(filtered, p) }
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sPodList() {
+	sort.Slice(m.k8sPodList, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1: less = m.k8sPodList[i].Name < m.k8sPodList[j].Name
+		case 2: less = m.k8sPodList[i].Status < m.k8sPodList[j].Status
+		case 3: less = m.k8sPodList[i].Ready < m.k8sPodList[j].Ready
+		case 4: less = m.k8sPodList[i].Restarts < m.k8sPodList[j].Restarts
+		case 5: less = m.k8sPodList[i].Node < m.k8sPodList[j].Node
+		case 6: less = m.k8sPodList[i].Age < m.k8sPodList[j].Age
+		default: return false
+		}
+		if m.sortAsc { return less }
+		return !less
+	})
 }

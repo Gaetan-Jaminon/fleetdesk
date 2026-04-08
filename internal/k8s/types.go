@@ -114,3 +114,56 @@ type K8sTaint struct {
 	Value  string
 	Effect string
 }
+
+// K8sNamespace represents a Kubernetes namespace with resource counts.
+type K8sNamespace struct {
+	Name        string
+	Status      string // Active, Terminating
+	PodCount    int
+	DeployCount int
+	STSCount    int
+	DSCount     int
+	Age         string
+}
+
+// K8sWorkload represents a Deployment, StatefulSet, or DaemonSet.
+type K8sWorkload struct {
+	Kind      string // Deployment, StatefulSet, DaemonSet
+	Name      string
+	Ready     string // "2/2"
+	UpToDate  int    // deployments only
+	Available int    // deployments only
+	Age       string
+}
+
+// K8sPod represents a pod in a namespace.
+type K8sPod struct {
+	Name      string
+	Namespace string
+	Status    string // Running, Pending, Failed, etc.
+	Ready     string // "1/1"
+	Restarts  int
+	Node      string
+	IP        string
+	Age       string
+}
+
+// K8sPodDetail holds extended pod properties.
+type K8sPodDetail struct {
+	K8sPod
+	Containers []K8sContainer
+	Conditions []K8sCondition // reuse existing type
+}
+
+// K8sContainer represents a container in a pod.
+type K8sContainer struct {
+	Name     string
+	Image    string
+	State    string // running, waiting, terminated
+	Ready    bool
+	Restarts int
+	CPUReq   string
+	CPULim   string
+	MemReq   string
+	MemLim   string
+}

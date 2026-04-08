@@ -45,6 +45,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.k8sClusterCursor = 0
 			m.k8sContextCursor = 0
 			m.k8sNodeCursor = 0
+			m.k8sNamespaceCursor = 0
+			m.k8sWorkloadCursor = 0
+			m.k8sPodCursor = 0
+			m.k8sPodContainerCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -70,6 +74,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.k8sClusterCursor = 0
 			m.k8sContextCursor = 0
 			m.k8sNodeCursor = 0
+			m.k8sNamespaceCursor = 0
+			m.k8sWorkloadCursor = 0
+			m.k8sPodCursor = 0
+			m.k8sPodContainerCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -95,6 +103,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.k8sClusterCursor = 0
 				m.k8sContextCursor = 0
 				m.k8sNodeCursor = 0
+				m.k8sNamespaceCursor = 0
+				m.k8sWorkloadCursor = 0
+				m.k8sPodCursor = 0
+				m.k8sPodContainerCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -120,6 +132,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.k8sClusterCursor = 0
 				m.k8sContextCursor = 0
 				m.k8sNodeCursor = 0
+				m.k8sNamespaceCursor = 0
+				m.k8sWorkloadCursor = 0
+				m.k8sPodCursor = 0
+				m.k8sPodContainerCursor = 0
 			}
 		}
 		return m, nil
@@ -313,6 +329,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleK8sNodeListKeys(msg)
 	case viewK8sNodeDetail:
 		return m.handleK8sNodeDetailKeys(msg)
+	case viewK8sNamespaceList:
+		return m.handleK8sNamespaceListKeys(msg)
+	case viewK8sWorkloadList:
+		return m.handleK8sWorkloadListKeys(msg)
+	case viewK8sPodList:
+		return m.handleK8sPodListKeys(msg)
+	case viewK8sPodDetail:
+		return m.handleK8sPodDetailKeys(msg)
 	}
 	return m, nil
 }
@@ -1939,8 +1963,13 @@ func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "enter":
 		switch m.k8sResourceCursor {
 		case 0:
-			m.flash = "Workloads view coming in next PR"
-			m.flashError = false
+			m.k8sNamespaces = nil
+			m.k8sNamespaceCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewK8sNamespaceList
+			return m, m.fetchK8sNamespaces()
 		case 1:
 			m.k8sNodes = nil
 			m.k8sNodeCursor = 0
@@ -2067,6 +2096,154 @@ func (m Model) handleK8sNodeDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = ""
 			m.filterActive = false
 		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sNamespaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sNamespaces()
+		if m.k8sNamespaceCursor > 0 { m.k8sNamespaceCursor-- }
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sNamespaces()
+		if m.k8sNamespaceCursor < len(filtered)-1 { m.k8sNamespaceCursor++ }
+	case "enter":
+		filtered := m.filteredK8sNamespaces()
+		if len(filtered) > 0 && m.k8sNamespaceCursor < len(filtered) {
+			m.selectedK8sNamespace = m.k8sNamespaceCursor
+			m.k8sWorkloads = nil
+			m.k8sWorkloadCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewK8sWorkloadList
+			return m, m.fetchK8sWorkloads(filtered[m.k8sNamespaceCursor].Name)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sNamespaceCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
+		m.sortView()
+	case "r":
+		m.k8sNamespaces = nil
+		m.k8sNamespaceCursor = 0
+		return m, m.fetchK8sNamespaces()
+	case "esc":
+		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sNamespaceCursor = 0 } else {
+			m.view = viewK8sResourcePicker; m.sortColumn = 0; m.filterText = ""; m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sWorkloadListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sWorkloads()
+		if m.k8sWorkloadCursor > 0 { m.k8sWorkloadCursor-- }
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sWorkloads()
+		if m.k8sWorkloadCursor < len(filtered)-1 { m.k8sWorkloadCursor++ }
+	case "enter":
+		filtered := m.filteredK8sWorkloads()
+		if len(filtered) > 0 && m.k8sWorkloadCursor < len(filtered) {
+			w := filtered[m.k8sWorkloadCursor]
+			m.selectedK8sWorkload = m.k8sWorkloadCursor
+			m.k8sPodList = nil
+			m.k8sPodCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+			m.view = viewK8sPodList
+			return m, m.fetchK8sPods(ns, w.Name)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sWorkloadCursor = 0
+	case "1", "2", "3", "4", "5":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
+		m.sortView()
+	case "r":
+		m.k8sWorkloads = nil
+		m.k8sWorkloadCursor = 0
+		ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+		return m, m.fetchK8sWorkloads(ns)
+	case "esc":
+		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sWorkloadCursor = 0 } else {
+			m.view = viewK8sNamespaceList; m.sortColumn = 0; m.filterText = ""; m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sPodList()
+		if m.k8sPodCursor > 0 { m.k8sPodCursor-- }
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sPodList()
+		if m.k8sPodCursor < len(filtered)-1 { m.k8sPodCursor++ }
+	case "enter":
+		filtered := m.filteredK8sPodList()
+		if len(filtered) > 0 && m.k8sPodCursor < len(filtered) {
+			p := filtered[m.k8sPodCursor]
+			m.flash = fmt.Sprintf("Loading %s...", p.Name)
+			m.k8sPodContainerCursor = 0
+			return m, m.fetchK8sPodDetail(p.Namespace, p.Name)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sPodCursor = 0
+	case "1", "2", "3", "4", "5", "6":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
+		m.sortView()
+	case "r":
+		m.k8sPodList = nil
+		m.k8sPodCursor = 0
+		ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+		w := m.filteredK8sWorkloads()[m.selectedK8sWorkload]
+		return m, m.fetchK8sPods(ns, w.Name)
+	case "esc":
+		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sPodCursor = 0 } else {
+			m.view = viewK8sWorkloadList; m.sortColumn = 0; m.filterText = ""; m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.k8sPodContainerCursor > 0 { m.k8sPodContainerCursor-- }
+	case "down", "j":
+		if m.k8sPodContainerCursor < len(m.k8sPodDetail.Containers)-1 { m.k8sPodContainerCursor++ }
+	case "r":
+		p := m.k8sPodDetail
+		m.k8sPodContainerCursor = 0
+		return m, m.fetchK8sPodDetail(p.Namespace, p.Name)
+	case "esc":
+		m.view = viewK8sPodList
 	case "q":
 		return m, tea.Quit
 	}
