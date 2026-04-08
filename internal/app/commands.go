@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -36,10 +37,13 @@ func (m Model) fetchServices() func() tea.Msg {
 	idx := m.selectedHost
 	h := m.hosts[idx]
 	sm := m.ssh
+	logger := m.logger
 	mode := h.Entry.SystemdMode
 	filters := h.Entry.ServiceFilter
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "services", "host_idx", idx)
 		sysctl := "systemctl"
 		if mode == "user" {
 			sysctl = "systemctl --user"
@@ -52,6 +56,7 @@ func (m Model) fetchServices() func() tea.Msg {
 		)
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "services", "host_idx", idx, "err", err)
 			return fetchServicesMsg{err: fmt.Errorf("list services: %w", err)}
 		}
 
@@ -99,6 +104,7 @@ func (m Model) fetchServices() func() tea.Msg {
 			}
 			return services[i].Name < services[j].Name
 		})
+		logger.Debug("fetch complete", "view", "services", "host_idx", idx, "count", len(services), "elapsed", time.Since(start))
 		return fetchServicesMsg{services: services}
 	}
 }
@@ -107,11 +113,15 @@ func (m Model) fetchServices() func() tea.Msg {
 func (m Model) fetchContainers() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "containers", "host_idx", idx)
 		cmd := `podman ps -a --format "{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.ID}}" 2>/dev/null`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "containers", "host_idx", idx, "err", err)
 			return fetchContainersMsg{err: fmt.Errorf("list containers: %w", err)}
 		}
 
@@ -141,6 +151,7 @@ func (m Model) fetchContainers() func() tea.Msg {
 			}
 			return containers[i].Name < containers[j].Name
 		})
+		logger.Debug("fetch complete", "view", "containers", "host_idx", idx, "count", len(containers), "elapsed", time.Since(start))
 		return fetchContainersMsg{containers: containers}
 	}
 }
@@ -206,10 +217,13 @@ func (m Model) confirmDetailSvcAction(action string) (tea.Model, tea.Cmd) {
 func (m Model) fetchServiceDetail(unit string) func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 	h := m.hosts[idx]
 	mode := h.Entry.SystemdMode
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "service_detail", "host_idx", idx, "unit", unit)
 		sysctl := "systemctl"
 		journal := "sudo journalctl -u"
 		if mode == "user" {
@@ -223,6 +237,7 @@ func (m Model) fetchServiceDetail(unit string) func() tea.Msg {
 		)
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "service_detail", "host_idx", idx, "unit", unit, "err", err)
 			return fetchServiceDetailMsg{err: fmt.Errorf("service detail: %w", err)}
 		}
 
@@ -238,6 +253,7 @@ func (m Model) fetchServiceDetail(unit string) func() tea.Msg {
 			}
 		}
 
+		logger.Debug("fetch complete", "view", "service_detail", "host_idx", idx, "unit", unit, "log_lines", len(logLines), "elapsed", time.Since(start))
 		return fetchServiceDetailMsg{status: status, logLines: logLines}
 	}
 }
@@ -252,11 +268,15 @@ type fetchCronMsg struct {
 func (m Model) fetchCronJobs() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "cron_jobs", "host_idx", idx)
 		cmd := `echo '===CRONTAB===' && crontab -l 2>/dev/null || true && echo '===CROND===' && for f in /etc/cron.d/*; do echo "FILE:$f"; cat "$f" 2>/dev/null; done`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "cron_jobs", "host_idx", idx, "err", err)
 			return fetchCronMsg{err: fmt.Errorf("cron: %w", err)}
 		}
 
@@ -318,6 +338,7 @@ func (m Model) fetchCronJobs() func() tea.Msg {
 			return jobs[i].Source < jobs[j].Source
 		})
 
+		logger.Debug("fetch complete", "view", "cron_jobs", "host_idx", idx, "count", len(jobs), "elapsed", time.Since(start))
 		return fetchCronMsg{jobs: jobs}
 	}
 }
@@ -333,9 +354,12 @@ func (m Model) fetchLogLevels() func() tea.Msg {
 	idx := m.selectedHost
 	h := m.hosts[idx]
 	sm := m.ssh
+	logger := m.logger
 	since := h.ErrorLogSince
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "log_levels", "host_idx", idx)
 		// count entries per priority level
 		cmd := fmt.Sprintf(
 			`for p in 0 1 2 3 4 5 6; do echo $(sudo journalctl -p $p..$p --since '%s' --no-pager -q 2>/dev/null | wc -l); done`,
@@ -343,6 +367,7 @@ func (m Model) fetchLogLevels() func() tea.Msg {
 		)
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "log_levels", "host_idx", idx, "err", err)
 			return fetchLogLevelsMsg{err: fmt.Errorf("log levels: %w", err)}
 		}
 
@@ -373,6 +398,7 @@ func (m Model) fetchLogLevels() func() tea.Msg {
 			})
 		}
 
+		logger.Debug("fetch complete", "view", "log_levels", "host_idx", idx, "count", len(levels), "elapsed", time.Since(start))
 		return fetchLogLevelsMsg{levels: levels}
 	}
 }
@@ -388,13 +414,17 @@ func (m Model) fetchErrorLogs() func() tea.Msg {
 	idx := m.selectedHost
 	h := m.hosts[idx]
 	sm := m.ssh
+	logger := m.logger
 	since := h.ErrorLogSince
 	level := m.selectedLogLevel
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "error_logs", "host_idx", idx, "level", level)
 		cmd := fmt.Sprintf("(sudo journalctl -p %s --since '%s' --no-pager -q -o short --no-hostname --reverse 2>/dev/null | head -500) | cat", level, since)
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "error_logs", "host_idx", idx, "err", err)
 			return fetchErrorLogsMsg{err: fmt.Errorf("error logs: %w", err)}
 		}
 
@@ -418,6 +448,7 @@ func (m Model) fetchErrorLogs() func() tea.Msg {
 			})
 		}
 
+		logger.Debug("fetch complete", "view", "error_logs", "host_idx", idx, "count", len(logs), "elapsed", time.Since(start))
 		return fetchErrorLogsMsg{logs: logs}
 	}
 }
@@ -432,13 +463,17 @@ type fetchUpdatesMsg struct {
 func (m Model) fetchUpdates() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "updates", "host_idx", idx)
 		// get pending updates and security updates in one command
 		cmd := `dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
 		out, err := sm.RunCommand(idx, cmd)
 		// dnf check-update returns exit 100 when updates are available
 		if err != nil && !strings.Contains(out, "===SECURITY===") {
+			logger.Error("fetch failed", "view", "updates", "host_idx", idx, "err", err)
 			return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
 		}
 
@@ -524,6 +559,7 @@ func (m Model) fetchUpdates() func() tea.Msg {
 			return updates[i].Package < updates[j].Package
 		})
 
+		logger.Debug("fetch complete", "view", "updates", "host_idx", idx, "count", len(updates), "elapsed", time.Since(start))
 		return fetchUpdatesMsg{updates: updates}
 	}
 }
@@ -538,11 +574,15 @@ type fetchSubscriptionMsg struct {
 func (m Model) fetchSubscription() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "subscription", "host_idx", idx)
 		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && echo '===STATUS===' && sudo subscription-manager status 2>&1 && echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && echo '===REPOS===' && dnf repolist --enabled 2>&1 && echo '===REPOCHECK===' && for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do (echo "REPO:$repo:$(dnf repoinfo --disablerepo='*' --enablerepo=$repo 2>&1 | grep -c 'Error:')") & done; wait`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && !strings.Contains(out, "===IDENTITY===") {
+			logger.Error("fetch failed", "view", "subscription", "host_idx", idx, "err", err)
 			return fetchSubscriptionMsg{err: fmt.Errorf("subscription: %w", err)}
 		}
 
@@ -661,6 +701,7 @@ func (m Model) fetchSubscription() func() tea.Msg {
 			}
 		}
 
+		logger.Debug("fetch complete", "view", "subscription", "host_idx", idx, "count", len(subs), "elapsed", time.Since(start))
 		return fetchSubscriptionMsg{subs: subs}
 	}
 }
@@ -675,8 +716,11 @@ type fetchAccountsMsg struct {
 func (m Model) fetchAccounts() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "accounts", "host_idx", idx)
 		// Combine getent passwd (local users) + /home/* dirs (IPA/IDM users) for a complete list.
 		// Only fetch basic info here — details (lastlog, passwd status, chage) are fetched on demand.
 		cmd := `(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while IFS= read -r user; do
@@ -688,6 +732,7 @@ func (m Model) fetchAccounts() func() tea.Msg {
 done`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "accounts", "host_idx", idx, "err", err)
 			return fetchAccountsMsg{err: fmt.Errorf("accounts: %w", err)}
 		}
 
@@ -708,6 +753,7 @@ done`
 			}
 			return accounts[i].User < accounts[j].User
 		})
+		logger.Debug("fetch complete", "view", "accounts", "host_idx", idx, "count", len(accounts), "elapsed", time.Since(start))
 		return fetchAccountsMsg{accounts: accounts}
 	}
 }
@@ -725,8 +771,11 @@ type fetchAccountDetailMsg struct {
 func (m Model) fetchAccountDetail(user string) func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "account_detail", "host_idx", idx, "user", user)
 		u := shellQuote(user)
 		// Detect if IPA user (not in /etc/passwd) and adapt commands
 		cmd := fmt.Sprintf(
@@ -735,6 +784,7 @@ func (m Model) fetchAccountDetail(user string) func() tea.Msg {
 		)
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "account_detail", "host_idx", idx, "user", user, "err", err)
 			return fetchAccountDetailMsg{err: fmt.Errorf("account detail: %w", err)}
 		}
 
@@ -810,6 +860,7 @@ func (m Model) fetchAccountDetail(user string) func() tea.Msg {
 			}
 		}
 
+		logger.Debug("fetch complete", "view", "account_detail", "host_idx", idx, "user", user, "sections", len(sections), "elapsed", time.Since(start))
 		return fetchAccountDetailMsg{sections: sections}
 	}
 }
@@ -839,11 +890,15 @@ type fetchNetworkInfoMsg struct {
 func (m Model) fetchNetworkInfo() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "network_info", "host_idx", idx)
 		cmd := `ip route 2>/dev/null | wc -l && if systemctl is-active firewalld >/dev/null 2>&1; then echo "firewalld"; (firewall-cmd --list-all-zones 2>/dev/null | grep -cE 'services:|ports:' || echo 0); elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'chain'; then echo "nftables"; (nft list ruleset 2>/dev/null | grep -c 'rule' || echo 0); else echo "iptables"; (sudo iptables -L -n 2>/dev/null | tail -n+3 | grep -cv '^$' || echo 0); fi`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "network_info", "host_idx", idx, "err", err)
 			return fetchNetworkInfoMsg{err: fmt.Errorf("network info: %w", err)}
 		}
 
@@ -858,6 +913,7 @@ func (m Model) fetchNetworkInfo() func() tea.Msg {
 		if len(lines) > 2 {
 			fmt.Sscanf(strings.TrimSpace(lines[2]), "%d", &msg.firewallCount)
 		}
+		logger.Debug("fetch complete", "view", "network_info", "host_idx", idx, "elapsed", time.Since(start))
 		return msg
 	}
 }
@@ -872,11 +928,15 @@ type fetchInterfacesMsg struct {
 func (m Model) fetchInterfaces() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "interfaces", "host_idx", idx)
 		cmd := `ip -br addr && echo '---MTU---' && ip -o link | awk '{print $2, $5}'`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "interfaces", "host_idx", idx, "err", err)
 			return fetchInterfacesMsg{err: fmt.Errorf("interfaces: %w", err)}
 		}
 
@@ -917,6 +977,7 @@ func (m Model) fetchInterfaces() func() tea.Msg {
 			}
 			return interfaces[i].Name < interfaces[j].Name
 		})
+		logger.Debug("fetch complete", "view", "interfaces", "host_idx", idx, "count", len(interfaces), "elapsed", time.Since(start))
 		return fetchInterfacesMsg{interfaces: interfaces}
 	}
 }
@@ -931,11 +992,15 @@ type fetchPortsMsg struct {
 func (m Model) fetchPorts() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "ports", "host_idx", idx)
 		cmd := `ss -tlnp | tail -n +2`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "ports", "host_idx", idx, "err", err)
 			return fetchPortsMsg{err: fmt.Errorf("ports: %w", err)}
 		}
 
@@ -952,6 +1017,7 @@ func (m Model) fetchPorts() func() tea.Msg {
 		sort.Slice(ports, func(i, j int) bool {
 			return ports[i].Port < ports[j].Port
 		})
+		logger.Debug("fetch complete", "view", "ports", "host_idx", idx, "count", len(ports), "elapsed", time.Since(start))
 		return fetchPortsMsg{ports: ports}
 	}
 }
@@ -968,11 +1034,15 @@ type fetchRoutesMsg struct {
 func (m Model) fetchRoutes() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "routes", "host_idx", idx)
 		cmd := `ip route 2>/dev/null && echo '---DNS---' && cat /etc/resolv.conf 2>/dev/null | grep -E '^(nameserver|search|domain)'`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "routes", "host_idx", idx, "err", err)
 			return fetchRoutesMsg{err: fmt.Errorf("routes: %w", err)}
 		}
 
@@ -1019,6 +1089,7 @@ func (m Model) fetchRoutes() func() tea.Msg {
 			}
 		}
 
+		logger.Debug("fetch complete", "view", "routes", "host_idx", idx, "count", len(routes), "elapsed", time.Since(start))
 		return fetchRoutesMsg{
 			routes:      routes,
 			nameservers: nameservers,
@@ -1038,11 +1109,15 @@ type fetchFirewallMsg struct {
 func (m Model) fetchFirewall() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "firewall", "host_idx", idx)
 		cmd := `if systemctl is-active firewalld >/dev/null 2>&1; then echo '---FIREWALLD---'; sudo firewall-cmd --list-all-zones 2>/dev/null; elif command -v nft >/dev/null 2>&1; then _nft=$(sudo nft list ruleset 2>/dev/null); if echo "$_nft" | grep -q 'chain'; then echo '---NFTABLES---'; echo "$_nft"; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "firewall", "host_idx", idx, "err", err)
 			return fetchFirewallMsg{err: fmt.Errorf("firewall: %w", err)}
 		}
 
@@ -1060,6 +1135,7 @@ func (m Model) fetchFirewall() func() tea.Msg {
 			rules = ssh.ParseIptablesOutput(content)
 		}
 
+		logger.Debug("fetch complete", "view", "firewall", "host_idx", idx, "backend", backend, "count", len(rules), "elapsed", time.Since(start))
 		return fetchFirewallMsg{rules: rules, backend: backend}
 	}
 }
@@ -1074,11 +1150,15 @@ type fetchDiskMsg struct {
 func (m Model) fetchDisk() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "disk", "host_idx", idx)
 		cmd := `df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "disk", "host_idx", idx, "err", err)
 			return fetchDiskMsg{err: fmt.Errorf("disk: %w", err)}
 		}
 
@@ -1110,6 +1190,7 @@ func (m Model) fetchDisk() func() tea.Msg {
 			return ii > jj
 		})
 
+		logger.Debug("fetch complete", "view", "disk", "host_idx", idx, "count", len(disks), "elapsed", time.Since(start))
 		return fetchDiskMsg{disks: disks}
 	}
 }
@@ -1124,11 +1205,15 @@ type fetchFailedLoginsMsg struct {
 func (m Model) fetchFailedLogins() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "failed_logins", "host_idx", idx)
 		cmd := `sudo journalctl -u sshd --no-pager -q --no-hostname -o short -n 500 2>/dev/null | grep -iE 'Failed|Invalid user' | tac; true`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "failed_logins", "host_idx", idx, "err", err)
 			return fetchFailedLoginsMsg{err: fmt.Errorf("failed logins: %w", err)}
 		}
 
@@ -1142,6 +1227,7 @@ func (m Model) fetchFailedLogins() func() tea.Msg {
 				logins = append(logins, fl)
 			}
 		}
+		logger.Debug("fetch complete", "view", "failed_logins", "host_idx", idx, "count", len(logins), "elapsed", time.Since(start))
 		return fetchFailedLoginsMsg{logins: logins}
 	}
 }
@@ -1156,11 +1242,15 @@ type fetchSudoActivityMsg struct {
 func (m Model) fetchSudoActivity() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "sudo_activity", "host_idx", idx)
 		cmd := `sudo journalctl _COMM=sudo --no-pager -q --no-hostname -o short -n 500 2>/dev/null | tac; true`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "sudo_activity", "host_idx", idx, "err", err)
 			return fetchSudoActivityMsg{err: fmt.Errorf("sudo activity: %w", err)}
 		}
 
@@ -1174,6 +1264,7 @@ func (m Model) fetchSudoActivity() func() tea.Msg {
 				entries = append(entries, se)
 			}
 		}
+		logger.Debug("fetch complete", "view", "sudo_activity", "host_idx", idx, "count", len(entries), "elapsed", time.Since(start))
 		return fetchSudoActivityMsg{entries: entries}
 	}
 }
@@ -1188,11 +1279,15 @@ type fetchSELinuxMsg struct {
 func (m Model) fetchSELinuxDenials() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "selinux_denials", "host_idx", idx)
 		cmd := `sudo journalctl _TRANSPORT=audit --no-pager -q --no-hostname -o short -n 500 2>/dev/null | grep 'avc:' | tac; true`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "selinux_denials", "host_idx", idx, "err", err)
 			return fetchSELinuxMsg{err: fmt.Errorf("selinux: %w", err)}
 		}
 
@@ -1206,6 +1301,7 @@ func (m Model) fetchSELinuxDenials() func() tea.Msg {
 				denials = append(denials, d)
 			}
 		}
+		logger.Debug("fetch complete", "view", "selinux_denials", "host_idx", idx, "count", len(denials), "elapsed", time.Since(start))
 		return fetchSELinuxMsg{denials: denials}
 	}
 }
@@ -1220,11 +1316,15 @@ type fetchAuditSummaryMsg struct {
 func (m Model) fetchAuditSummary() func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "audit_summary", "host_idx", idx)
 		cmd := `sudo aureport --auth -i 2>/dev/null | grep -E '^\s*[0-9]+\.' | tac; true`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "audit_summary", "host_idx", idx, "err", err)
 			return fetchAuditSummaryMsg{err: fmt.Errorf("audit: %w", err)}
 		}
 
@@ -1238,6 +1338,7 @@ func (m Model) fetchAuditSummary() func() tea.Msg {
 				events = append(events, ae)
 			}
 		}
+		logger.Debug("fetch complete", "view", "audit_summary", "host_idx", idx, "count", len(events), "elapsed", time.Since(start))
 		return fetchAuditSummaryMsg{events: events}
 	}
 }
@@ -1252,17 +1353,22 @@ type fetchUpdateDetailMsg struct {
 func (m Model) fetchUpdateDetail(pkg string) func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "update_detail", "host_idx", idx, "pkg", pkg)
 		cmd := fmt.Sprintf("dnf info '%s' 2>/dev/null", shellQuote(pkg))
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "update_detail", "host_idx", idx, "pkg", pkg, "err", err)
 			return fetchUpdateDetailMsg{err: fmt.Errorf("info %s: %w", pkg, err)}
 		}
 		var lines []string
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			lines = append(lines, line)
 		}
+		logger.Debug("fetch complete", "view", "update_detail", "host_idx", idx, "pkg", pkg, "lines", len(lines), "elapsed", time.Since(start))
 		return fetchUpdateDetailMsg{lines: lines}
 	}
 }
@@ -1277,17 +1383,22 @@ type fetchDiskDetailMsg struct {
 func (m Model) fetchDiskDetail(mount string) func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "disk_detail", "host_idx", idx, "mount", mount)
 		cmd := fmt.Sprintf("df -h '%s' 2>/dev/null && echo '---' && (sudo tune2fs -l $(findmnt -n -o SOURCE '%s') 2>/dev/null || lsblk -f $(findmnt -n -o SOURCE '%s') 2>/dev/null || echo 'No additional details available')", shellQuote(mount), shellQuote(mount), shellQuote(mount))
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil && out == "" {
+			logger.Error("fetch failed", "view", "disk_detail", "host_idx", idx, "mount", mount, "err", err)
 			return fetchDiskDetailMsg{err: fmt.Errorf("disk detail %s: %w", mount, err)}
 		}
 		var lines []string
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			lines = append(lines, line)
 		}
+		logger.Debug("fetch complete", "view", "disk_detail", "host_idx", idx, "mount", mount, "lines", len(lines), "elapsed", time.Since(start))
 		return fetchDiskDetailMsg{lines: lines}
 	}
 }
@@ -1302,14 +1413,19 @@ type fetchContainerDetailMsg struct {
 func (m Model) fetchContainerDetail(name string) func() tea.Msg {
 	idx := m.selectedHost
 	sm := m.ssh
+	logger := m.logger
 
 	return func() tea.Msg {
+		start := time.Now()
+		logger.Debug("fetch start", "view", "container_detail", "host_idx", idx, "name", name)
 		cmd := fmt.Sprintf("podman inspect '%s' 2>/dev/null", shellQuote(name))
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
+			logger.Error("fetch failed", "view", "container_detail", "host_idx", idx, "name", name, "err", err)
 			return fetchContainerDetailMsg{err: fmt.Errorf("inspect %s: %w", name, err)}
 		}
 		detail := ssh.ParseContainerInspect(out)
+		logger.Debug("fetch complete", "view", "container_detail", "host_idx", idx, "name", name, "elapsed", time.Since(start))
 		return fetchContainerDetailMsg{detail: detail}
 	}
 }
@@ -1323,6 +1439,7 @@ type fetchMetricsMsg struct {
 }
 
 func (m Model) fetchAllMetrics() tea.Cmd {
+	logger := m.logger
 	var cmds []tea.Cmd
 	for i, h := range m.hosts {
 		if h.Status != config.HostOnline {
@@ -1331,11 +1448,15 @@ func (m Model) fetchAllMetrics() tea.Cmd {
 		idx := i
 		sm := m.ssh
 		cmds = append(cmds, func() tea.Msg {
+			start := time.Now()
+			logger.Debug("fetch start", "view", "metrics", "host_idx", idx)
 			cmd := `top -bn1 -d0 2>/dev/null | grep '^%Cpu' | awk '{printf "%.0f\n", 100-$8}' && free 2>/dev/null | awk '/Mem/{printf "%.0f\n", $3*100/$2}' && df -h / 2>/dev/null | tail -1 | awk '{print $5}' && awk '{print $1}' /proc/loadavg 2>/dev/null && (uptime -s 2>/dev/null || echo unknown)`
 			out, err := sm.RunCommand(idx, cmd)
 			if err != nil {
+				logger.Error("fetch failed", "view", "metrics", "host_idx", idx, "err", err)
 				return fetchMetricsMsg{index: idx, err: err}
 			}
+			logger.Debug("fetch complete", "view", "metrics", "host_idx", idx, "elapsed", time.Since(start))
 			return fetchMetricsMsg{index: idx, metrics: ssh.ParseMetricsOutput(out)}
 		})
 	}

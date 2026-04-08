@@ -718,22 +718,26 @@ func (m Model) retryRemainingPasswordHosts() tea.Cmd {
 			idx := i
 			hh := h
 			sm := m.ssh
+			m.logger.Debug("retryRemainingPasswordHosts", "host_idx", idx, "host", hh.Entry.Name)
 			cmds = append(cmds, func() tea.Msg {
 				return sm.RetryWithCachedPassword(idx, hh)
 			})
 		}
 	}
 	if len(cmds) == 0 {
+		m.logger.Debug("retryRemainingPasswordHosts done, no hosts remaining")
 		// all done -- clear the cached password
 		m.ssh.ClearPassword()
 		return nil
 	}
+	m.logger.Debug("retryRemainingPasswordHosts", "retry_count", len(cmds))
 	return tea.Batch(cmds...)
 }
 
 // startProbe launches parallel SSH connections and probes for all hosts.
 // Returns a batch of commands, one per host, that will send hostProbeResult messages.
 func (m Model) startProbe() tea.Cmd {
+	m.logger.Debug("startProbe", "host_count", len(m.hosts))
 	var cmds []tea.Cmd
 	for i, h := range m.hosts {
 		idx := i
