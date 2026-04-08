@@ -76,6 +76,12 @@ func (m Model) renderAzureVMList() string {
 				hostCol = len(vm.Hostname)
 			}
 		}
+		// Account for transition overlay display strings
+		for _, t := range m.azureVMTransitions {
+			if len(t.Display) > statusCol {
+				statusCol = len(t.Display)
+			}
+		}
 		nameCol += 2
 		rgCol += 2
 		statusCol += 2
@@ -116,9 +122,15 @@ func (m Model) renderAzureVMList() string {
 				cur = " ▸ "
 			}
 
+			// Overlay: check if VM has an in-flight transition
+			status := vm.PowerState
+			if t, ok := m.azureVMTransitions[vm.Name]; ok {
+				status = t.Display
+			}
+
 			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 				cur, nameCol, vm.Name, rgCol, vm.ResourceGroup,
-				statusCol, vm.PowerState, sizeCol, vm.VMSize, osCol, vm.OSType,
+				statusCol, status, sizeCol, vm.VMSize, osCol, vm.OSType,
 				ipCol, vm.PrivateIP, vm.Hostname)
 
 			var style lipgloss.Style
@@ -240,7 +252,7 @@ func (m Model) renderAzureVMDetail() string {
 	s += borderedRow("", iw, normalRowStyle) + "\n"
 
 	if m.azureActivityLog == nil {
-		s += borderedRow("  Press 'a' to load activity log", iw, normalRowStyle) + "\n"
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
 	} else if len(m.azureActivityLog) == 0 {
 		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
 	} else {
@@ -306,7 +318,6 @@ func (m Model) renderAzureVMDetail() string {
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Scroll"},
-		{"a", "Activity Log"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
 	})

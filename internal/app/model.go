@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,6 +36,23 @@ type azureVMActionMsg struct {
 	action string
 	vm     string
 	err    error
+}
+
+// vmTransition tracks an in-flight VM action for optimistic UI.
+type vmTransition struct {
+	Action      string // "start", "deallocate", "restart"
+	Display     string // "starting...", "deallocating...", "restarting...", or real state from poll
+	TargetState string // "running", "deallocated", "running"
+}
+
+type azureVMPollMsg time.Time
+
+type azureVMPollResultMsg struct {
+	states map[string]string // vm name (lowercase) → normalized power state
+}
+
+type azureVMTransitionExpireMsg struct {
+	vmName string
 }
 
 type fetchAzureActivityLogMsg struct {
@@ -119,9 +137,11 @@ type Model struct {
 	showAzureVMDetail  bool
 	azureActivityLog    []azure.ActivityLogEntry
 	azureActivityCursor int
-	pendingAzureAction string   // action name stored for confirm dispatch
-	pendingAzureVM     string   // VM name for confirm dispatch
-	pendingAzureRG     string   // RG name for confirm dispatch
+	pendingAzureAction  string                    // action name stored for confirm dispatch
+	pendingAzureVM      string                    // VM name for confirm dispatch
+	pendingAzureRG      string                    // RG name for confirm dispatch
+	azureVMTransitions  map[string]vmTransition    // overlay: vm name → in-flight action
+	azureVMPolling      bool                       // true if a poll chain is active
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -348,14 +368,75 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case azureVMActionMsg:
-		if msg.err != nil {
-			m.flash = fmt.Sprintf("%s %s failed: %v", msg.action, msg.vm, msg.err)
-			m.flashError = true
-		} else {
-			m.flash = fmt.Sprintf("%s %s: ok", msg.action, msg.vm)
-			m.flashError = false
+		if m.azureVMTransitions == nil {
+			m.azureVMTransitions = make(map[string]vmTransition)
 		}
-		return m, m.fetchAzureVMs()
+		if msg.err != nil {
+			// Action failed — update overlay to show error, schedule removal
+			m.azureVMTransitions[msg.vm] = vmTransition{
+				Action:  msg.action,
+				Display: msg.action + " failed",
+			}
+			return m, expireVMTransition(msg.vm)
+		}
+		// Action succeeded — overlay already set by confirm handler, poll already started
+		return m, nil
+
+	case azureVMPollMsg:
+		if len(m.azureVMTransitions) == 0 {
+			return m, nil // no transitions to track
+		}
+		return m, m.pollAzureVMStates()
+
+	case azureVMPollResultMsg:
+		if m.azureVMTransitions == nil {
+			return m, nil
+		}
+		changed := false
+		for name, t := range m.azureVMTransitions {
+			if state, ok := msg.states[strings.ToLower(name)]; ok {
+				if state == t.TargetState {
+					// Target reached — update local list data immediately to avoid flash of old state
+					for i := range m.azureVMs {
+						if strings.EqualFold(m.azureVMs[i].Name, name) {
+							m.azureVMs[i].PowerState = state
+							break
+						}
+					}
+					delete(m.azureVMTransitions, name)
+					changed = true
+				} else if isAzureTransitioningState(state) {
+					// Update display with real transitioning state from Azure
+					// (starting, stopping, deallocating — but not running, deallocated, stopped)
+					t.Display = state
+					m.azureVMTransitions[name] = t
+				}
+			}
+		}
+		// Refresh list data if any transitions completed
+		var cmds []tea.Cmd
+		if changed {
+			cmds = append(cmds, m.fetchAzureVMs())
+		}
+		// Continue polling if transitions remain, otherwise stop
+		if len(m.azureVMTransitions) > 0 {
+			cmds = append(cmds, m.startVMPoll())
+		} else {
+			m.azureVMPolling = false
+		}
+		if len(cmds) > 0 {
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case azureVMTransitionExpireMsg:
+		if m.azureVMTransitions != nil {
+			delete(m.azureVMTransitions, msg.vmName)
+			if len(m.azureVMTransitions) == 0 {
+				m.azureVMPolling = false
+			}
+		}
+		return m, nil
 
 	case fetchAzureActivityLogMsg:
 		if msg.err != nil {

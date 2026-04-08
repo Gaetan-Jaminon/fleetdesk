@@ -94,7 +94,8 @@ type VMDetail struct {
 
 // ActivityLogEntry represents an Azure activity log entry.
 type ActivityLogEntry struct {
-	Timestamp string // eventTimestamp (ISO-8601)
+	Timestamp     string // eventTimestamp (ISO-8601)
+	ResourceGroup string // resourceGroupName
 	Operation string // operationName.localizedValue
 	Status    string // status.localizedValue (Succeeded/Failed/Started)
 	Caller    string // caller (email or service principal UUID)

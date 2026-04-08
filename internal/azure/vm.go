@@ -327,16 +327,17 @@ func ParseVMDetail(data []byte) (VMDetail, error) {
 }
 
 // FetchActivityLog fetches recent activity log entries for a resource group.
+// Note: --resource-group filter is case-sensitive in Azure CLI but Resource Graph
+// returns lowercase RG names. We query at subscription level and filter client-side.
 func FetchActivityLog(m *Manager, rgName, subName, tenantID string, logger *slog.Logger) ([]ActivityLogEntry, error) {
 	start := time.Now()
 	logger.Debug("azure fetch activity log start", "rg", rgName, "subscription", subName)
 
-	startTime := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	startTime := time.Now().UTC().Add(-3 * time.Hour).Format(time.RFC3339)
 	args := []string{"monitor", "activity-log", "list",
 		"--resource-group", rgName,
 		"--subscription", subName,
 		"--start-time", startTime,
-		"--max-events", "50",
 	}
 	if tenantID != "" {
 		args = append(args, "--tenant", tenantID)
@@ -352,6 +353,58 @@ func FetchActivityLog(m *Manager, rgName, subName, tenantID string, logger *slog
 
 	logger.Debug("azure fetch activity log complete", "rg", rgName, "count", len(entries), "elapsed", time.Since(start))
 	return entries, nil
+}
+
+// FetchVMPowerStates queries Resource Graph for power states of specific VMs.
+// Returns a map of VM name (lowercased) → normalized power state.
+func FetchVMPowerStates(m *Manager, subID string, vmNames []string, logger *slog.Logger) (map[string]string, error) {
+	start := time.Now()
+	logger.Debug("azure poll vm states start", "count", len(vmNames))
+
+	// Build name filter: name in~ ('vm-01','vm-02')
+	quoted := make([]string, len(vmNames))
+	for i, n := range vmNames {
+		quoted[i] = "'" + n + "'"
+	}
+	nameFilter := strings.Join(quoted, ",")
+
+	query := fmt.Sprintf("Resources | where type =~ 'microsoft.compute/virtualMachines' "+
+		"| where name in~ (%s) "+
+		"| extend powerState = properties.extended.instanceView.powerState.code "+
+		"| project name, powerState", nameFilter)
+
+	args := []string{"graph", "query", "-q", query, "--subscriptions", subID, "--first", "1000"}
+	data, err := m.RunCommand(args...)
+	if err != nil {
+		return nil, fmt.Errorf("graph poll query: %w", err)
+	}
+
+	states, err := ParseVMPowerStates(data)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Debug("azure poll vm states complete", "count", len(states), "elapsed", time.Since(start))
+	return states, nil
+}
+
+// ParseVMPowerStates parses Resource Graph output into a name → power state map.
+func ParseVMPowerStates(data []byte) (map[string]string, error) {
+	var result struct {
+		Data []struct {
+			Name       string `json:"name"`
+			PowerState string `json:"powerState"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parsing power states: %w", err)
+	}
+
+	states := make(map[string]string, len(result.Data))
+	for _, r := range result.Data {
+		states[strings.ToLower(r.Name)] = normalizePowerState(r.PowerState)
+	}
+	return states, nil
 }
 
 // splitLast returns the part after the last "/" in s.

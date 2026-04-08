@@ -237,8 +237,9 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 		return nil, nil
 	}
 	var raw []struct {
-		EventTimestamp string `json:"eventTimestamp"`
-		OperationName  struct {
+		EventTimestamp    string `json:"eventTimestamp"`
+		ResourceGroupName string `json:"resourceGroupName"`
+		OperationName     struct {
 			LocalizedValue string `json:"localizedValue"`
 		} `json:"operationName"`
 		Status struct {
@@ -250,14 +251,15 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 		return nil, fmt.Errorf("parsing activity log: %w", err)
 	}
 
-	entries := make([]ActivityLogEntry, len(raw))
-	for i, r := range raw {
-		entries[i] = ActivityLogEntry{
-			Timestamp: formatActivityTime(r.EventTimestamp),
-			Operation: r.OperationName.LocalizedValue,
-			Status:    r.Status.LocalizedValue,
+	var entries []ActivityLogEntry
+	for _, r := range raw {
+		entries = append(entries, ActivityLogEntry{
+			Timestamp:     formatActivityTime(r.EventTimestamp),
+			ResourceGroup: r.ResourceGroupName,
+			Operation:     r.OperationName.LocalizedValue,
+			Status:        r.Status.LocalizedValue,
 			Caller:    r.Caller,
-		}
+		})
 	}
 	return entries, nil
 }

@@ -1518,3 +1518,36 @@ func (m Model) fetchAzureActivityLog(rgName string) tea.Cmd {
 		return fetchAzureActivityLogMsg{entries: entries, err: err}
 	}
 }
+
+// startVMPoll schedules the next VM state poll in 5 seconds.
+func (m Model) startVMPoll() tea.Cmd {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return azureVMPollMsg(t)
+	})
+}
+
+// pollAzureVMStates queries Resource Graph for power states of transitioning VMs.
+func (m Model) pollAzureVMStates() tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	vmNames := make([]string, 0, len(m.azureVMTransitions))
+	for name := range m.azureVMTransitions {
+		vmNames = append(vmNames, name)
+	}
+	return func() tea.Msg {
+		states, err := azure.FetchVMPowerStates(am, sub.ID, vmNames, logger)
+		if err != nil {
+			logger.Error("vm poll failed", "err", err)
+			return azureVMPollResultMsg{states: nil}
+		}
+		return azureVMPollResultMsg{states: states}
+	}
+}
+
+// expireVMTransition removes a failed transition after a delay.
+func expireVMTransition(vmName string) tea.Cmd {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return azureVMTransitionExpireMsg{vmName: vmName}
+	})
+}

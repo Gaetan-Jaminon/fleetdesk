@@ -232,3 +232,30 @@ func TestParseSubnetID(t *testing.T) {
 		}
 	}
 }
+
+func TestParseVMPowerStates(t *testing.T) {
+	input := []byte(`{
+		"count": 3,
+		"data": [
+			{"name": "vm-01", "powerState": "PowerState/running"},
+			{"name": "vm-02", "powerState": "PowerState/starting"},
+			{"name": "vm-03", "powerState": "PowerState/deallocated"}
+		]
+	}`)
+	states, err := ParseVMPowerStates(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(states) != 3 {
+		t.Fatalf("got %d states, want 3", len(states))
+	}
+	if states["vm-01"] != "running" {
+		t.Errorf("vm-01 = %q, want running", states["vm-01"])
+	}
+	if states["vm-02"] != "starting" {
+		t.Errorf("vm-02 = %q, want starting", states["vm-02"])
+	}
+	if states["vm-03"] != "deallocated" {
+		t.Errorf("vm-03 = %q, want deallocated", states["vm-03"])
+	}
+}

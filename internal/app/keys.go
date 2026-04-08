@@ -137,9 +137,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pendingAzureAction = ""
 			m.pendingAzureVM = ""
 			m.pendingAzureRG = ""
-			m.flash = fmt.Sprintf("%s %s...", action, vm)
-			m.flashError = false
-			return m, m.executeAzureVMAction(vm, rg, action)
+			// Optimistic UI: set transition overlay immediately
+			if m.azureVMTransitions == nil {
+				m.azureVMTransitions = make(map[string]vmTransition)
+			}
+			display := action + "ing..."
+			if action == "deallocate" {
+				display = "deallocating..."
+			}
+			target := "running"
+			if action == "deallocate" {
+				target = "deallocated"
+			}
+			m.azureVMTransitions[vm] = vmTransition{
+				Action:      action,
+				Display:     display,
+				TargetState: target,
+			}
+			m.flash = ""
+			if m.azureVMPolling {
+				return m, m.executeAzureVMAction(vm, rg, action)
+			}
+			m.azureVMPolling = true
+			return m, tea.Batch(m.executeAzureVMAction(vm, rg, action), m.startVMPoll())
 		}
 
 		h := m.hosts[m.selectedHost]
@@ -1585,7 +1605,7 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.flash = fmt.Sprintf("Loading %s...", vm.Name)
 			m.azureActivityLog = nil
 			m.azureActivityCursor = 0
-			return m, m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup)
+			return m, tea.Batch(m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup), m.fetchAzureActivityLog(vm.ResourceGroup))
 		}
 	case "s":
 		filtered := m.filteredAzureVMs()
@@ -1654,12 +1674,6 @@ func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
 			m.azureActivityCursor++
-		}
-	case "a":
-		if m.azureActivityLog == nil {
-			m.flash = "Loading activity log..."
-			m.flashError = false
-			return m, m.fetchAzureActivityLog(m.azureVMDetail.ResourceGroup)
 		}
 	case "esc":
 		m.showAzureVMDetail = false

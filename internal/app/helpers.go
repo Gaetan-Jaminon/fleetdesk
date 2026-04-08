@@ -866,6 +866,16 @@ func (m *Model) applyAzureProbeInfo(idx int, info azure.SubscriptionProbeInfo) {
 	m.azureSubs[idx].User = info.User
 }
 
+// isAzureTransitioningState returns true for Azure VM power states that indicate
+// an in-progress transition (not a final state like running, deallocated, stopped).
+func isAzureTransitioningState(state string) bool {
+	switch state {
+	case "starting", "stopping", "deallocating", "restarting":
+		return true
+	}
+	return false
+}
+
 // filteredAzureVMs returns VMs matching the current filter.
 func (m Model) filteredAzureVMs() []azure.VM {
 	if m.azureVMs == nil {
