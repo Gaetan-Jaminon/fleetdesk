@@ -4,8 +4,23 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
+
+// fleetTypeOrder returns sort priority for fleet types.
+func fleetTypeOrder(t string) int {
+	switch t {
+	case "vm":
+		return 0
+	case "azure":
+		return 1
+	case "kubernetes":
+		return 2
+	default:
+		return 3
+	}
+}
 
 const configDir = ".config/fleetdesk"
 
@@ -54,6 +69,15 @@ func ScanFleets() ([]Fleet, error) {
 		}
 		fleets = append(fleets, f)
 	}
+
+	// sort by type: vm → azure → kubernetes
+	sort.Slice(fleets, func(i, j int) bool {
+		oi, oj := fleetTypeOrder(fleets[i].Type), fleetTypeOrder(fleets[j].Type)
+		if oi != oj {
+			return oi < oj
+		}
+		return fleets[i].Name < fleets[j].Name
+	})
 
 	return fleets, nil
 }

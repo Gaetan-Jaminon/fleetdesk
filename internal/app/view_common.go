@@ -14,12 +14,16 @@ func (m Model) renderHeader(breadcrumb string, current, total int) string {
 		title += " \u203a " + breadcrumb
 	}
 	left := headerStyle.Render(title)
-	count := headerCountStyle.Render(fmt.Sprintf("%d/%d", current, total))
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(count)
+	right := headerCountStyle.Render(fmt.Sprintf("%d/%d", current, total))
+	if m.version != "" {
+		ver := lipgloss.NewStyle().Foreground(colorDimmed).Render("FleetDesk " + m.version)
+		right = ver + "  " + right
+	}
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 0 {
 		gap = 0
 	}
-	return left + strings.Repeat(" ", gap) + count
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func (m Model) renderHintBar(hints [][]string) string {
@@ -27,15 +31,15 @@ func (m Model) renderHintBar(hints [][]string) string {
 	for _, h := range hints {
 		parts = append(parts, hintKeyStyle.Render("<"+h[0]+">")+" "+hintActionStyle.Render(h[1]))
 	}
-	bar := strings.Join(parts, "  ")
+	left := strings.Join(parts, "  ")
 	if m.flash != "" {
 		style := flashStyle
 		if m.flashError {
 			style = flashErrorStyle
 		}
-		bar += "  " + style.Render(m.flash)
+		left += "  " + style.Render(m.flash)
 	}
-	return hintBarStyle.Width(m.width).Render(bar)
+	return hintBarStyle.Width(m.width).Render(left)
 }
 
 // borderedRow wraps content with | on each side, clamped to exactly w display columns.

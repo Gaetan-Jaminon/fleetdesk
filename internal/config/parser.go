@@ -64,10 +64,14 @@ func ParseFleetFile(path string) (Fleet, error) {
 		name = strings.TrimSuffix(base, filepath.Ext(base))
 	}
 
-	// default type
-	ftype := raw.Type
-	if ftype == "" {
-		ftype = "vm"
+	// validate type
+	switch raw.Type {
+	case "vm", "azure", "kubernetes":
+		// valid
+	case "":
+		return Fleet{}, fmt.Errorf("missing required field 'type' in %s", path)
+	default:
+		return Fleet{}, fmt.Errorf("unknown fleet type %q in %s (must be vm, azure, or kubernetes)", raw.Type, path)
 	}
 
 	// parse defaults
@@ -122,7 +126,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 
 	return Fleet{
 		Name:     name,
-		Type:     ftype,
+		Type:     raw.Type,
 		Path:     path,
 		Defaults: defaults,
 		Groups:   groups,

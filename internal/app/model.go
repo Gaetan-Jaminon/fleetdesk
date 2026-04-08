@@ -192,14 +192,18 @@ type Model struct {
 	// terminal size
 	width  int
 	height int
+
+	// app info
+	version string
 }
 
-func NewModel(fleets []config.Fleet, logger *slog.Logger) Model {
+func NewModel(fleets []config.Fleet, logger *slog.Logger, version string) Model {
 	return Model{
-		view:   viewFleetPicker,
-		fleets: fleets,
-		ssh:    ssh.NewManager(logger),
-		logger: logger,
+		view:    viewFleetPicker,
+		fleets:  fleets,
+		ssh:     ssh.NewManager(logger),
+		logger:  logger,
+		version: version,
 	}
 }
 
