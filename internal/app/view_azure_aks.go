@@ -259,6 +259,7 @@ func (m Model) renderAzureAKSDetail() string {
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Scroll"},
+		{"a", "Activity Log"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
 	})

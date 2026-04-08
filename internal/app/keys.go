@@ -1615,7 +1615,7 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.flash = fmt.Sprintf("Loading %s...", vm.Name)
 			m.azureActivityLog = nil
 			m.azureActivityCursor = 0
-			return m, tea.Batch(m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup), m.fetchAzureActivityLog(vm.ResourceGroup))
+			return m, m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup)
 		}
 	case "s":
 		filtered := m.filteredAzureVMs()
@@ -1685,6 +1685,12 @@ func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
 			m.azureActivityCursor++
 		}
+	case "a":
+		m.azureActivityLog = nil
+		m.azureActivityCursor = 0
+		m.flash = "Loading activity log..."
+		m.flashError = false
+		return m, m.fetchAzureActivityLog(m.azureVMDetail.ResourceGroup)
 	case "esc":
 		m.showAzureVMDetail = false
 		m.azureActivityLog = nil
@@ -1716,7 +1722,6 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.azureActivityLog = nil
 			m.azureActivityCursor = 0
 			m.view = viewAzureAKSDetail
-			return m, m.fetchAzureActivityLog(c.ResourceGroup)
 		}
 	case "/":
 		m.filterActive = true
@@ -1756,7 +1761,14 @@ func (m Model) handleAzureAKSDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
 			m.azureActivityCursor++
 		}
+	case "a":
+		m.azureActivityLog = nil
+		m.azureActivityCursor = 0
+		m.flash = "Loading activity log..."
+		m.flashError = false
+		return m, m.fetchAzureActivityLog(m.azureAKSDetail.ResourceGroup)
 	case "esc":
+		m.azureActivityLog = nil
 		m.view = viewAzureAKSList
 	case "q":
 		return m, tea.Quit

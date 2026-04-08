@@ -76,7 +76,7 @@ func (m Model) renderActivityLog(iw int) string {
 	s += borderedRow("", iw, normalRowStyle) + "\n"
 
 	if m.azureActivityLog == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+		s += borderedRow("  Press 'a' to load activity log", iw, normalRowStyle) + "\n"
 	} else if len(m.azureActivityLog) == 0 {
 		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
 	} else {

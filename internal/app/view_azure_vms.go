@@ -254,6 +254,7 @@ func (m Model) renderAzureVMDetail() string {
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Scroll"},
+		{"a", "Activity Log"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
 	})
