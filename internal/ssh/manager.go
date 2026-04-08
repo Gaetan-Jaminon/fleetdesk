@@ -57,15 +57,16 @@ func (sm *Manager) ConnectAndProbe(idx int, h config.Host) HostProbeResult {
 		return HostProbeResult{Index: idx, Err: err}
 	}
 
-	sm.mu.Lock()
-	sm.conns[idx] = client
-	sm.mu.Unlock()
-
 	info, err := Probe(client, h.Entry.SystemdMode, h.ErrorLogSince)
 	if err != nil {
+		client.Close()
 		sm.logger.Error("probe failed", "host", h.Entry.Name, "err", err)
 		return HostProbeResult{Index: idx, Err: fmt.Errorf("probe: %w", err)}
 	}
+
+	sm.mu.Lock()
+	sm.conns[idx] = client
+	sm.mu.Unlock()
 
 	sm.logger.Debug("probe complete", "host", h.Entry.Name, "elapsed", time.Since(start))
 	return HostProbeResult{Index: idx, Info: info}
@@ -337,6 +338,9 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 		}
 		client, err := gossh.Dial("tcp", addr, sshConfig)
 		if err == nil {
+			if agentConn != nil {
+				agentConn.Close()
+			}
 			sm.logger.Debug("dial success", "addr", addr, "elapsed", time.Since(start))
 			return client, nil
 		}
