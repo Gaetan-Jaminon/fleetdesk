@@ -1585,3 +1585,47 @@ func (m Model) fetchK8sResourceCounts() tea.Cmd {
 		return k8sResourceCountsMsg{counts: counts, errs: errs}
 	}
 }
+
+// fetchK8sNodes fetches the node list for the selected K8s context.
+func (m Model) fetchK8sNodes() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		nodes, err := k8s.FetchNodes(km, ctxName, logger)
+		return fetchK8sNodesMsg{nodes: nodes, err: err}
+	}
+}
+
+// fetchK8sNodeDetail fetches extended properties for a single node.
+func (m Model) fetchK8sNodeDetail(nodeName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		detail, err := k8s.FetchNodeDetail(km, ctxName, nodeName, logger)
+		return fetchK8sNodeDetailMsg{detail: detail, err: err}
+	}
+}
+
+// fetchK8sNodeUsage fetches CPU/Memory usage via kubectl top.
+func (m Model) fetchK8sNodeUsage(nodeName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		usage, err := k8s.FetchNodeUsage(km, ctxName, nodeName, logger)
+		return fetchK8sNodeUsageMsg{usage: usage, err: err}
+	}
+}
+
+// fetchK8sNodePods fetches pods running on a node.
+func (m Model) fetchK8sNodePods(nodeName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		pods, err := k8s.FetchNodePods(km, ctxName, nodeName, logger)
+		return fetchK8sNodePodsMsg{pods: pods, err: err}
+	}
+}

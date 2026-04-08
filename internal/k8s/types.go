@@ -40,3 +40,77 @@ type ClusterProbeResult struct {
 	ContextCount int
 	Err          error
 }
+
+// K8sNode represents a Kubernetes node.
+type K8sNode struct {
+	Name    string
+	Pool    string // agentpool label
+	Status  string // Ready, NotReady
+	Version string // kubeletVersion
+	CPU     string // capacity.cpu
+	Memory  string // capacity.memory (human-readable)
+	Pods    string // capacity.pods
+	OS      string // os/arch
+	VMSize  string // node.kubernetes.io/instance-type label
+	Taints  int    // taint count
+	Age     string // human-readable age
+	// Top data (merged from kubectl top nodes)
+	CPUUsage  string // e.g. "321m"
+	CPUPct    string // e.g. "8%"
+	MemUsage  string // e.g. "6211Mi"
+	MemPct    string // e.g. "23%"
+	CPUA      string // allocatable CPU (e.g. "3860m")
+}
+
+// K8sNodeDetail holds extended node properties.
+type K8sNodeDetail struct {
+	K8sNode
+	InternalIP    string
+	PodCIDR       string
+	Unschedulable bool
+	ContainerRuntime string
+	KernelVersion    string
+	OSImage          string
+	Created          string
+	AllocatableCPU   string
+	AllocatableMemory string
+	AllocatablePods  string
+	ImageCount       int
+	Conditions       []K8sCondition
+	Taints           []K8sTaint
+	Labels     map[string]string
+}
+
+// K8sNodeUsage holds CPU/Memory usage from kubectl top node.
+type K8sNodeUsage struct {
+	CPUUsage    string // e.g. "850m"
+	CPUPercent  string // e.g. "21%"
+	MemUsage    string // e.g. "18Gi"
+	MemPercent  string // e.g. "58%"
+}
+
+// K8sNodePod represents a pod running on a node.
+type K8sNodePod struct {
+	Namespace  string
+	Name       string
+	Status     string // Running, Pending, Failed, etc.
+	Ready      string // "2/2" format
+	CPUReq     string // e.g. "60m"
+	CPULim     string // e.g. "200m"
+	MemReq     string // e.g. "428Mi"
+	MemLim     string // e.g. "556Mi"
+	Age        string // human-readable age
+}
+
+// K8sCondition represents a node condition.
+type K8sCondition struct {
+	Type   string
+	Status string
+}
+
+// K8sTaint represents a node taint.
+type K8sTaint struct {
+	Key    string
+	Value  string
+	Effect string
+}

@@ -78,6 +78,26 @@ type k8sResourceCountsMsg struct {
 	errs   []string
 }
 
+type fetchK8sNodesMsg struct {
+	nodes []k8s.K8sNode
+	err   error
+}
+
+type fetchK8sNodeDetailMsg struct {
+	detail k8s.K8sNodeDetail
+	err    error
+}
+
+type fetchK8sNodeUsageMsg struct {
+	usage k8s.K8sNodeUsage
+	err   error
+}
+
+type fetchK8sNodePodsMsg struct {
+	pods []k8s.K8sNodePod
+	err  error
+}
+
 type fetchAzureActivityLogMsg struct {
 	entries []azure.ActivityLogEntry
 	err     error
@@ -127,6 +147,8 @@ const (
 	viewK8sClusterList
 	viewK8sContextList
 	viewK8sResourcePicker
+	viewK8sNodeList
+	viewK8sNodeDetail
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -189,6 +211,12 @@ type Model struct {
 	k8sResourceErrors  []string
 	k8sCountsLoaded          bool
 	pendingK8sDeleteContext  string
+	k8sNodes        []k8s.K8sNode
+	k8sNodeCursor   int
+	k8sNodeDetail   k8s.K8sNodeDetail
+	k8sNodeUsage  *k8s.K8sNodeUsage // nil = loading
+	k8sNodePods   []k8s.K8sNodePod // nil = loading
+	k8sNodePodCursor int
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -513,6 +541,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.k8sResourceCounts = msg.counts
 		m.k8sResourceErrors = msg.errs
 		m.k8sCountsLoaded = true
+		return m, nil
+
+	case fetchK8sNodesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sNodes = msg.nodes
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sNodeDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sNodeDetail = msg.detail
+			m.view = viewK8sNodeDetail
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sNodeUsageMsg:
+		if msg.err == nil {
+			m.k8sNodeUsage = &msg.usage
+		}
+		return m, nil
+
+	case fetchK8sNodePodsMsg:
+		if msg.err == nil {
+			m.k8sNodePods = msg.pods
+		}
 		return m, nil
 
 	case fetchAzureAKSMsg:
@@ -956,6 +1017,10 @@ func (m Model) View() string {
 		return m.renderK8sContextList()
 	case viewK8sResourcePicker:
 		return m.renderK8sResourcePicker()
+	case viewK8sNodeList:
+		return m.renderK8sNodeList()
+	case viewK8sNodeDetail:
+		return m.renderK8sNodeDetail()
 	}
 	return ""
 }

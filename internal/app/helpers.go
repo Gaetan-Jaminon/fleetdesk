@@ -331,6 +331,10 @@ func (m *Model) sortView() {
 		m.sortAzureAKS()
 	case viewK8sClusterList:
 		m.sortK8sClusters()
+	case viewK8sNodeList:
+		m.sortK8sNodes()
+	case viewK8sNodeDetail:
+		m.sortK8sNodePods()
 	}
 }
 
@@ -1048,4 +1052,127 @@ func (m *Model) sortAzureSubs() {
 		}
 		return !less
 	})
+}
+
+// filteredK8sNodes returns nodes matching the current filter.
+func (m Model) filteredK8sNodes() []k8s.K8sNode {
+	if m.k8sNodes == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.k8sNodes
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sNode
+	for _, n := range m.k8sNodes {
+		line := strings.ToLower(n.Name + " " + n.Pool + " " + n.Status + " " + n.Version + " " + n.VMSize)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, n)
+		}
+	}
+	return filtered
+}
+
+// sortK8sNodes sorts the node list by the active sort column.
+func (m *Model) sortK8sNodes() {
+	sort.Slice(m.k8sNodes, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = m.k8sNodes[i].Name < m.k8sNodes[j].Name
+		case 2:
+			less = m.k8sNodes[i].Status < m.k8sNodes[j].Status
+		case 3:
+			less = m.k8sNodes[i].Version < m.k8sNodes[j].Version
+		case 4:
+			less = m.k8sNodes[i].Taints < m.k8sNodes[j].Taints
+		case 5:
+			less = m.k8sNodes[i].CPUUsage < m.k8sNodes[j].CPUUsage
+		case 6:
+			less = m.k8sNodes[i].CPUPct < m.k8sNodes[j].CPUPct
+		case 7:
+			less = m.k8sNodes[i].MemUsage < m.k8sNodes[j].MemUsage
+		case 8:
+			less = m.k8sNodes[i].MemPct < m.k8sNodes[j].MemPct
+		case 9:
+			less = m.k8sNodes[i].CPUA < m.k8sNodes[j].CPUA
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// sortK8sNodePods sorts the pod list by the active sort column.
+func (m *Model) sortK8sNodePods() {
+	sort.Slice(m.k8sNodePods, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = m.k8sNodePods[i].Namespace < m.k8sNodePods[j].Namespace
+		case 2:
+			less = m.k8sNodePods[i].Name < m.k8sNodePods[j].Name
+		case 3:
+			less = m.k8sNodePods[i].Status < m.k8sNodePods[j].Status
+		case 4:
+			less = m.k8sNodePods[i].Ready < m.k8sNodePods[j].Ready
+		case 5:
+			less = m.k8sNodePods[i].CPUReq < m.k8sNodePods[j].CPUReq
+		case 6:
+			less = m.k8sNodePods[i].CPULim < m.k8sNodePods[j].CPULim
+		case 7:
+			less = m.k8sNodePods[i].MemReq < m.k8sNodePods[j].MemReq
+		case 8:
+			less = m.k8sNodePods[i].MemLim < m.k8sNodePods[j].MemLim
+		case 9:
+			less = m.k8sNodePods[i].Age < m.k8sNodePods[j].Age
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// filteredK8sNodePods returns node pods matching the current filter.
+func (m Model) filteredK8sNodePods() []k8s.K8sNodePod {
+	if m.k8sNodePods == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.k8sNodePods
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sNodePod
+	for _, p := range m.k8sNodePods {
+		line := strings.ToLower(p.Namespace + " " + p.Name + " " + p.Status)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
+}
+
+// filteredK8sContexts returns contexts matching the current filter.
+func (m Model) filteredK8sContexts() []k8s.K8sContext {
+	if m.k8sContexts == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.k8sContexts
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sContext
+	for _, ctx := range m.k8sContexts {
+		line := strings.ToLower(ctx.Name + " " + ctx.User + " " + ctx.Namespace)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, ctx)
+		}
+	}
+	return filtered
 }

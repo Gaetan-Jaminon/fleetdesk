@@ -16,18 +16,18 @@ func (m Model) renderK8sContextList() string {
 	}
 	iw := w - 2
 
+	filtered := m.filteredK8sContexts()
 	breadcrumb := f.Name + " › " + cluster.Name
-	s := m.renderHeader(breadcrumb, m.k8sContextCursor+1, len(m.k8sContexts)) + "\n"
+	s := m.renderHeader(breadcrumb, m.k8sContextCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
-
 	if m.k8sContexts == nil {
 		s += borderedRow("  Loading contexts...", iw, normalRowStyle) + "\n"
-	} else if len(m.k8sContexts) == 0 {
-		s += borderedRow("  No contexts found for this cluster.", iw, normalRowStyle) + "\n"
+	} else if len(filtered) == 0 {
+		s += borderedRow("  No contexts found.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("CONTEXT")
 		userCol := len("USER")
-		for _, ctx := range m.k8sContexts {
+		for _, ctx := range filtered {
 			if len(ctx.Name) > nameCol {
 				nameCol = len(ctx.Name)
 			}
@@ -54,12 +54,12 @@ func (m Model) renderK8sContextList() string {
 			offset = m.k8sContextCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
-		if end > len(m.k8sContexts) {
-			end = len(m.k8sContexts)
+		if end > len(filtered) {
+			end = len(filtered)
 		}
 
 		for i := offset; i < end; i++ {
-			ctx := m.k8sContexts[i]
+			ctx := filtered[i]
 			cur := "   "
 			if i == m.k8sContextCursor {
 				cur = " ▸ "
@@ -90,11 +90,15 @@ func (m Model) renderK8sContextList() string {
 
 	if m.showConfirm {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
+	} else if m.filterActive {
+		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Resources"},
 			{"d", "Delete Context"},
+			{"/", "Filter"},
+			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
 		})

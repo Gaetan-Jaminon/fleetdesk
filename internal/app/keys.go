@@ -44,6 +44,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.azureAKSCursor = 0
 			m.k8sClusterCursor = 0
 			m.k8sContextCursor = 0
+			m.k8sNodeCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -68,6 +69,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.azureAKSCursor = 0
 			m.k8sClusterCursor = 0
 			m.k8sContextCursor = 0
+			m.k8sNodeCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -92,6 +94,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.azureAKSCursor = 0
 				m.k8sClusterCursor = 0
 				m.k8sContextCursor = 0
+				m.k8sNodeCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -116,6 +119,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.azureAKSCursor = 0
 				m.k8sClusterCursor = 0
 				m.k8sContextCursor = 0
+				m.k8sNodeCursor = 0
 			}
 		}
 		return m, nil
@@ -305,6 +309,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleK8sContextListKeys(msg)
 	case viewK8sResourcePicker:
 		return m.handleK8sResourcePickerKeys(msg)
+	case viewK8sNodeList:
+		return m.handleK8sNodeListKeys(msg)
+	case viewK8sNodeDetail:
+		return m.handleK8sNodeDetailKeys(msg)
 	}
 	return m, nil
 }
@@ -1900,8 +1908,18 @@ func (m Model) handleK8sContextListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.confirmMessage = fmt.Sprintf("delete context %s? [Y/n]", ctx.Name)
 			m.pendingK8sDeleteContext = ctx.Name
 		}
+	case "r":
+		m.k8sContexts = nil
+		m.k8sContextCursor = 0
+		return m, m.fetchK8sContexts(m.k8sClusters[m.selectedK8sCluster].Name)
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sContextCursor = 0
 	case "esc":
 		m.view = viewK8sClusterList
+		m.filterText = ""
+		m.filterActive = false
 	case "q":
 		return m, tea.Quit
 	}
@@ -1924,8 +1942,13 @@ func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			m.flash = "Workloads view coming in next PR"
 			m.flashError = false
 		case 1:
-			m.flash = "Nodes view coming in next PR"
-			m.flashError = false
+			m.k8sNodes = nil
+			m.k8sNodeCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewK8sNodeList
+			return m, m.fetchK8sNodes()
 		case 2:
 			m.flash = "ArgoCD Apps view coming in next PR"
 			m.flashError = false
@@ -1937,6 +1960,113 @@ func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		return m, m.fetchK8sResourceCounts()
 	case "esc":
 		m.view = viewK8sContextList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sNodeListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sNodes()
+		if m.k8sNodeCursor > 0 {
+			m.k8sNodeCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sNodes()
+		if m.k8sNodeCursor < len(filtered)-1 {
+			m.k8sNodeCursor++
+		}
+	case "enter":
+		filtered := m.filteredK8sNodes()
+		if len(filtered) > 0 && m.k8sNodeCursor < len(filtered) {
+			node := filtered[m.k8sNodeCursor]
+			m.flash = fmt.Sprintf("Loading %s...", node.Name)
+			m.k8sNodeUsage = nil
+			m.k8sNodePods = nil
+			m.k8sNodePodCursor = 0
+			return m, tea.Batch(
+				m.fetchK8sNodeDetail(node.Name),
+				m.fetchK8sNodeUsage(node.Name),
+				m.fetchK8sNodePods(node.Name),
+			)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sNodeCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		m.k8sNodes = nil
+		m.k8sNodeCursor = 0
+		return m, m.fetchK8sNodes()
+	case "esc":
+		m.view = viewK8sResourcePicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sNodeDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sNodePods()
+		if m.k8sNodePodCursor > 0 {
+			m.k8sNodePodCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sNodePods()
+		if m.k8sNodePodCursor < len(filtered)-1 {
+			m.k8sNodePodCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sNodePodCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		nodeName := m.k8sNodeDetail.Name
+		m.k8sNodeUsage = nil
+		m.k8sNodePods = nil
+		m.k8sNodePodCursor = 0
+		return m, tea.Batch(
+			m.fetchK8sNodeDetail(nodeName),
+			m.fetchK8sNodeUsage(nodeName),
+			m.fetchK8sNodePods(nodeName),
+		)
+	case "esc":
+		if m.filterActive {
+			m.filterActive = false
+			m.filterText = ""
+			m.k8sNodePodCursor = 0
+		} else {
+			m.view = viewK8sNodeList
+			m.filterText = ""
+			m.filterActive = false
+		}
 	case "q":
 		return m, tea.Quit
 	}
