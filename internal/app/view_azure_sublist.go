@@ -17,7 +17,11 @@ func (m Model) renderAzureSubList() string {
 	}
 	iw := w - 2
 
-	s := m.renderHeader(f.Name, m.azureSubCursor+1, len(m.azureSubs)) + "\n"
+	breadcrumb := f.Name
+	if ver := m.azure.Version(); ver != "" {
+		breadcrumb += " (az " + ver + ")"
+	}
+	s := m.renderHeader(breadcrumb, m.azureSubCursor+1, len(m.azureSubs)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
 	if len(m.azureSubs) == 0 {
