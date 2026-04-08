@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
@@ -60,6 +61,23 @@ type fetchAzureAKSMsg struct {
 	err      error
 }
 
+type k8sClusterProbeMsg struct {
+	index        int
+	contextCount int
+	k8sVersion   string
+	err          error
+}
+
+type fetchK8sContextsMsg struct {
+	contexts []k8s.K8sContext
+	err      error
+}
+
+type k8sResourceCountsMsg struct {
+	counts k8s.K8sResourceCounts
+	errs   []string
+}
+
 type fetchAzureActivityLogMsg struct {
 	entries []azure.ActivityLogEntry
 	err     error
@@ -106,6 +124,9 @@ const (
 	viewAzureVMDetail
 	viewAzureAKSList
 	viewAzureAKSDetail
+	viewK8sClusterList
+	viewK8sContextList
+	viewK8sResourcePicker
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -154,6 +175,20 @@ type Model struct {
 	azureAKSClusters []azure.AKSDetail
 	azureAKSCursor   int
 	azureAKSDetail   azure.AKSDetail
+
+	// kubernetes
+	k8s                *k8s.Manager
+	k8sClusters        []k8s.K8sClusterItem
+	k8sClusterCursor   int
+	selectedK8sCluster int
+	k8sContexts        []k8s.K8sContext
+	k8sContextCursor   int
+	selectedK8sContext  string
+	k8sResourceCursor  int
+	k8sResourceCounts  k8s.K8sResourceCounts
+	k8sResourceErrors  []string
+	k8sCountsLoaded          bool
+	pendingK8sDeleteContext  string
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -290,6 +325,7 @@ func NewModel(fleets []config.Fleet, logger *slog.Logger, version string) Model 
 		fleets:  fleets,
 		ssh:   ssh.NewManager(logger),
 		azure: azure.NewManager(logger),
+		k8s:   k8s.NewManager(logger),
 		logger:  logger,
 		version: version,
 	}
@@ -448,6 +484,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.azureVMPolling = false
 			}
 		}
+		return m, nil
+
+	case k8sClusterProbeMsg:
+		if msg.index < len(m.k8sClusters) {
+			if msg.err != nil {
+				m.k8sClusters[msg.index].Status = k8s.ClusterError
+				m.k8sClusters[msg.index].Error = msg.err.Error()
+			} else {
+				m.k8sClusters[msg.index].Status = k8s.ClusterOnline
+				m.k8sClusters[msg.index].ContextCount = msg.contextCount
+				m.k8sClusters[msg.index].K8sVersion = msg.k8sVersion
+			}
+		}
+		return m, nil
+
+	case fetchK8sContextsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sContexts = msg.contexts
+			m.flash = ""
+		}
+		return m, nil
+
+	case k8sResourceCountsMsg:
+		m.k8sResourceCounts = msg.counts
+		m.k8sResourceErrors = msg.errs
+		m.k8sCountsLoaded = true
 		return m, nil
 
 	case fetchAzureAKSMsg:
@@ -885,6 +950,12 @@ func (m Model) View() string {
 		return m.renderAzureAKSList()
 	case viewAzureAKSDetail:
 		return m.renderAzureAKSDetail()
+	case viewK8sClusterList:
+		return m.renderK8sClusterList()
+	case viewK8sContextList:
+		return m.renderK8sContextList()
+	case viewK8sResourcePicker:
+		return m.renderK8sResourcePicker()
 	}
 	return ""
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -328,6 +329,8 @@ func (m *Model) sortView() {
 		m.sortAzureVMs()
 	case viewAzureAKSList:
 		m.sortAzureAKS()
+	case viewK8sClusterList:
+		m.sortK8sClusters()
 	}
 }
 
@@ -962,6 +965,60 @@ func (m *Model) sortAzureAKS() {
 			less = m.azureAKSClusters[i].NodeCount < m.azureAKSClusters[j].NodeCount
 		case 6:
 			less = len(m.azureAKSClusters[i].Pools) < len(m.azureAKSClusters[j].Pools)
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// buildK8sClusterList creates the runtime cluster list from a Kubernetes fleet.
+func buildK8sClusterList(f config.Fleet) []k8s.K8sClusterItem {
+	var clusters []k8s.K8sClusterItem
+	for _, g := range f.Groups {
+		clusters = append(clusters, k8s.K8sClusterItem{
+			Name:   g.Name,
+			Status: k8s.ClusterChecking,
+		})
+	}
+	return clusters
+}
+
+// startK8sProbe launches parallel connectivity checks for all clusters.
+func (m Model) startK8sProbe() tea.Cmd {
+	m.logger.Debug("startK8sProbe", "cluster_count", len(m.k8sClusters))
+	var cmds []tea.Cmd
+	for i, c := range m.k8sClusters {
+		idx := i
+		name := c.Name
+		km := m.k8s
+		logger := m.logger
+		cmds = append(cmds, func() tea.Msg {
+			ctxCount := k8s.CountContexts(km, name)
+			if ctxCount == 0 {
+				return k8sClusterProbeMsg{index: idx, err: fmt.Errorf("no kubectl context found")}
+			}
+			version, err := k8s.CheckCluster(km, name, logger)
+			return k8sClusterProbeMsg{index: idx, contextCount: ctxCount, k8sVersion: version, err: err}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+// sortK8sClusters sorts the cluster list by the active sort column.
+func (m *Model) sortK8sClusters() {
+	sort.Slice(m.k8sClusters, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.k8sClusters[i].Name) < strings.ToLower(m.k8sClusters[j].Name)
+		case 2:
+			less = m.k8sClusters[i].Status < m.k8sClusters[j].Status
+		case 3:
+			less = m.k8sClusters[i].ContextCount < m.k8sClusters[j].ContextCount
 		default:
 			return false
 		}

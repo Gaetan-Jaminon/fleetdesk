@@ -11,6 +11,7 @@ import (
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -1561,5 +1562,26 @@ func (m Model) fetchAzureAKSClusters() tea.Cmd {
 	return func() tea.Msg {
 		clusters, err := azure.FetchAKSClusters(am, sub.Name, sub.ID, sub.TenantID, logger)
 		return fetchAzureAKSMsg{clusters: clusters, err: err}
+	}
+}
+
+// fetchK8sContexts discovers kubectl contexts for a cluster.
+func (m Model) fetchK8sContexts(clusterName string) tea.Cmd {
+	km := m.k8s
+	logger := m.logger
+	return func() tea.Msg {
+		contexts, err := k8s.MatchContexts(km, clusterName, logger)
+		return fetchK8sContextsMsg{contexts: contexts, err: err}
+	}
+}
+
+// fetchK8sResourceCounts fetches namespace, node, and ArgoCD app counts.
+func (m Model) fetchK8sResourceCounts() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		counts, errs := k8s.FetchResourceCounts(km, ctxName, logger)
+		return k8sResourceCountsMsg{counts: counts, errs: errs}
 	}
 }
