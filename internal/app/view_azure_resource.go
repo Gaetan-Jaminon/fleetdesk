@@ -26,10 +26,10 @@ func (m Model) renderAzureResourcePicker() string {
 	iw := w - 2
 
 	breadcrumb := f.Name + " › " + sub.Name
-	s := m.renderHeader(breadcrumb, m.azureResourceCursor+1, 3) + "\n"
+	s := m.renderHeader(breadcrumb, m.azureResourceCursor+1, 2) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	nameCol := len("Resource Groups") + 2
+	nameCol := len("AKS Clusters") + 2
 
 	hdr := fmt.Sprintf("     %-*s  %7s", nameCol, "RESOURCE", "TOTAL")
 	s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
@@ -40,11 +40,10 @@ func (m Model) renderAzureResourcePicker() string {
 		count int
 	}{
 		{"VMs", m.azureResourceCounts.VMs},
-		{"Resource Groups", m.azureResourceCounts.RGs},
 		{"AKS Clusters", m.azureResourceCounts.AKS},
 	}
 
-	errorPrefixes := []string{"vms:", "rgs:", "aks:"}
+	errorPrefixes := []string{"vms:", "aks:"}
 
 	for i, r := range resources {
 		cur := "   "

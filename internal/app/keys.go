@@ -1543,7 +1543,7 @@ func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-const azureResourceCount = 3
+const azureResourceCount = 2
 
 func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -1565,10 +1565,7 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.filterActive = false
 			m.view = viewAzureVMList
 			return m, m.fetchAzureVMs()
-		case 1: // Resource Groups
-			m.flash = "Resource Groups coming in FLE-48"
-			m.flashError = false
-		case 2: // AKS Clusters
+		case 1: // AKS Clusters
 			m.flash = "AKS Clusters coming in FLE-49"
 			m.flashError = false
 		}
