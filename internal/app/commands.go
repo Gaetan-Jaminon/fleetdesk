@@ -1512,9 +1512,10 @@ func (m Model) executeAzureVMAction(vmName, rgName, action string) tea.Cmd {
 func (m Model) fetchAzureActivityLog(rgName string) tea.Cmd {
 	am := m.azure
 	sub := m.azureSubs[m.selectedAzureSub]
+	hours := m.fleets[m.selectedFleet].ActivityLogHours
 	logger := m.logger
 	return func() tea.Msg {
-		entries, err := azure.FetchActivityLog(am, rgName, sub.Name, sub.TenantID, logger)
+		entries, err := azure.FetchActivityLog(am, rgName, sub.Name, sub.TenantID, hours, logger)
 		return fetchAzureActivityLogMsg{entries: entries, err: err}
 	}
 }

@@ -329,11 +329,14 @@ func ParseVMDetail(data []byte) (VMDetail, error) {
 // FetchActivityLog fetches recent activity log entries for a resource group.
 // Note: --resource-group filter is case-sensitive in Azure CLI but Resource Graph
 // returns lowercase RG names. We query at subscription level and filter client-side.
-func FetchActivityLog(m *Manager, rgName, subName, tenantID string, logger *slog.Logger) ([]ActivityLogEntry, error) {
+func FetchActivityLog(m *Manager, rgName, subName, tenantID string, hours int, logger *slog.Logger) ([]ActivityLogEntry, error) {
 	start := time.Now()
-	logger.Debug("azure fetch activity log start", "rg", rgName, "subscription", subName)
+	logger.Debug("azure fetch activity log start", "rg", rgName, "subscription", subName, "hours", hours)
 
-	startTime := time.Now().UTC().Add(-3 * time.Hour).Format(time.RFC3339)
+	if hours <= 0 {
+		hours = 3
+	}
+	startTime := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)
 	args := []string{"monitor", "activity-log", "list",
 		"--resource-group", rgName,
 		"--subscription", subName,

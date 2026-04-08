@@ -4,13 +4,14 @@ import "time"
 
 // Fleet represents a parsed fleet configuration file.
 type Fleet struct {
-	Name     string       `yaml:"name"`
-	Type     string       `yaml:"type"`
-	TenantID string       `yaml:"tenant_id"`
-	Path     string       `yaml:"-"`
-	Defaults HostDefaults `yaml:"defaults"`
-	Groups   []HostGroup  `yaml:"groups"`
-	Hosts    []HostEntry  `yaml:"hosts"`
+	Name             string       `yaml:"name"`
+	Type             string       `yaml:"type"`
+	TenantID         string       `yaml:"tenant_id"`
+	ActivityLogHours int          `yaml:"activity_log_hours"`
+	Path             string       `yaml:"-"`
+	Defaults         HostDefaults `yaml:"defaults"`
+	Groups           []HostGroup  `yaml:"groups"`
+	Hosts            []HostEntry  `yaml:"hosts"`
 }
 
 // HostDefaults holds default values applied to all hosts in a fleet.
