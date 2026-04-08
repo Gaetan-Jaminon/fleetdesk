@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
@@ -1461,4 +1462,15 @@ func (m Model) fetchAllMetrics() tea.Cmd {
 		})
 	}
 	return tea.Batch(cmds...)
+}
+
+// fetchAzureResourceCounts fetches VM, RG, and AKS counts concurrently.
+func (m Model) fetchAzureResourceCounts() tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		counts, errs := azure.FetchResourceCounts(am, sub.Name, sub.TenantID, logger)
+		return azureResourceCountsMsg{counts: counts, errs: errs}
+	}
 }

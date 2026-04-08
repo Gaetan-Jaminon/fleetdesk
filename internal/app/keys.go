@@ -219,6 +219,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAuditKeys(msg)
 	case viewAzureSubList:
 		return m.handleAzureSubListKeys(msg)
+	case viewAzureResourcePicker:
+		return m.handleAzureResourcePickerKeys(msg)
 	}
 	return m, nil
 }
@@ -1460,8 +1462,13 @@ func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		if len(m.azureSubs) > 0 {
-			m.flash = "Resource picker coming in FLE-46"
-			m.flashError = false
+			m.selectedAzureSub = m.azureSubCursor
+			m.azureResourceCursor = 0
+			m.azureResourceCounts = azure.AzureResourceCounts{}
+			m.azureResourceErrors = nil
+			m.azureCountsLoaded = false
+			m.view = viewAzureResourcePicker
+			return m, m.fetchAzureResourceCounts()
 		}
 	case "r":
 		f := m.fleets[m.selectedFleet]
@@ -1488,6 +1495,43 @@ func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortColumn = 0
 		m.filterText = ""
 		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+const azureResourceCount = 3
+
+func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureResourceCursor > 0 {
+			m.azureResourceCursor--
+		}
+	case "down", "j":
+		if m.azureResourceCursor < azureResourceCount-1 {
+			m.azureResourceCursor++
+		}
+	case "enter":
+		switch m.azureResourceCursor {
+		case 0: // VMs
+			m.flash = "VM list coming in FLE-47"
+			m.flashError = false
+		case 1: // Resource Groups
+			m.flash = "Resource Groups coming in FLE-48"
+			m.flashError = false
+		case 2: // AKS Clusters
+			m.flash = "AKS Clusters coming in FLE-49"
+			m.flashError = false
+		}
+	case "r":
+		m.azureResourceCounts = azure.AzureResourceCounts{}
+		m.azureResourceErrors = nil
+		m.azureCountsLoaded = false
+		return m, m.fetchAzureResourceCounts()
+	case "esc":
+		m.view = viewAzureSubList
 	case "q":
 		return m, tea.Quit
 	}

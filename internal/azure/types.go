@@ -70,3 +70,10 @@ type AzureSubscriptionItem struct {
 	Tenant   string // tenantDisplayName
 	User     string // user.name
 }
+
+// AzureResourceCounts holds resource counts for a subscription.
+type AzureResourceCounts struct {
+	VMs int
+	RGs int
+	AKS int
+}

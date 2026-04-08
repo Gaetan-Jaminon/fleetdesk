@@ -15,6 +15,12 @@ import (
 // tickMsg triggers a periodic host probe refresh.
 type tickMsg time.Time
 
+// azureResourceCountsMsg is sent when Azure resource counts are fetched.
+type azureResourceCountsMsg struct {
+	counts azure.AzureResourceCounts
+	errs   []string
+}
+
 func (m Model) tickCmd() tea.Cmd {
 	interval, err := time.ParseDuration(m.fleets[m.selectedFleet].Defaults.RefreshInterval)
 	if err != nil {
@@ -51,6 +57,7 @@ const (
 	viewSecuritySELinux
 	viewSecurityAudit
 	viewAzureSubList
+	viewAzureResourcePicker
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -74,6 +81,13 @@ type Model struct {
 	// azure subscription list
 	azureSubs      []azure.AzureSubscriptionItem
 	azureSubCursor int
+
+	// azure resource picker
+	selectedAzureSub      int
+	azureResourceCursor   int
+	azureResourceCounts   azure.AzureResourceCounts
+	azureResourceErrors   []string
+	azureCountsLoaded     bool
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -259,6 +273,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applyAzureProbeInfo(msg.Index, msg.Info)
 			}
 		}
+		return m, nil
+
+	case azureResourceCountsMsg:
+		m.azureResourceCounts = msg.counts
+		m.azureResourceErrors = msg.errs
+		m.azureCountsLoaded = true
 		return m, nil
 
 	case ssh.PasswordRetryResult:
@@ -666,6 +686,8 @@ func (m Model) View() string {
 		return m.renderAuditSummary()
 	case viewAzureSubList:
 		return m.renderAzureSubList()
+	case viewAzureResourcePicker:
+		return m.renderAzureResourcePicker()
 	}
 	return ""
 }
