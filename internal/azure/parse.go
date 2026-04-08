@@ -239,6 +239,7 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 	var raw []struct {
 		EventTimestamp    string `json:"eventTimestamp"`
 		ResourceGroupName string `json:"resourceGroupName"`
+		ResourceID        string `json:"resourceId"`
 		OperationName     struct {
 			LocalizedValue string `json:"localizedValue"`
 		} `json:"operationName"`
@@ -253,12 +254,18 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 
 	var entries []ActivityLogEntry
 	for _, r := range raw {
+		// Extract resource name from last segment of resourceId
+		resource := r.ResourceID
+		if idx := strings.LastIndex(resource, "/"); idx >= 0 {
+			resource = resource[idx+1:]
+		}
 		entries = append(entries, ActivityLogEntry{
 			Timestamp:     formatActivityTime(r.EventTimestamp),
 			ResourceGroup: r.ResourceGroupName,
 			Operation:     r.OperationName.LocalizedValue,
+			Resource:      resource,
 			Status:        r.Status.LocalizedValue,
-			Caller:    r.Caller,
+			Caller:        r.Caller,
 		})
 	}
 	return entries, nil

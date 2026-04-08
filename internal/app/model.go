@@ -55,6 +55,11 @@ type azureVMTransitionExpireMsg struct {
 	vmName string
 }
 
+type fetchAzureAKSMsg struct {
+	clusters []azure.AKSDetail
+	err      error
+}
+
 type fetchAzureActivityLogMsg struct {
 	entries []azure.ActivityLogEntry
 	err     error
@@ -99,6 +104,8 @@ const (
 	viewAzureResourcePicker
 	viewAzureVMList
 	viewAzureVMDetail
+	viewAzureAKSList
+	viewAzureAKSDetail
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -142,6 +149,11 @@ type Model struct {
 	pendingAzureRG      string                    // RG name for confirm dispatch
 	azureVMTransitions  map[string]vmTransition    // overlay: vm name → in-flight action
 	azureVMPolling      bool                       // true if a poll chain is active
+
+	// azure AKS list
+	azureAKSClusters []azure.AKSDetail
+	azureAKSCursor   int
+	azureAKSDetail   azure.AKSDetail
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -435,6 +447,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.azureVMTransitions) == 0 {
 				m.azureVMPolling = false
 			}
+		}
+		return m, nil
+
+	case fetchAzureAKSMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureAKSClusters = msg.clusters
+			m.flash = ""
 		}
 		return m, nil
 
@@ -859,6 +881,10 @@ func (m Model) View() string {
 		return m.renderAzureVMList()
 	case viewAzureVMDetail:
 		return m.renderAzureVMDetail()
+	case viewAzureAKSList:
+		return m.renderAzureAKSList()
+	case viewAzureAKSDetail:
+		return m.renderAzureAKSDetail()
 	}
 	return ""
 }

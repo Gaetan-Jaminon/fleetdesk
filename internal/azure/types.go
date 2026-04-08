@@ -96,7 +96,27 @@ type VMDetail struct {
 type ActivityLogEntry struct {
 	Timestamp     string // eventTimestamp (ISO-8601)
 	ResourceGroup string // resourceGroupName
-	Operation string // operationName.localizedValue
-	Status    string // status.localizedValue (Succeeded/Failed/Started)
-	Caller    string // caller (email or service principal UUID)
+	Operation     string // operationName.localizedValue
+	Resource      string // resource name extracted from resourceId
+	Status        string // status.localizedValue (Succeeded/Failed/Started)
+	Caller        string // caller (email or service principal UUID)
+}
+
+// AKSNodePool represents a node pool in an AKS cluster.
+type AKSNodePool struct {
+	Name      string
+	Mode      string // System, User
+	VMSize    string
+	Count     int
+	MinCount  int
+	MaxCount  int
+	Version   string // currentOrchestratorVersion
+	AutoScale bool
+}
+
+// AKSDetail holds extended AKS cluster properties including node pools.
+type AKSDetail struct {
+	AKSCluster              // embedded
+	NetworkPlugin string
+	Pools         []AKSNodePool
 }

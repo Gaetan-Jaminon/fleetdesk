@@ -40,6 +40,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.routeCursor = 0
 			m.azureSubCursor = 0
 			m.azureVMCursor = 0
+			m.azureAKSCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -61,6 +62,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.routeCursor = 0
 			m.azureSubCursor = 0
 			m.azureVMCursor = 0
+			m.azureAKSCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -82,6 +84,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.routeCursor = 0
 				m.azureSubCursor = 0
 				m.azureVMCursor = 0
+				m.azureAKSCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -103,6 +106,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.routeCursor = 0
 				m.azureSubCursor = 0
 				m.azureVMCursor = 0
+				m.azureAKSCursor = 0
 			}
 		}
 		return m, nil
@@ -263,6 +267,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAzureVMListKeys(msg)
 	case viewAzureVMDetail:
 		return m.handleAzureVMDetailKeys(msg)
+	case viewAzureAKSList:
+		return m.handleAzureAKSListKeys(msg)
+	case viewAzureAKSDetail:
+		return m.handleAzureAKSDetailKeys(msg)
 	}
 	return m, nil
 }
@@ -1566,8 +1574,13 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.view = viewAzureVMList
 			return m, m.fetchAzureVMs()
 		case 1: // AKS Clusters
-			m.flash = "AKS Clusters coming in FLE-49"
-			m.flashError = false
+			m.azureAKSClusters = nil
+			m.azureAKSCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewAzureAKSList
+			return m, m.fetchAzureAKSClusters()
 		}
 	case "r":
 		m.azureResourceCounts = azure.AzureResourceCounts{}
@@ -1676,6 +1689,75 @@ func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showAzureVMDetail = false
 		m.azureActivityLog = nil
 		m.view = viewAzureVMList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredAzureAKS()
+		if m.azureAKSCursor > 0 {
+			m.azureAKSCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredAzureAKS()
+		if m.azureAKSCursor < len(filtered)-1 {
+			m.azureAKSCursor++
+		}
+	case "enter":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.azureAKSDetail = c
+			m.azureActivityLog = nil
+			m.azureActivityCursor = 0
+			m.view = viewAzureAKSDetail
+			return m, m.fetchAzureActivityLog(c.ResourceGroup)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.azureAKSCursor = 0
+	case "1", "2", "3", "4", "5", "6":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		m.azureAKSClusters = nil
+		m.azureAKSCursor = 0
+		return m, m.fetchAzureAKSClusters()
+	case "esc":
+		m.view = viewAzureResourcePicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureAKSDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureActivityCursor > 0 {
+			m.azureActivityCursor--
+		}
+	case "down", "j":
+		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
+			m.azureActivityCursor++
+		}
+	case "esc":
+		m.view = viewAzureAKSList
 	case "q":
 		return m, tea.Quit
 	}

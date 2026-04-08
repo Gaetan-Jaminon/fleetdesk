@@ -7,12 +7,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func azureVMStatusStyle(state string) lipgloss.Style {
-	switch state {
+func aksStatusStyle(state string) lipgloss.Style {
+	switch strings.ToLower(state) {
 	case "running":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
-	case "deallocated":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // yellow
 	case "stopped":
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
 	default:
@@ -20,7 +18,7 @@ func azureVMStatusStyle(state string) lipgloss.Style {
 	}
 }
 
-func (m Model) renderAzureVMList() string {
+func (m Model) renderAzureAKSList() string {
 	f := m.fleets[m.selectedFleet]
 	w := m.width
 	if w < 20 {
@@ -28,76 +26,52 @@ func (m Model) renderAzureVMList() string {
 	}
 	iw := w - 2
 
-	filtered := m.filteredAzureVMs()
+	filtered := m.filteredAzureAKS()
 	filterInfo := ""
 	if m.filterText != "" {
 		filterInfo = fmt.Sprintf(" [filter: %s]", m.filterText)
 	}
-	breadcrumb := f.Name + " › " + m.azureSubs[m.selectedAzureSub].Name + " › VMs"
-	s := m.renderHeader(breadcrumb+filterInfo, m.azureVMCursor+1, len(filtered)) + "\n"
+	breadcrumb := f.Name + " › " + m.azureSubs[m.selectedAzureSub].Name + " › AKS Clusters"
+	s := m.renderHeader(breadcrumb+filterInfo, m.azureAKSCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if m.azureVMs == nil {
+	if m.azureAKSClusters == nil {
 		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
 	} else if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {
-			s += borderedRow("  No VMs in subscription.", iw, normalRowStyle) + "\n"
+			s += borderedRow("  No AKS clusters in subscription.", iw, normalRowStyle) + "\n"
 		}
 	} else {
 		nameCol := len("NAME")
 		rgCol := len("RESOURCE GROUP")
-		statusCol := len("STATUS")
-		sizeCol := len("SIZE")
-		osCol := len("OS")
-		ipCol := len("PRIVATE IP")
-		hostCol := len("HOSTNAME")
-		for _, vm := range filtered {
-			if len(vm.Name) > nameCol {
-				nameCol = len(vm.Name)
+		versionCol := len("K8S VERSION")
+		statusCol := 10
+		nodesCol := 7
+
+		for _, c := range filtered {
+			if len(c.Name) > nameCol {
+				nameCol = len(c.Name)
 			}
-			if len(vm.ResourceGroup) > rgCol {
-				rgCol = len(vm.ResourceGroup)
+			if len(c.ResourceGroup) > rgCol {
+				rgCol = len(c.ResourceGroup)
 			}
-			if len(vm.PowerState) > statusCol {
-				statusCol = len(vm.PowerState)
-			}
-			if len(vm.VMSize) > sizeCol {
-				sizeCol = len(vm.VMSize)
-			}
-			if len(vm.OSType) > osCol {
-				osCol = len(vm.OSType)
-			}
-			if len(vm.PrivateIP) > ipCol {
-				ipCol = len(vm.PrivateIP)
-			}
-			if len(vm.Hostname) > hostCol {
-				hostCol = len(vm.Hostname)
-			}
-		}
-		// Account for transition overlay display strings
-		for _, t := range m.azureVMTransitions {
-			if len(t.Display) > statusCol {
-				statusCol = len(t.Display)
+			if len(c.KubernetesVersion) > versionCol {
+				versionCol = len(c.KubernetesVersion)
 			}
 		}
 		nameCol += 2
 		rgCol += 2
-		statusCol += 2
-		sizeCol += 2
-		osCol += 2
-		ipCol += 2
-		hostCol += 2
+		versionCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 			nameCol, "NAME"+m.sortIndicator(1),
 			rgCol, "RESOURCE GROUP"+m.sortIndicator(2),
 			statusCol, "STATUS"+m.sortIndicator(3),
-			sizeCol, "SIZE"+m.sortIndicator(4),
-			osCol, "OS"+m.sortIndicator(5),
-			ipCol, "PRIVATE IP"+m.sortIndicator(6),
-			"HOSTNAME"+m.sortIndicator(7),
+			versionCol, "K8S VERSION"+m.sortIndicator(4),
+			nodesCol, "NODES"+m.sortIndicator(5),
+			"POOLS"+m.sortIndicator(6),
 		)
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
@@ -107,8 +81,8 @@ func (m Model) renderAzureVMList() string {
 			maxVisible = 1
 		}
 		offset := 0
-		if m.azureVMCursor >= offset+maxVisible {
-			offset = m.azureVMCursor - maxVisible + 1
+		if m.azureAKSCursor >= offset+maxVisible {
+			offset = m.azureAKSCursor - maxVisible + 1
 		}
 		end := offset + maxVisible
 		if end > len(filtered) {
@@ -116,25 +90,23 @@ func (m Model) renderAzureVMList() string {
 		}
 
 		for i := offset; i < end; i++ {
-			vm := filtered[i]
+			c := filtered[i]
 			cur := "   "
-			if i == m.azureVMCursor {
+			if i == m.azureAKSCursor {
 				cur = " ▸ "
 			}
 
-			// Overlay: check if VM has an in-flight transition
-			status := vm.PowerState
-			if t, ok := m.azureVMTransitions[vm.Name]; ok {
-				status = t.Display
-			}
+			status := c.PowerState
+			nodes := fmt.Sprintf("%d", c.NodeCount)
+			pools := fmt.Sprintf("%d", len(c.Pools))
 
-			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-				cur, nameCol, vm.Name, rgCol, vm.ResourceGroup,
-				statusCol, status, sizeCol, vm.VMSize, osCol, vm.OSType,
-				ipCol, vm.PrivateIP, vm.Hostname)
+			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+				cur, nameCol, c.Name, rgCol, c.ResourceGroup,
+				statusCol, status, versionCol, c.KubernetesVersion,
+				nodesCol, nodes, pools)
 
 			var style lipgloss.Style
-			if i == m.azureVMCursor {
+			if i == m.azureAKSCursor {
 				style = selectedRowStyle
 			} else if i%2 == 0 {
 				style = altRowStyle
@@ -156,19 +128,17 @@ func (m Model) renderAzureVMList() string {
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
-			{"s", "Start"},
-			{"o", "Stop"},
-			{"t", "Restart"},
 			{"/", "Filter"},
-			{"1-7", "Sort"},
+			{"1-6", "Sort"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
+			{"q", "Quit"},
 		})
 	}
 	return s
 }
 
-func (m Model) renderAzureVMDetail() string {
+func (m Model) renderAzureAKSDetail() string {
 	f := m.fleets[m.selectedFleet]
 	w := m.width
 	if w < 20 {
@@ -176,49 +146,24 @@ func (m Model) renderAzureVMDetail() string {
 	}
 	iw := w - 2
 
-	vmName := m.azureVMDetail.Name
-	if vmName == "" {
-		vmName = "unknown"
+	clusterName := m.azureAKSDetail.Name
+	if clusterName == "" {
+		clusterName = "unknown"
 	}
-	breadcrumb := f.Name + " › " + m.azureSubs[m.selectedAzureSub].Name + " › VMs › " + vmName
+	breadcrumb := f.Name + " › " + m.azureSubs[m.selectedAzureSub].Name + " › AKS Clusters › " + clusterName
 	s := m.renderHeader(breadcrumb, 0, 0) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	d := m.azureVMDetail
-
-	// Build tags display
-	tagsDisplay := "—"
-	if len(d.Tags) > 0 {
-		var tagParts []string
-		for k, v := range d.Tags {
-			tagParts = append(tagParts, k+"="+v)
-		}
-		tagsDisplay = strings.Join(tagParts, ", ")
-	}
-
-	osDiskSize := "—"
-	if d.OSDiskSizeGB > 0 {
-		osDiskSize = fmt.Sprintf("%d GB", d.OSDiskSizeGB)
-	}
+	d := m.azureAKSDetail
 
 	items := []struct{ key, val string }{
 		{"Name", d.Name},
-		{"Hostname", d.Hostname},
 		{"Resource Group", d.ResourceGroup},
 		{"Location", d.Location},
 		{"Status", d.PowerState},
-		{"Size", d.VMSize},
-		{"OS Type", d.OSType},
-		{"OS Disk", d.OSDisk},
-		{"Private IP", d.PrivateIP},
-		{"Public IP", d.PublicIP},
-		{"VNet", d.VNet},
-		{"Subnet", d.Subnet},
-		{"OS Disk Name", d.OSDiskName},
-		{"OS Disk Size", osDiskSize},
-		{"NIC", d.NICName},
-		{"Created", d.CreatedTime},
-		{"Tags", tagsDisplay},
+		{"K8s Version", d.KubernetesVersion},
+		{"Network Plugin", d.NetworkPlugin},
+		{"Total Nodes", fmt.Sprintf("%d", d.NodeCount)},
 	}
 
 	keyWidth := 0
@@ -234,7 +179,7 @@ func (m Model) renderAzureVMDetail() string {
 			val = "—"
 		}
 		if item.key == "Status" {
-			val = azureVMStatusStyle(d.PowerState).Render(val)
+			val = aksStatusStyle(d.PowerState).Render(val)
 		}
 		line := fmt.Sprintf("    %-*s  %s", keyWidth, item.key, val)
 		var style lipgloss.Style
@@ -244,6 +189,66 @@ func (m Model) renderAzureVMDetail() string {
 			style = normalRowStyle
 		}
 		s += borderedRow(line, iw, style) + "\n"
+	}
+
+	// Node pools section
+	s += borderedRow("", iw, normalRowStyle) + "\n"
+	s += borderedRow("  ── Node Pools ──", iw, colHeaderStyle) + "\n"
+	s += borderedRow("", iw, normalRowStyle) + "\n"
+
+	if len(d.Pools) == 0 {
+		s += borderedRow("  No node pools.", iw, normalRowStyle) + "\n"
+	} else {
+		poolCol := len("POOL")
+		modeCol := len("MODE")
+		sizeCol := len("VM SIZE")
+		nodesCol := 7
+		minCol := 5
+		maxCol := 5
+		verCol := len("VERSION")
+
+		for _, p := range d.Pools {
+			if len(p.Name) > poolCol {
+				poolCol = len(p.Name)
+			}
+			if len(p.Mode) > modeCol {
+				modeCol = len(p.Mode)
+			}
+			if len(p.VMSize) > sizeCol {
+				sizeCol = len(p.VMSize)
+			}
+			if len(p.Version) > verCol {
+				verCol = len(p.Version)
+			}
+		}
+		poolCol += 2
+		modeCol += 2
+		sizeCol += 2
+		verCol += 2
+
+		poolHdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+			poolCol, "POOL", modeCol, "MODE", sizeCol, "VM SIZE",
+			nodesCol, "NODES", minCol, "MIN", maxCol, "MAX",
+			verCol, "VERSION", "AUTOSCALE")
+		s += borderedRow(poolHdr, iw, colHeaderStyle) + "\n"
+
+		for i, p := range d.Pools {
+			autoScale := "no"
+			if p.AutoScale {
+				autoScale = "yes"
+			}
+			poolLine := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*d  %-*d  %-*d  %-*s  %s",
+				poolCol, p.Name, modeCol, p.Mode, sizeCol, p.VMSize,
+				nodesCol, p.Count, minCol, p.MinCount, maxCol, p.MaxCount,
+				verCol, p.Version, autoScale)
+			var style lipgloss.Style
+			if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(poolLine, iw, style) + "\n"
+		}
 	}
 
 	// Activity log section

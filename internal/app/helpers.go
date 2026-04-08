@@ -326,6 +326,8 @@ func (m *Model) sortView() {
 		m.sortAzureSubs()
 	case viewAzureVMList:
 		m.sortAzureVMs()
+	case viewAzureAKSList:
+		m.sortAzureAKS()
 	}
 }
 
@@ -914,6 +916,52 @@ func (m *Model) sortAzureVMs() {
 			less = m.azureVMs[i].PrivateIP < m.azureVMs[j].PrivateIP
 		case 7:
 			less = strings.ToLower(m.azureVMs[i].Hostname) < strings.ToLower(m.azureVMs[j].Hostname)
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// filteredAzureAKS returns AKS clusters matching the current filter.
+func (m Model) filteredAzureAKS() []azure.AKSDetail {
+	if m.azureAKSClusters == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.azureAKSClusters
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []azure.AKSDetail
+	for _, c := range m.azureAKSClusters {
+		line := strings.ToLower(c.Name + " " + c.ResourceGroup + " " + c.PowerState + " " + c.KubernetesVersion)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
+
+// sortAzureAKS sorts the AKS cluster list by the active sort column.
+func (m *Model) sortAzureAKS() {
+	sort.Slice(m.azureAKSClusters, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.azureAKSClusters[i].Name) < strings.ToLower(m.azureAKSClusters[j].Name)
+		case 2:
+			less = strings.ToLower(m.azureAKSClusters[i].ResourceGroup) < strings.ToLower(m.azureAKSClusters[j].ResourceGroup)
+		case 3:
+			less = m.azureAKSClusters[i].PowerState < m.azureAKSClusters[j].PowerState
+		case 4:
+			less = m.azureAKSClusters[i].KubernetesVersion < m.azureAKSClusters[j].KubernetesVersion
+		case 5:
+			less = m.azureAKSClusters[i].NodeCount < m.azureAKSClusters[j].NodeCount
+		case 6:
+			less = len(m.azureAKSClusters[i].Pools) < len(m.azureAKSClusters[j].Pools)
 		default:
 			return false
 		}

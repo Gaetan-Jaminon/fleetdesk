@@ -1551,3 +1551,14 @@ func expireVMTransition(vmName string) tea.Cmd {
 		return azureVMTransitionExpireMsg{vmName: vmName}
 	})
 }
+
+// fetchAzureAKSClusters fetches AKS clusters for the selected Azure subscription.
+func (m Model) fetchAzureAKSClusters() tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		clusters, err := azure.FetchAKSClusters(am, sub.Name, sub.ID, sub.TenantID, logger)
+		return fetchAzureAKSMsg{clusters: clusters, err: err}
+	}
+}
