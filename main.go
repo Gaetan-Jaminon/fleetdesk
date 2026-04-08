@@ -18,13 +18,17 @@ var (
 
 func main() {
 	debug := false
+	showVersion := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--debug" {
+		switch arg {
+		case "--debug":
 			debug = true
+		case "--version":
+			showVersion = true
 		}
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "--version" {
+	if showVersion {
 		fmt.Printf("fleetdesk %s (%s)\n", version, commit)
 		os.Exit(0)
 	}
@@ -36,6 +40,7 @@ func main() {
 	}
 
 	logger := logging.InitLogger(debug, logging.LogDir())
+	defer logging.CloseAll()
 	logger.Info("fleetdesk starting", "version", version, "debug", debug, "fleets", len(fleets))
 
 	m := app.NewModel(fleets, logger)

@@ -8,6 +8,17 @@ import (
 	"path/filepath"
 )
 
+// openFiles tracks log file handles for cleanup.
+var openFiles []*os.File
+
+// CloseAll closes all open log file handles.
+func CloseAll() {
+	for _, f := range openFiles {
+		f.Close()
+	}
+	openFiles = nil
+}
+
 // LogDir returns the default log directory path.
 func LogDir() string {
 	home, err := os.UserHomeDir()
@@ -29,6 +40,7 @@ func InitLogger(debug bool, dir string) *slog.Logger {
 	if err != nil {
 		return slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	openFiles = append(openFiles, f)
 	return slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
@@ -47,14 +59,15 @@ func (h *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *multiHandler) Handle(ctx context.Context, r slog.Record) error {
+	var firstErr error
 	for _, handler := range h.handlers {
 		if handler.Enabled(ctx, r.Level) {
-			if err := handler.Handle(ctx, r); err != nil {
-				return err
+			if err := handler.Handle(ctx, r); err != nil && firstErr == nil {
+				firstErr = err
 			}
 		}
 	}
-	return nil
+	return firstErr
 }
 
 func (h *multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
@@ -86,6 +99,7 @@ func NewTargetLogger(global *slog.Logger, debug bool, dir string, prefix, name s
 	if err != nil {
 		return global
 	}
+	openFiles = append(openFiles, f)
 	targetHandler := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
 	// combine global handler + target handler
 	combined := &multiHandler{
