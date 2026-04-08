@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,12 +21,14 @@ type Manager struct {
 	mu             sync.Mutex
 	conns          map[int]*gossh.Client
 	cachedPassword string
+	logger         *slog.Logger
 }
 
 // NewManager creates a new SSH manager.
-func NewManager() *Manager {
+func NewManager(logger *slog.Logger) *Manager {
 	return &Manager{
-		conns: make(map[int]*gossh.Client),
+		conns:  make(map[int]*gossh.Client),
+		logger: logger,
 	}
 }
 
@@ -45,25 +48,34 @@ type PasswordRetryResult struct {
 
 // ConnectAndProbe connects to a single host and runs the probe command.
 func (sm *Manager) ConnectAndProbe(idx int, h config.Host) HostProbeResult {
+	start := time.Now()
+	sm.logger.Debug("probe start", "host", h.Entry.Name)
+
 	client, err := sm.dial(h)
 	if err != nil {
+		sm.logger.Error("probe failed", "host", h.Entry.Name, "err", err)
 		return HostProbeResult{Index: idx, Err: err}
+	}
+
+	info, err := Probe(client, h.Entry.SystemdMode, h.ErrorLogSince)
+	if err != nil {
+		client.Close()
+		sm.logger.Error("probe failed", "host", h.Entry.Name, "err", err)
+		return HostProbeResult{Index: idx, Err: fmt.Errorf("probe: %w", err)}
 	}
 
 	sm.mu.Lock()
 	sm.conns[idx] = client
 	sm.mu.Unlock()
 
-	info, err := Probe(client, h.Entry.SystemdMode, h.ErrorLogSince)
-	if err != nil {
-		return HostProbeResult{Index: idx, Err: fmt.Errorf("probe: %w", err)}
-	}
-
+	sm.logger.Debug("probe complete", "host", h.Entry.Name, "elapsed", time.Since(start))
 	return HostProbeResult{Index: idx, Info: info}
 }
 
 // RunCommand executes a command on the given host index and returns stdout.
 func (sm *Manager) RunCommand(idx int, cmd string) (string, error) {
+	sm.logger.Debug("runCommand", "idx", idx, "cmd_prefix", cmd[:min(len(cmd), 60)])
+
 	sm.mu.Lock()
 	client, ok := sm.conns[idx]
 	sm.mu.Unlock()
@@ -74,12 +86,14 @@ func (sm *Manager) RunCommand(idx int, cmd string) (string, error) {
 
 	session, err := client.NewSession()
 	if err != nil {
+		sm.logger.Error("runCommand failed", "idx", idx, "err", err)
 		return "", fmt.Errorf("new session: %w", err)
 	}
 	defer session.Close()
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {
+		sm.logger.Error("runCommand failed", "idx", idx, "err", err)
 		return string(out), err
 	}
 	return string(out), nil
@@ -278,16 +292,19 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 	}
 
 	var authMethods []gossh.AuthMethod
+	var authNames []string
 
 	agentAuth, agentConn := sshAgentAuth()
 	if agentAuth != nil {
 		authMethods = append(authMethods, agentAuth)
+		authNames = append(authNames, "agent")
 	}
 
 	identityFile := ssh_config.Get(entry.Hostname, "IdentityFile")
 	if identityFile != "" {
 		if key := publicKeyFile(ExpandPath(identityFile)); key != nil {
 			authMethods = append(authMethods, key)
+			authNames = append(authNames, "identity:"+identityFile)
 		}
 	}
 
@@ -297,6 +314,7 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 			path := filepath.Join(home, ".ssh", name)
 			if key := publicKeyFile(path); key != nil {
 				authMethods = append(authMethods, key)
+				authNames = append(authNames, "key:"+name)
 			}
 		}
 	}
@@ -306,9 +324,12 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%d", hostname, port)
+	start := time.Now()
+	sm.logger.Debug("dial start", "addr", addr, "user", user)
 
 	var lastErr error
-	for _, auth := range authMethods {
+	for i, auth := range authMethods {
+		sm.logger.Debug("dial trying", "auth", authNames[i], "addr", addr)
 		sshConfig := &gossh.ClientConfig{
 			User:            user,
 			Auth:            []gossh.AuthMethod{auth},
@@ -317,6 +338,10 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 		}
 		client, err := gossh.Dial("tcp", addr, sshConfig)
 		if err == nil {
+			if agentConn != nil {
+				agentConn.Close()
+			}
+			sm.logger.Debug("dial success", "addr", addr, "elapsed", time.Since(start))
 			return client, nil
 		}
 		lastErr = err
@@ -327,6 +352,7 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 		agentConn.Close()
 	}
 
+	sm.logger.Error("dial failed", "addr", addr, "err", lastErr, "elapsed", time.Since(start))
 	return nil, fmt.Errorf("dial %s: %w", addr, lastErr)
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -176,7 +177,8 @@ type Model struct {
 	confirmBanner  string
 
 	// SSH
-	ssh *ssh.Manager
+	ssh    *ssh.Manager
+	logger *slog.Logger
 
 	// password prompt
 	passwordInput      string
@@ -192,11 +194,12 @@ type Model struct {
 	height int
 }
 
-func NewModel(fleets []config.Fleet) Model {
+func NewModel(fleets []config.Fleet, logger *slog.Logger) Model {
 	return Model{
 		view:   viewFleetPicker,
 		fleets: fleets,
-		ssh:    ssh.NewManager(),
+		ssh:    ssh.NewManager(logger),
+		logger: logger,
 	}
 }
 
