@@ -338,6 +338,7 @@ func FetchActivityLog(m *Manager, rgName, subName, tenantID string, logger *slog
 		"--resource-group", rgName,
 		"--subscription", subName,
 		"--start-time", startTime,
+		"--query", "[].{t:eventTimestamp,op:operationName.localizedValue,s:status.localizedValue,c:caller,rg:resourceGroupName,r:resourceId}",
 	}
 	if tenantID != "" {
 		args = append(args, "--tenant", tenantID)

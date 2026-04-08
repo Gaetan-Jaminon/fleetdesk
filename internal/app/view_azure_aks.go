@@ -252,76 +252,7 @@ func (m Model) renderAzureAKSDetail() string {
 	}
 
 	// Activity log section
-	s += borderedRow("", iw, normalRowStyle) + "\n"
-	s += borderedRow("  ── Recent Activity (Resource Group) ──", iw, colHeaderStyle) + "\n"
-	s += borderedRow("", iw, normalRowStyle) + "\n"
-
-	if m.azureActivityLog == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(m.azureActivityLog) == 0 {
-		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
-	} else {
-		timeCol := len("TIME")
-		opCol := len("OPERATION")
-		resCol := len("RESOURCE")
-		statusCol := len("STATUS")
-		for _, e := range m.azureActivityLog {
-			if len(e.Timestamp) > timeCol {
-				timeCol = len(e.Timestamp)
-			}
-			if len(e.Operation) > opCol {
-				opCol = len(e.Operation)
-			}
-			if len(e.Resource) > resCol {
-				resCol = len(e.Resource)
-			}
-			if len(e.Status) > statusCol {
-				statusCol = len(e.Status)
-			}
-		}
-		timeCol += 2
-		opCol += 2
-		resCol += 2
-		statusCol += 2
-
-		logHdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %s",
-			timeCol, "TIME", opCol, "OPERATION", resCol, "RESOURCE", statusCol, "STATUS", "CALLER")
-		s += borderedRow(logHdr, iw, colHeaderStyle) + "\n"
-
-		maxVisible := m.height - 24
-		if maxVisible < 3 {
-			maxVisible = 3
-		}
-		offset := 0
-		if m.azureActivityCursor >= offset+maxVisible {
-			offset = m.azureActivityCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(m.azureActivityLog) {
-			end = len(m.azureActivityLog)
-		}
-
-		for i := offset; i < end; i++ {
-			e := m.azureActivityLog[i]
-			cur := "  "
-			if i == m.azureActivityCursor {
-				cur = " ▸"
-			}
-			logLine := fmt.Sprintf("%s   %-*s  %-*s  %-*s  %-*s  %s",
-				cur, timeCol, e.Timestamp, opCol, e.Operation, resCol, e.Resource, statusCol, e.Status, e.Caller)
-			var style lipgloss.Style
-			if i == m.azureActivityCursor {
-				style = selectedRowStyle
-			} else if strings.Contains(strings.ToLower(e.Status), "fail") {
-				style = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(logLine, iw, style) + "\n"
-		}
-	}
+	s += m.renderActivityLog(iw)
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"

@@ -734,16 +734,20 @@ func TestParseActivityLog(t *testing.T) {
 			name: "multiple entries",
 			input: []byte(`[
 				{
-					"eventTimestamp": "2026-04-08T14:30:00.1234567Z",
-					"operationName": {"localizedValue": "Start Virtual Machine"},
-					"status": {"localizedValue": "Succeeded"},
-					"caller": "gaetan@dev.fluxys.com"
+					"t": "2026-04-08T14:30:00.1234567Z",
+					"op": "Start Virtual Machine",
+					"s": "Succeeded",
+					"c": "gaetan@dev.fluxys.com",
+					"rg": "rg-app-dev",
+					"r": "/subscriptions/xxx/providers/Microsoft.Compute/virtualMachines/vm-01"
 				},
 				{
-					"eventTimestamp": "2026-04-08T12:00:00.0000000Z",
-					"operationName": {"localizedValue": "Deallocate Virtual Machine"},
-					"status": {"localizedValue": "Failed"},
-					"caller": "32f0a514-cfbe-420a-9fc5-dcc98290753b"
+					"t": "2026-04-08T12:00:00.0000000Z",
+					"op": "Deallocate Virtual Machine",
+					"s": "Failed",
+					"c": "32f0a514-cfbe-420a-9fc5-dcc98290753b",
+					"rg": "rg-app-dev",
+					"r": "/subscriptions/xxx/providers/Microsoft.Compute/virtualMachines/vm-02"
 				}
 			]`),
 			wantCount: 2,

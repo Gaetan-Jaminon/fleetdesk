@@ -237,16 +237,12 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 		return nil, nil
 	}
 	var raw []struct {
-		EventTimestamp    string `json:"eventTimestamp"`
-		ResourceGroupName string `json:"resourceGroupName"`
-		ResourceID        string `json:"resourceId"`
-		OperationName     struct {
-			LocalizedValue string `json:"localizedValue"`
-		} `json:"operationName"`
-		Status struct {
-			LocalizedValue string `json:"localizedValue"`
-		} `json:"status"`
-		Caller string `json:"caller"`
+		Timestamp     string `json:"t"`
+		Operation     string `json:"op"`
+		Status        string `json:"s"`
+		Caller        string `json:"c"`
+		ResourceGroup string `json:"rg"`
+		ResourceID    string `json:"r"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing activity log: %w", err)
@@ -260,11 +256,11 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 			resource = resource[idx+1:]
 		}
 		entries = append(entries, ActivityLogEntry{
-			Timestamp:     formatActivityTime(r.EventTimestamp),
-			ResourceGroup: r.ResourceGroupName,
-			Operation:     r.OperationName.LocalizedValue,
+			Timestamp:     formatActivityTime(r.Timestamp),
+			ResourceGroup: r.ResourceGroup,
+			Operation:     r.Operation,
 			Resource:      resource,
-			Status:        r.Status.LocalizedValue,
+			Status:        r.Status,
 			Caller:        r.Caller,
 		})
 	}

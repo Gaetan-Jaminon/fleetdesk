@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 )
 
 func (m Model) renderHeader(breadcrumb string, current, total int) string {
@@ -64,6 +66,88 @@ func borderedRow(content string, w int, style lipgloss.Style) string {
 	}
 	b := borderStyle.Render("\u2502")
 	return b + style.Render(content) + b
+}
+
+// renderActivityLog renders the activity log section for detail views.
+func (m Model) renderActivityLog(iw int) string {
+	var s string
+	s += borderedRow("", iw, normalRowStyle) + "\n"
+	s += borderedRow("  ── Recent Activity (Resource Group) ──", iw, colHeaderStyle) + "\n"
+	s += borderedRow("", iw, normalRowStyle) + "\n"
+
+	if m.azureActivityLog == nil {
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	} else if len(m.azureActivityLog) == 0 {
+		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
+	} else {
+		s += m.renderActivityLogTable(iw, m.azureActivityLog, m.azureActivityCursor)
+	}
+	return s
+}
+
+func (m Model) renderActivityLogTable(iw int, entries []azure.ActivityLogEntry, cursor int) string {
+	var s string
+	timeCol := len("TIME")
+	opCol := len("OPERATION")
+	resCol := len("RESOURCE")
+	statusCol := len("STATUS")
+	for _, e := range entries {
+		if len(e.Timestamp) > timeCol {
+			timeCol = len(e.Timestamp)
+		}
+		if len(e.Operation) > opCol {
+			opCol = len(e.Operation)
+		}
+		if len(e.Resource) > resCol {
+			resCol = len(e.Resource)
+		}
+		if len(e.Status) > statusCol {
+			statusCol = len(e.Status)
+		}
+	}
+	timeCol += 2
+	opCol += 2
+	resCol += 2
+	statusCol += 2
+
+	logHdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %s",
+		timeCol, "TIME", opCol, "OPERATION", resCol, "RESOURCE", statusCol, "STATUS", "CALLER")
+	s += borderedRow(logHdr, iw, colHeaderStyle) + "\n"
+
+	maxVisible := m.height - 24
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	offset := 0
+	if cursor >= offset+maxVisible {
+		offset = cursor - maxVisible + 1
+	}
+	end := offset + maxVisible
+	if end > len(entries) {
+		end = len(entries)
+	}
+
+	for i := offset; i < end; i++ {
+		e := entries[i]
+		cur := "  "
+		if i == cursor {
+			cur = " ▸"
+		}
+		logLine := fmt.Sprintf("%s   %-*s  %-*s  %-*s  %-*s  %s",
+			cur, timeCol, e.Timestamp, opCol, e.Operation, resCol, e.Resource, statusCol, e.Status, e.Caller)
+		var style lipgloss.Style
+		if i == cursor {
+			style = selectedRowStyle
+		} else if strings.Contains(strings.ToLower(e.Status), "fail") {
+			style = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+		} else if i%2 == 0 {
+			style = altRowStyle
+		} else {
+			style = normalRowStyle
+		}
+		s += borderedRow(logLine, iw, style) + "\n"
+	}
+	return s
 }
 
 func (m Model) padToBottom(s string, iw int) string {
