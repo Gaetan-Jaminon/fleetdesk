@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
@@ -177,7 +178,8 @@ type Model struct {
 	confirmBanner  string
 
 	// SSH
-	ssh    *ssh.Manager
+	ssh   *ssh.Manager
+	azure *azure.Manager
 	logger *slog.Logger
 
 	// password prompt
@@ -201,7 +203,8 @@ func NewModel(fleets []config.Fleet, logger *slog.Logger, version string) Model 
 	return Model{
 		view:    viewFleetPicker,
 		fleets:  fleets,
-		ssh:     ssh.NewManager(logger),
+		ssh:   ssh.NewManager(logger),
+		azure: azure.NewManager(logger),
 		logger:  logger,
 		version: version,
 	}

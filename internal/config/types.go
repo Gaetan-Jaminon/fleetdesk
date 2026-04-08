@@ -6,6 +6,7 @@ import "time"
 type Fleet struct {
 	Name     string       `yaml:"name"`
 	Type     string       `yaml:"type"`
+	TenantID string       `yaml:"tenant_id"`
 	Path     string       `yaml:"-"`
 	Defaults HostDefaults `yaml:"defaults"`
 	Groups   []HostGroup  `yaml:"groups"`

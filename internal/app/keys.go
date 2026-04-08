@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
 
@@ -254,7 +255,18 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.view = viewHostList
 				return m, tea.Batch(m.startProbe(), m.tickCmd())
 			case "azure":
-				m.flash = "Azure support coming soon"
+				if err := m.azure.CheckPrerequisites(); err != nil {
+					if azure.IsNotInstalled(err) {
+						m.flash = "az CLI not found — install Azure CLI to use Azure fleets"
+					} else if azure.IsNotLoggedIn(err) {
+						m.flash = "Not logged in to Azure — run 'az login' first"
+					} else {
+						m.flash = fmt.Sprintf("Azure error: %v", err)
+					}
+					m.flashError = true
+					return m, nil
+				}
+				m.flash = fmt.Sprintf("Azure CLI %s ready — subscription views coming in FLE-45", m.azure.Version())
 				m.flashError = false
 				return m, nil
 			case "kubernetes":

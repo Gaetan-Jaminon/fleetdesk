@@ -14,6 +14,7 @@ import (
 type fleetFile struct {
 	Name     string          `yaml:"name"`
 	Type     string          `yaml:"type"`
+	TenantID string          `yaml:"tenant_id"`
 	Defaults defaultsFile    `yaml:"defaults"`
 	Groups   []groupFile     `yaml:"groups"`
 	Hosts    []hostEntryFile `yaml:"hosts"`
@@ -127,6 +128,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 	return Fleet{
 		Name:     name,
 		Type:     raw.Type,
+		TenantID: raw.TenantID,
 		Path:     path,
 		Defaults: defaults,
 		Groups:   groups,
