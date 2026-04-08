@@ -21,6 +21,27 @@ type azureResourceCountsMsg struct {
 	errs   []string
 }
 
+type fetchAzureVMsMsg struct {
+	vms []azure.VM
+	err error
+}
+
+type fetchAzureVMDetailMsg struct {
+	detail azure.VMDetail
+	err    error
+}
+
+type azureVMActionMsg struct {
+	action string
+	vm     string
+	err    error
+}
+
+type fetchAzureActivityLogMsg struct {
+	entries []azure.ActivityLogEntry
+	err     error
+}
+
 func (m Model) tickCmd() tea.Cmd {
 	interval, err := time.ParseDuration(m.fleets[m.selectedFleet].Defaults.RefreshInterval)
 	if err != nil {
@@ -58,6 +79,8 @@ const (
 	viewSecurityAudit
 	viewAzureSubList
 	viewAzureResourcePicker
+	viewAzureVMList
+	viewAzureVMDetail
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -83,11 +106,22 @@ type Model struct {
 	azureSubCursor int
 
 	// azure resource picker
-	selectedAzureSub      int
-	azureResourceCursor   int
-	azureResourceCounts   azure.AzureResourceCounts
-	azureResourceErrors   []string
-	azureCountsLoaded     bool
+	selectedAzureSub    int
+	azureResourceCursor int
+	azureResourceCounts azure.AzureResourceCounts
+	azureResourceErrors []string
+	azureCountsLoaded   bool
+
+	// azure VM list
+	azureVMs           []azure.VM
+	azureVMCursor      int
+	azureVMDetail      azure.VMDetail
+	showAzureVMDetail  bool
+	azureActivityLog    []azure.ActivityLogEntry
+	azureActivityCursor int
+	pendingAzureAction string   // action name stored for confirm dispatch
+	pendingAzureVM     string   // VM name for confirm dispatch
+	pendingAzureRG     string   // RG name for confirm dispatch
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -279,6 +313,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.azureResourceCounts = msg.counts
 		m.azureResourceErrors = msg.errs
 		m.azureCountsLoaded = true
+		return m, nil
+
+	case fetchAzureVMsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureVMs = msg.vms
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchAzureVMDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureVMDetail = msg.detail
+			// Copy network info from list VM (populated by graph, not az vm show)
+			filtered := m.filteredAzureVMs()
+			if m.azureVMCursor < len(filtered) {
+				listVM := filtered[m.azureVMCursor]
+				m.azureVMDetail.VNet = listVM.VNet
+				m.azureVMDetail.Subnet = listVM.Subnet
+				if m.azureVMDetail.PrivateIP == "" {
+					m.azureVMDetail.PrivateIP = listVM.PrivateIP
+				}
+			}
+			m.showAzureVMDetail = true
+			m.view = viewAzureVMDetail
+			m.flash = ""
+		}
+		return m, nil
+
+	case azureVMActionMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("%s %s failed: %v", msg.action, msg.vm, msg.err)
+			m.flashError = true
+		} else {
+			m.flash = fmt.Sprintf("%s %s: ok", msg.action, msg.vm)
+			m.flashError = false
+		}
+		return m, m.fetchAzureVMs()
+
+	case fetchAzureActivityLogMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Activity log: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureActivityLog = msg.entries
+			m.flash = ""
+		}
 		return m, nil
 
 	case ssh.PasswordRetryResult:
@@ -688,6 +774,10 @@ func (m Model) View() string {
 		return m.renderAzureSubList()
 	case viewAzureResourcePicker:
 		return m.renderAzureResourcePicker()
+	case viewAzureVMList:
+		return m.renderAzureVMList()
+	case viewAzureVMDetail:
+		return m.renderAzureVMDetail()
 	}
 	return ""
 }

@@ -81,7 +81,7 @@ func (m *Manager) RunCommand(args ...string) ([]byte, error) {
 	m.logger.Debug("az run start", "cmd", cmdDesc)
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "az", args...)

@@ -683,3 +683,110 @@ func TestParseAccountShow(t *testing.T) {
 		})
 	}
 }
+
+func TestParseVMListHostname(t *testing.T) {
+	input := []byte(`[{
+		"name": "vm-01",
+		"resourceGroup": "RG",
+		"location": "westeurope",
+		"hardwareProfile": {"vmSize": "Standard_D2s_v3"},
+		"storageProfile": {
+			"osDisk": {"osType": "Linux"},
+			"imageReference": {"offer": "RHEL", "publisher": "RedHat", "sku": "9-lvm-gen2"}
+		},
+		"osProfile": {"computerName": "vm-01.cnp.dev.fluxys.cloud"},
+		"powerState": "VM running",
+		"privateIps": "10.0.1.4",
+		"publicIps": "",
+		"id": "/sub/xxx"
+	}]`)
+	vms, err := ParseVMList(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(vms) != 1 {
+		t.Fatalf("got %d VMs, want 1", len(vms))
+	}
+	if vms[0].Hostname != "vm-01.cnp.dev.fluxys.cloud" {
+		t.Errorf("Hostname = %q, want %q", vms[0].Hostname, "vm-01.cnp.dev.fluxys.cloud")
+	}
+}
+
+func TestParseActivityLog(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     []byte
+		wantCount int
+		wantErr   bool
+		check     func(t *testing.T, entries []ActivityLogEntry)
+	}{
+		{
+			name:      "nil input",
+			input:     nil,
+			wantCount: 0,
+		},
+		{
+			name:      "empty array",
+			input:     []byte("[]"),
+			wantCount: 0,
+		},
+		{
+			name: "multiple entries",
+			input: []byte(`[
+				{
+					"eventTimestamp": "2026-04-08T14:30:00.1234567Z",
+					"operationName": {"localizedValue": "Start Virtual Machine"},
+					"status": {"localizedValue": "Succeeded"},
+					"caller": "gaetan@dev.fluxys.com"
+				},
+				{
+					"eventTimestamp": "2026-04-08T12:00:00.0000000Z",
+					"operationName": {"localizedValue": "Deallocate Virtual Machine"},
+					"status": {"localizedValue": "Failed"},
+					"caller": "32f0a514-cfbe-420a-9fc5-dcc98290753b"
+				}
+			]`),
+			wantCount: 2,
+			check: func(t *testing.T, entries []ActivityLogEntry) {
+				if entries[0].Operation != "Start Virtual Machine" {
+					t.Errorf("entries[0].Operation = %q", entries[0].Operation)
+				}
+				if entries[0].Status != "Succeeded" {
+					t.Errorf("entries[0].Status = %q", entries[0].Status)
+				}
+				if entries[0].Caller != "gaetan@dev.fluxys.com" {
+					t.Errorf("entries[0].Caller = %q", entries[0].Caller)
+				}
+				if entries[1].Status != "Failed" {
+					t.Errorf("entries[1].Status = %q", entries[1].Status)
+				}
+			},
+		},
+		{
+			name:    "invalid JSON",
+			input:   []byte("not json"),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entries, err := ParseActivityLog(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(entries) != tt.wantCount {
+				t.Fatalf("got %d entries, want %d", len(entries), tt.wantCount)
+			}
+			if tt.check != nil {
+				tt.check(t, entries)
+			}
+		})
+	}
+}

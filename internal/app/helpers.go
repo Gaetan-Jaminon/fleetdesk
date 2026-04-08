@@ -324,6 +324,8 @@ func (m *Model) sortView() {
 		m.sortAuditEvents()
 	case viewAzureSubList:
 		m.sortAzureSubs()
+	case viewAzureVMList:
+		m.sortAzureVMs()
 	}
 }
 
@@ -862,6 +864,54 @@ func (m *Model) applyAzureProbeInfo(idx int, info azure.SubscriptionProbeInfo) {
 	m.azureSubs[idx].State = info.State
 	m.azureSubs[idx].Tenant = info.Tenant
 	m.azureSubs[idx].User = info.User
+}
+
+// filteredAzureVMs returns VMs matching the current filter.
+func (m Model) filteredAzureVMs() []azure.VM {
+	if m.azureVMs == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.azureVMs
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []azure.VM
+	for _, vm := range m.azureVMs {
+		line := strings.ToLower(vm.Name + " " + vm.ResourceGroup + " " + vm.PowerState + " " + vm.VMSize + " " + vm.OSType + " " + vm.OSDisk + " " + vm.PrivateIP + " " + vm.Hostname)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, vm)
+		}
+	}
+	return filtered
+}
+
+// sortAzureVMs sorts the VM list by the active sort column.
+func (m *Model) sortAzureVMs() {
+	sort.Slice(m.azureVMs, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.azureVMs[i].Name) < strings.ToLower(m.azureVMs[j].Name)
+		case 2:
+			less = strings.ToLower(m.azureVMs[i].ResourceGroup) < strings.ToLower(m.azureVMs[j].ResourceGroup)
+		case 3:
+			less = m.azureVMs[i].PowerState < m.azureVMs[j].PowerState
+		case 4:
+			less = m.azureVMs[i].VMSize < m.azureVMs[j].VMSize
+		case 5:
+			less = m.azureVMs[i].OSDisk < m.azureVMs[j].OSDisk
+		case 6:
+			less = m.azureVMs[i].PrivateIP < m.azureVMs[j].PrivateIP
+		case 7:
+			less = strings.ToLower(m.azureVMs[i].Hostname) < strings.ToLower(m.azureVMs[j].Hostname)
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
 }
 
 // sortAzureSubs sorts the subscription list by the active sort column.

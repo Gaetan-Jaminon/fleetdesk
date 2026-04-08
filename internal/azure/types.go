@@ -1,6 +1,6 @@
 package azure
 
-// VM represents an Azure virtual machine from `az vm list -d`.
+// VM represents an Azure virtual machine.
 type VM struct {
 	Name          string
 	ResourceGroup string
@@ -9,9 +9,12 @@ type VM struct {
 	OSType        string // Linux, Windows
 	OSDisk        string // OS distro info (e.g. "RHEL 9", "WindowsServer 2022")
 	PrivateIP     string
+	Hostname      string
 	PublicIP      string
 	PowerState    string // running, deallocated, stopped
 	ID            string // full Azure resource ID
+	VNet          string // virtual network name
+	Subnet        string // subnet name
 }
 
 // ResourceGroup represents an Azure resource group from `az group list`.
@@ -76,4 +79,23 @@ type AzureResourceCounts struct {
 	VMs int
 	RGs int
 	AKS int
+}
+
+// VMDetail holds extended VM properties from `az vm show -d`.
+type VMDetail struct {
+	VM                          // embedded, all list fields
+	Tags         map[string]string
+	OSDiskName   string
+	OSDiskSizeGB int
+	CreatedTime  string
+	NICName      string
+	NSG          string
+}
+
+// ActivityLogEntry represents an Azure activity log entry.
+type ActivityLogEntry struct {
+	Timestamp string // eventTimestamp (ISO-8601)
+	Operation string // operationName.localizedValue
+	Status    string // status.localizedValue (Succeeded/Failed/Started)
+	Caller    string // caller (email or service principal UUID)
 }

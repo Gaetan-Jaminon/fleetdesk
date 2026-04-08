@@ -1470,7 +1470,51 @@ func (m Model) fetchAzureResourceCounts() tea.Cmd {
 	sub := m.azureSubs[m.selectedAzureSub]
 	logger := m.logger
 	return func() tea.Msg {
-		counts, errs := azure.FetchResourceCounts(am, sub.Name, sub.TenantID, logger)
+		counts, errs := azure.FetchResourceCounts(am, sub.Name, sub.ID, sub.TenantID, logger)
 		return azureResourceCountsMsg{counts: counts, errs: errs}
+	}
+}
+
+// fetchAzureVMs fetches the VM list for the selected Azure subscription.
+func (m Model) fetchAzureVMs() tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		vms, err := azure.FetchVMs(am, sub.Name, sub.ID, sub.TenantID, logger)
+		return fetchAzureVMsMsg{vms: vms, err: err}
+	}
+}
+
+// fetchAzureVMDetail fetches extended properties for a specific VM.
+func (m Model) fetchAzureVMDetail(vmName, rgName string) tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		detail, err := azure.FetchVMDetail(am, vmName, rgName, sub.Name, sub.TenantID, logger)
+		return fetchAzureVMDetailMsg{detail: detail, err: err}
+	}
+}
+
+// executeAzureVMAction executes a VM power action (start, deallocate, restart).
+func (m Model) executeAzureVMAction(vmName, rgName, action string) tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		err := azure.VMAction(am, vmName, rgName, sub.Name, sub.TenantID, action, logger)
+		return azureVMActionMsg{action: action, vm: vmName, err: err}
+	}
+}
+
+// fetchAzureActivityLog fetches recent activity log for a resource group.
+func (m Model) fetchAzureActivityLog(rgName string) tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		entries, err := azure.FetchActivityLog(am, rgName, sub.Name, sub.TenantID, logger)
+		return fetchAzureActivityLogMsg{entries: entries, err: err}
 	}
 }

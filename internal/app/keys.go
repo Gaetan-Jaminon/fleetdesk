@@ -39,6 +39,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.interfaceCursor = 0
 			m.routeCursor = 0
 			m.azureSubCursor = 0
+			m.azureVMCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -59,6 +60,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.interfaceCursor = 0
 			m.routeCursor = 0
 			m.azureSubCursor = 0
+			m.azureVMCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -79,6 +81,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.interfaceCursor = 0
 				m.routeCursor = 0
 				m.azureSubCursor = 0
+				m.azureVMCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -99,6 +102,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.interfaceCursor = 0
 				m.routeCursor = 0
 				m.azureSubCursor = 0
+				m.azureVMCursor = 0
 			}
 		}
 		return m, nil
@@ -124,6 +128,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// confirmed -- execute
 		m.showConfirm = false
+
+		// Azure VM action
+		if m.pendingAzureAction != "" {
+			action := m.pendingAzureAction
+			vm := m.pendingAzureVM
+			rg := m.pendingAzureRG
+			m.pendingAzureAction = ""
+			m.pendingAzureVM = ""
+			m.pendingAzureRG = ""
+			m.flash = fmt.Sprintf("%s %s...", action, vm)
+			m.flashError = false
+			return m, m.executeAzureVMAction(vm, rg, action)
+		}
+
 		h := m.hosts[m.selectedHost]
 		cmd := m.confirmCmd
 		banner := m.confirmBanner
@@ -221,6 +239,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAzureSubListKeys(msg)
 	case viewAzureResourcePicker:
 		return m.handleAzureResourcePickerKeys(msg)
+	case viewAzureVMList:
+		return m.handleAzureVMListKeys(msg)
+	case viewAzureVMDetail:
+		return m.handleAzureVMDetailKeys(msg)
 	}
 	return m, nil
 }
@@ -1516,8 +1538,13 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	case "enter":
 		switch m.azureResourceCursor {
 		case 0: // VMs
-			m.flash = "VM list coming in FLE-47"
-			m.flashError = false
+			m.azureVMs = nil
+			m.azureVMCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewAzureVMList
+			return m, m.fetchAzureVMs()
 		case 1: // Resource Groups
 			m.flash = "Resource Groups coming in FLE-48"
 			m.flashError = false
@@ -1532,6 +1559,112 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		return m, m.fetchAzureResourceCounts()
 	case "esc":
 		m.view = viewAzureSubList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredAzureVMs()
+		if m.azureVMCursor > 0 {
+			m.azureVMCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredAzureVMs()
+		if m.azureVMCursor < len(filtered)-1 {
+			m.azureVMCursor++
+		}
+	case "enter":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.flash = fmt.Sprintf("Loading %s...", vm.Name)
+			m.azureActivityLog = nil
+			m.azureActivityCursor = 0
+			return m, m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup)
+		}
+	case "s":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", vm.Name)
+			m.pendingAzureAction = "start"
+			m.pendingAzureVM = vm.Name
+			m.pendingAzureRG = vm.ResourceGroup
+		}
+	case "o":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("deallocate %s? [Y/n]", vm.Name)
+			m.pendingAzureAction = "deallocate"
+			m.pendingAzureVM = vm.Name
+			m.pendingAzureRG = vm.ResourceGroup
+		}
+	case "t":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("restart %s? [Y/n]", vm.Name)
+			m.pendingAzureAction = "restart"
+			m.pendingAzureVM = vm.Name
+			m.pendingAzureRG = vm.ResourceGroup
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.azureVMCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		m.azureVMs = nil
+		m.azureVMCursor = 0
+		return m, m.fetchAzureVMs()
+	case "esc":
+		m.view = viewAzureResourcePicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureActivityCursor > 0 {
+			m.azureActivityCursor--
+		}
+	case "down", "j":
+		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
+			m.azureActivityCursor++
+		}
+	case "a":
+		if m.azureActivityLog == nil {
+			m.flash = "Loading activity log..."
+			m.flashError = false
+			return m, m.fetchAzureActivityLog(m.azureVMDetail.ResourceGroup)
+		}
+	case "esc":
+		m.showAzureVMDetail = false
+		m.azureActivityLog = nil
+		m.view = viewAzureVMList
 	case "q":
 		return m, tea.Quit
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // normalizePowerState strips common Azure prefixes and lowercases the result.
@@ -40,6 +41,9 @@ func ParseVMList(data []byte) ([]VM, error) {
 		PrivateIPs string `json:"privateIps"`
 		PublicIPs  string `json:"publicIps"`
 		ID         string `json:"id"`
+		OsProfile struct {
+			ComputerName string `json:"computerName"`
+		} `json:"osProfile"`
 	}
 
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -64,6 +68,7 @@ func ParseVMList(data []byte) ([]VM, error) {
 			OSType:        r.StorageProfile.OSDisk.OSType,
 			OSDisk:        osDisk,
 			PrivateIP:     r.PrivateIPs,
+			Hostname:      r.OsProfile.ComputerName,
 			PublicIP:      r.PublicIPs,
 			PowerState:    normalizePowerState(r.PowerState),
 			ID:            r.ID,
@@ -224,4 +229,47 @@ func ParseAccountShow(data []byte) (SubscriptionProbeInfo, error) {
 		Tenant: raw.TenantDisplayName,
 		User:   raw.User.Name,
 	}, nil
+}
+
+// ParseActivityLog parses JSON output from `az monitor activity-log list`.
+func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var raw []struct {
+		EventTimestamp string `json:"eventTimestamp"`
+		OperationName  struct {
+			LocalizedValue string `json:"localizedValue"`
+		} `json:"operationName"`
+		Status struct {
+			LocalizedValue string `json:"localizedValue"`
+		} `json:"status"`
+		Caller string `json:"caller"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parsing activity log: %w", err)
+	}
+
+	entries := make([]ActivityLogEntry, len(raw))
+	for i, r := range raw {
+		entries[i] = ActivityLogEntry{
+			Timestamp: formatActivityTime(r.EventTimestamp),
+			Operation: r.OperationName.LocalizedValue,
+			Status:    r.Status.LocalizedValue,
+			Caller:    r.Caller,
+		}
+	}
+	return entries, nil
+}
+
+// formatActivityTime converts ISO-8601 timestamp to "02/01 15:04" format.
+func formatActivityTime(s string) string {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, err = time.Parse("2006-01-02T15:04:05.9999999Z", s)
+		if err != nil {
+			return s
+		}
+	}
+	return t.Local().Format("02/01 15:04")
 }
