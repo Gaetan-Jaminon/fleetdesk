@@ -337,6 +337,18 @@ func FetchActivityLog(m *Manager, rgName, subName, tenantID string, hours int, l
 		hours = 3
 	}
 	startTime := time.Now().UTC().Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)
+
+	// Resolve original RG casing (activity log API is case-sensitive)
+	rgData, err := m.RunCommand("group", "show", "--name", rgName, "--subscription", subName, "--query", "name", "-o", "tsv")
+	if err != nil {
+		logger.Debug("azure rg casing resolve failed, using as-is", "rg", rgName, "err", err)
+	} else {
+		resolved := strings.TrimSpace(string(rgData))
+		if resolved != "" {
+			rgName = resolved
+		}
+	}
+
 	args := []string{"monitor", "activity-log", "list",
 		"--resource-group", rgName,
 		"--subscription", subName,

@@ -70,13 +70,14 @@ func borderedRow(content string, w int, style lipgloss.Style) string {
 
 // renderActivityLog renders the activity log section for detail views.
 func (m Model) renderActivityLog(iw int) string {
+	hours := m.fleets[m.selectedFleet].ActivityLogHours
 	var s string
 	s += borderedRow("", iw, normalRowStyle) + "\n"
-	s += borderedRow("  ── Recent Activity (Resource Group) ──", iw, colHeaderStyle) + "\n"
+	s += borderedRow(fmt.Sprintf("  ── Recent Activity (Resource Group, last %dh) ──", hours), iw, colHeaderStyle) + "\n"
 	s += borderedRow("", iw, normalRowStyle) + "\n"
 
 	if m.azureActivityLog == nil {
-		s += borderedRow("  Press 'a' to load activity log", iw, normalRowStyle) + "\n"
+		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
 	} else if len(m.azureActivityLog) == 0 {
 		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
 	} else {

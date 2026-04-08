@@ -248,7 +248,7 @@ func ParseActivityLog(data []byte) ([]ActivityLogEntry, error) {
 		return nil, fmt.Errorf("parsing activity log: %w", err)
 	}
 
-	var entries []ActivityLogEntry
+	entries := make([]ActivityLogEntry, 0, len(raw))
 	for _, r := range raw {
 		// Extract resource name from last segment of resourceId
 		resource := r.ResourceID

@@ -1615,7 +1615,7 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.flash = fmt.Sprintf("Loading %s...", vm.Name)
 			m.azureActivityLog = nil
 			m.azureActivityCursor = 0
-			return m, m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup)
+			return m, tea.Batch(m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup), m.fetchAzureActivityLog(vm.ResourceGroup))
 		}
 	case "s":
 		filtered := m.filteredAzureVMs()
@@ -1722,6 +1722,7 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.azureActivityLog = nil
 			m.azureActivityCursor = 0
 			m.view = viewAzureAKSDetail
+			return m, m.fetchAzureActivityLog(c.ResourceGroup)
 		}
 	case "/":
 		m.filterActive = true
