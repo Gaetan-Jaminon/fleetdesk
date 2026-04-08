@@ -28,7 +28,7 @@ func (m Model) renderFleetPicker() string {
 		}
 		nameCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-6s  %s", nameCol, "FLEET", "TYPE", "HOSTS")
+		hdr := fmt.Sprintf("     %-*s  %-6s  %s", nameCol, "FLEET", "TYPE", "TARGETS")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -45,7 +45,31 @@ func (m Model) renderFleetPicker() string {
 			end = len(m.fleets)
 		}
 
+		// build type group start map
+		typeStarts := make(map[int]string)
+		lastType := ""
+		for i, f := range m.fleets {
+			if f.Type != lastType {
+				label := f.Type
+				if label == "kubernetes" {
+					label = "Kubernetes"
+				} else if label == "azure" {
+					label = "Azure"
+				} else {
+					label = "VM"
+				}
+				typeStarts[i] = label
+				lastType = f.Type
+			}
+		}
+
 		for i := offset; i < end; i++ {
+			// type group header
+			if typeName, ok := typeStarts[i]; ok {
+				groupLine := fmt.Sprintf("  \u2500\u2500 %s \u2500\u2500", typeName)
+				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
+			}
+
 			f := m.fleets[i]
 			cur := "   "
 			if i == m.fleetCursor {
@@ -53,11 +77,16 @@ func (m Model) renderFleetPicker() string {
 			}
 
 			ftype := f.Type
-			if ftype == "" {
-				ftype = "vm"
+			if ftype == "kubernetes" {
+				ftype = "k8s"
 			}
-			hostCount := m.fleetHostCount(f)
-			line := fmt.Sprintf("%s  %-*s  %-6s  %d", cur, nameCol, f.Name, ftype, hostCount)
+			var targetCount int
+			if f.Type == "vm" {
+				targetCount = m.fleetHostCount(f)
+			} else {
+				targetCount = len(f.Groups)
+			}
+			line := fmt.Sprintf("%s  %-*s  %-6s  %d", cur, nameCol, f.Name, ftype, targetCount)
 
 			var style lipgloss.Style
 			if i == m.fleetCursor {

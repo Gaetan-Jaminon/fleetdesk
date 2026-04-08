@@ -89,9 +89,84 @@ hosts:
 	}
 }
 
+func TestParseFleetFile_MissingType(t *testing.T) {
+	yaml := `
+name: Bad
+hosts:
+  - name: h1
+    hostname: h1.example.com
+`
+	path := writeTempYAML(t, yaml)
+	_, err := ParseFleetFile(path)
+	if err == nil {
+		t.Fatal("expected error for missing type, got nil")
+	}
+}
+
+func TestParseFleetFile_InvalidType(t *testing.T) {
+	yaml := `
+name: Bad
+type: docker
+hosts:
+  - name: h1
+    hostname: h1.example.com
+`
+	path := writeTempYAML(t, yaml)
+	_, err := ParseFleetFile(path)
+	if err == nil {
+		t.Fatal("expected error for invalid type, got nil")
+	}
+}
+
+func TestParseFleetFile_AzureType(t *testing.T) {
+	yaml := `
+name: Azure DEV
+type: azure
+groups:
+  - name: APP-DEV
+  - name: POC-DEV
+`
+	path := writeTempYAML(t, yaml)
+	f, err := ParseFleetFile(path)
+	if err != nil {
+		t.Fatalf("ParseFleetFile() error = %v", err)
+	}
+	if f.Type != "azure" {
+		t.Errorf("Type = %q, want %q", f.Type, "azure")
+	}
+	if len(f.Groups) != 2 {
+		t.Errorf("len(Groups) = %d, want 2", len(f.Groups))
+	}
+	if f.Groups[0].Name != "APP-DEV" {
+		t.Errorf("Groups[0].Name = %q, want %q", f.Groups[0].Name, "APP-DEV")
+	}
+}
+
+func TestParseFleetFile_KubernetesType(t *testing.T) {
+	yaml := `
+name: AKS-DEV
+type: kubernetes
+groups:
+  - name: AKS-APP-DEV-BLUE
+  - name: AKS-APP-DEV-GREEN
+`
+	path := writeTempYAML(t, yaml)
+	f, err := ParseFleetFile(path)
+	if err != nil {
+		t.Fatalf("ParseFleetFile() error = %v", err)
+	}
+	if f.Type != "kubernetes" {
+		t.Errorf("Type = %q, want %q", f.Type, "kubernetes")
+	}
+	if len(f.Groups) != 2 {
+		t.Errorf("len(Groups) = %d, want 2", len(f.Groups))
+	}
+}
+
 func TestParseFleetFile_Defaults(t *testing.T) {
 	yaml := `
 name: Minimal
+type: vm
 hosts:
   - name: h1
     hostname: h1.example.com
@@ -102,9 +177,6 @@ hosts:
 		t.Fatalf("ParseFleetFile() error = %v", err)
 	}
 
-	if f.Type != "vm" {
-		t.Errorf("Type = %q, want default %q", f.Type, "vm")
-	}
 	if f.Defaults.Port != 22 {
 		t.Errorf("Defaults.Port = %d, want default 22", f.Defaults.Port)
 	}
@@ -124,6 +196,7 @@ hosts:
 
 func TestParseFleetFile_NameFromFilename(t *testing.T) {
 	yaml := `
+type: vm
 hosts:
   - name: h1
     hostname: h1.example.com
@@ -146,6 +219,7 @@ hosts:
 func TestParseFleetFile_InvalidTimeout(t *testing.T) {
 	yaml := `
 name: Bad
+type: vm
 defaults:
   timeout: not-a-duration
 hosts:
@@ -177,6 +251,7 @@ func TestParseFleetFile_MissingFile(t *testing.T) {
 func TestParseHosts_MissingName(t *testing.T) {
 	yaml := `
 name: Bad
+type: vm
 hosts:
   - hostname: h1.example.com
 `
@@ -190,6 +265,7 @@ hosts:
 func TestParseHosts_MissingHostname(t *testing.T) {
 	yaml := `
 name: Bad
+type: vm
 hosts:
   - name: h1
 `
@@ -211,6 +287,7 @@ func TestParseHosts_ServiceFilterInheritance(t *testing.T) {
 			name: "host filter wins",
 			yaml: `
 name: Test
+type: vm
 defaults:
   service_filter: ["default-*"]
 groups:
@@ -231,6 +308,7 @@ hosts:
 			name: "group filter used when host has none",
 			yaml: `
 name: Test
+type: vm
 defaults:
   service_filter: ["default-*"]
 groups:
@@ -250,6 +328,7 @@ hosts:
 			name: "defaults used when group and host have none",
 			yaml: `
 name: Test
+type: vm
 defaults:
   service_filter: ["default-*"]
 groups:
@@ -290,6 +369,7 @@ hosts:
 func TestParseHosts_DefaultsApplied(t *testing.T) {
 	yaml := `
 name: Test
+type: vm
 defaults:
   user: admin
   port: 2222

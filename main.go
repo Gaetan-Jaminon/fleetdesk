@@ -43,7 +43,7 @@ func main() {
 	defer logging.CloseAll()
 	logger.Info("fleetdesk starting", "version", version, "debug", debug, "fleets", len(fleets))
 
-	m := app.NewModel(fleets, logger)
+	m := app.NewModel(fleets, logger, version)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

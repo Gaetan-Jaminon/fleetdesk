@@ -245,17 +245,27 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.fleets) > 0 {
 			f := m.fleets[m.fleetCursor]
-			if f.Type != "vm" {
-				m.flash = "K8s support coming soon"
+			switch f.Type {
+			case "vm":
+				m.selectedFleet = m.fleetCursor
+				m.ssh.Close()
+				m.hosts = buildHostList(f)
+				m.hostCursor = 0
+				m.view = viewHostList
+				return m, tea.Batch(m.startProbe(), m.tickCmd())
+			case "azure":
+				m.flash = "Azure support coming soon"
+				m.flashError = false
+				return m, nil
+			case "kubernetes":
+				m.flash = "Kubernetes support coming soon"
+				m.flashError = false
+				return m, nil
+			default:
+				m.flash = "Unsupported fleet type"
 				m.flashError = false
 				return m, nil
 			}
-			m.selectedFleet = m.fleetCursor
-			m.ssh.Close()
-			m.hosts = buildHostList(f)
-			m.hostCursor = 0
-			m.view = viewHostList
-			return m, tea.Batch(m.startProbe(), m.tickCmd())
 		}
 	}
 	return m, nil
