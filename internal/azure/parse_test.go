@@ -616,3 +616,70 @@ func TestNormalizePowerState(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAccountShow(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []byte
+		want    SubscriptionProbeInfo
+		wantErr bool
+	}{
+		{
+			name: "full output",
+			input: []byte(`{
+				"name": "APP-DEV",
+				"id": "ac9725d8-a67c-41f1-8e1c-d210756761d2",
+				"state": "Enabled",
+				"tenantDisplayName": "Fluxys DEV",
+				"tenantId": "4aedce13-d621-45e1-823f-840dfaf1aa8e",
+				"user": {"name": "gaetan.jaminon@dev.fluxys.com", "type": "user"}
+			}`),
+			want: SubscriptionProbeInfo{
+				ID:     "ac9725d8-a67c-41f1-8e1c-d210756761d2",
+				State:  "Enabled",
+				Tenant: "Fluxys DEV",
+				User:   "gaetan.jaminon@dev.fluxys.com",
+			},
+		},
+		{
+			name: "minimal fields",
+			input: []byte(`{"id": "xxx", "state": "Enabled"}`),
+			want: SubscriptionProbeInfo{
+				ID:    "xxx",
+				State: "Enabled",
+			},
+		},
+		{
+			name:    "invalid JSON",
+			input:   []byte(`not json`),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseAccountShow(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.ID != tt.want.ID {
+				t.Errorf("ID = %q, want %q", got.ID, tt.want.ID)
+			}
+			if got.State != tt.want.State {
+				t.Errorf("State = %q, want %q", got.State, tt.want.State)
+			}
+			if got.Tenant != tt.want.Tenant {
+				t.Errorf("Tenant = %q, want %q", got.Tenant, tt.want.Tenant)
+			}
+			if got.User != tt.want.User {
+				t.Errorf("User = %q, want %q", got.User, tt.want.User)
+			}
+		})
+	}
+}

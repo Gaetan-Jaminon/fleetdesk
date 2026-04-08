@@ -202,3 +202,26 @@ func ParseCLIVersion(data []byte) (string, error) {
 	}
 	return s, nil
 }
+
+// ParseAccountShow parses the JSON output of `az account show --subscription <name>`.
+// Returns subscription info including tenant and user details.
+func ParseAccountShow(data []byte) (SubscriptionProbeInfo, error) {
+	var raw struct {
+		Name              string `json:"name"`
+		ID                string `json:"id"`
+		State             string `json:"state"`
+		TenantDisplayName string `json:"tenantDisplayName"`
+		User              struct {
+			Name string `json:"name"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return SubscriptionProbeInfo{}, fmt.Errorf("parsing account show: %w", err)
+	}
+	return SubscriptionProbeInfo{
+		ID:     raw.ID,
+		State:  raw.State,
+		Tenant: raw.TenantDisplayName,
+		User:   raw.User.Name,
+	}, nil
+}

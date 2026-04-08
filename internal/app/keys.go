@@ -38,6 +38,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diskCursor = 0
 			m.interfaceCursor = 0
 			m.routeCursor = 0
+			m.azureSubCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -57,6 +58,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diskCursor = 0
 			m.interfaceCursor = 0
 			m.routeCursor = 0
+			m.azureSubCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -76,6 +78,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.diskCursor = 0
 				m.interfaceCursor = 0
 				m.routeCursor = 0
+				m.azureSubCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -95,6 +98,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.diskCursor = 0
 				m.interfaceCursor = 0
 				m.routeCursor = 0
+				m.azureSubCursor = 0
 			}
 		}
 		return m, nil
@@ -213,6 +217,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSELinuxKeys(msg)
 	case viewSecurityAudit:
 		return m.handleAuditKeys(msg)
+	case viewAzureSubList:
+		return m.handleAzureSubListKeys(msg)
 	}
 	return m, nil
 }
@@ -266,9 +272,14 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.flashError = true
 					return m, nil
 				}
-				m.flash = fmt.Sprintf("Azure CLI %s ready — subscription views coming in FLE-45", m.azure.Version())
-				m.flashError = false
-				return m, nil
+				m.selectedFleet = m.fleetCursor
+				m.azureSubs = buildAzureSubList(f)
+				m.azureSubCursor = 0
+				m.sortColumn = 0
+				m.filterText = ""
+				m.filterActive = false
+				m.view = viewAzureSubList
+				return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
 			case "kubernetes":
 				m.flash = "Kubernetes support coming soon"
 				m.flashError = false
@@ -1433,6 +1444,52 @@ func (m Model) handleMetricsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetchAllMetrics()
 	case "esc":
 		m.view = viewHostList
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureSubCursor > 0 {
+			m.azureSubCursor--
+		}
+	case "down", "j":
+		if m.azureSubCursor < len(m.azureSubs)-1 {
+			m.azureSubCursor++
+		}
+	case "enter":
+		if len(m.azureSubs) > 0 {
+			m.flash = "Resource picker coming in FLE-46"
+			m.flashError = false
+		}
+	case "r":
+		f := m.fleets[m.selectedFleet]
+		m.azureSubs = buildAzureSubList(f)
+		m.azureSubCursor = 0
+		m.flash = "Refreshing..."
+		m.flashError = false
+		return m, m.startAzureProbe()
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.azureSubCursor = 0
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "esc":
+		m.view = viewFleetPicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
 	}
 	return m, nil
 }

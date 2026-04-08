@@ -50,6 +50,7 @@ const (
 	viewSecuritySudo
 	viewSecuritySELinux
 	viewSecurityAudit
+	viewAzureSubList
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -69,6 +70,10 @@ type Model struct {
 	selectedFleet int
 	hosts         []config.Host
 	hostCursor    int
+
+	// azure subscription list
+	azureSubs      []azure.AzureSubscriptionItem
+	azureSubCursor int
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -241,6 +246,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.hosts[msg.Index].Error = msg.Err.Error()
 			} else {
 				m.applyProbeInfo(msg.Index, msg.Info)
+			}
+		}
+		return m, nil
+
+	case azure.SubscriptionProbeResult:
+		if msg.Index < len(m.azureSubs) {
+			if msg.Err != nil {
+				m.azureSubs[msg.Index].Status = azure.SubError
+				m.azureSubs[msg.Index].Error = msg.Err.Error()
+			} else {
+				m.applyAzureProbeInfo(msg.Index, msg.Info)
 			}
 		}
 		return m, nil
@@ -590,6 +606,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == viewHostList {
 			return m, tea.Batch(m.startProbe(), m.tickCmd())
 		}
+		if m.view == viewAzureSubList {
+			return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -645,6 +664,8 @@ func (m Model) View() string {
 		return m.renderSELinuxDenials()
 	case viewSecurityAudit:
 		return m.renderAuditSummary()
+	case viewAzureSubList:
+		return m.renderAzureSubList()
 	}
 	return ""
 }

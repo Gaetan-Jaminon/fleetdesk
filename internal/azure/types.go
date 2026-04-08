@@ -41,3 +41,32 @@ type AzureSubscription struct {
 	State     string // Enabled, Disabled
 	IsDefault bool
 }
+
+// SubscriptionStatus represents the probe state of an Azure subscription.
+type SubscriptionStatus int
+
+const (
+	SubConnecting SubscriptionStatus = iota
+	SubOnline
+	SubError
+)
+
+// SubscriptionProbeInfo holds the result of checking access to an Azure subscription.
+type SubscriptionProbeInfo struct {
+	ID     string // subscription UUID
+	State  string // Enabled, Disabled
+	Tenant string // tenantDisplayName
+	User   string // user.name
+}
+
+// AzureSubscriptionItem is the runtime representation of a subscription with access state.
+type AzureSubscriptionItem struct {
+	Name     string
+	TenantID string
+	Status   SubscriptionStatus
+	Error    string
+	ID       string // subscription UUID
+	State    string // Enabled, Disabled
+	Tenant   string // tenantDisplayName
+	User     string // user.name
+}

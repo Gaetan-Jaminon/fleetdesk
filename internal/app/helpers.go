@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
@@ -321,6 +322,8 @@ func (m *Model) sortView() {
 		m.sortSELinuxDenials()
 	case viewSecurityAudit:
 		m.sortAuditEvents()
+	case viewAzureSubList:
+		m.sortAzureSubs()
 	}
 }
 
@@ -819,4 +822,65 @@ func retryWithPassword(sm *ssh.Manager, idx int, h config.Host, password string)
 	return func() tea.Msg {
 		return sm.ConnectWithPassword(idx, h, password)
 	}
+}
+
+// buildAzureSubList creates the runtime subscription list from an Azure fleet definition.
+// Groups in the fleet config represent Azure subscriptions.
+func buildAzureSubList(f config.Fleet) []azure.AzureSubscriptionItem {
+	var subs []azure.AzureSubscriptionItem
+	for _, g := range f.Groups {
+		subs = append(subs, azure.AzureSubscriptionItem{
+			Name:     g.Name,
+			TenantID: f.TenantID,
+			Status:   azure.SubConnecting,
+		})
+	}
+	return subs
+}
+
+// startAzureProbe launches parallel access checks for all subscriptions.
+func (m Model) startAzureProbe() tea.Cmd {
+	m.logger.Debug("startAzureProbe", "sub_count", len(m.azureSubs))
+	var cmds []tea.Cmd
+	for i, sub := range m.azureSubs {
+		idx := i
+		ss := sub
+		am := m.azure
+		logger := m.logger
+		cmds = append(cmds, func() tea.Msg {
+			info, err := azure.CheckSubscriptionAccess(am, ss.Name, ss.TenantID, logger)
+			return azure.SubscriptionProbeResult{Index: idx, Info: info, Err: err}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+// applyAzureProbeInfo updates a subscription item with successful access check results.
+func (m *Model) applyAzureProbeInfo(idx int, info azure.SubscriptionProbeInfo) {
+	m.azureSubs[idx].Status = azure.SubOnline
+	m.azureSubs[idx].ID = info.ID
+	m.azureSubs[idx].State = info.State
+	m.azureSubs[idx].Tenant = info.Tenant
+	m.azureSubs[idx].User = info.User
+}
+
+// sortAzureSubs sorts the subscription list by the active sort column.
+func (m *Model) sortAzureSubs() {
+	sort.Slice(m.azureSubs, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.azureSubs[i].Name) < strings.ToLower(m.azureSubs[j].Name)
+		case 2:
+			less = strings.ToLower(m.azureSubs[i].Tenant) < strings.ToLower(m.azureSubs[j].Tenant)
+		case 3:
+			less = strings.ToLower(m.azureSubs[i].User) < strings.ToLower(m.azureSubs[j].User)
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
 }
