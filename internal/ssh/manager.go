@@ -47,10 +47,32 @@ type PasswordRetryResult struct {
 }
 
 // ConnectAndProbe connects to a single host and runs the probe command.
+// Reuses an existing connection if available.
 func (sm *Manager) ConnectAndProbe(idx int, h config.Host) HostProbeResult {
 	start := time.Now()
 	sm.logger.Debug("probe start", "host", h.Entry.Name)
 
+	// reuse existing connection if available
+	sm.mu.Lock()
+	client, ok := sm.conns[idx]
+	sm.mu.Unlock()
+
+	if ok && client != nil {
+		// test the connection with a probe
+		info, err := Probe(client, h.Entry.SystemdMode, h.ErrorLogSince)
+		if err == nil {
+			sm.logger.Debug("probe complete", "host", h.Entry.Name, "reused", true, "elapsed", time.Since(start))
+			return HostProbeResult{Index: idx, Info: info}
+		}
+		// connection is stale, remove and reconnect
+		sm.logger.Debug("probe stale connection", "host", h.Entry.Name, "err", err)
+		client.Close()
+		sm.mu.Lock()
+		delete(sm.conns, idx)
+		sm.mu.Unlock()
+	}
+
+	// establish new connection
 	client, err := sm.dial(h)
 	if err != nil {
 		sm.logger.Error("probe failed", "host", h.Entry.Name, "err", err)
@@ -68,7 +90,7 @@ func (sm *Manager) ConnectAndProbe(idx int, h config.Host) HostProbeResult {
 	sm.conns[idx] = client
 	sm.mu.Unlock()
 
-	sm.logger.Debug("probe complete", "host", h.Entry.Name, "elapsed", time.Since(start))
+	sm.logger.Debug("probe complete", "host", h.Entry.Name, "reused", false, "elapsed", time.Since(start))
 	return HostProbeResult{Index: idx, Info: info}
 }
 
@@ -312,6 +334,9 @@ func (sm *Manager) dial(h config.Host) (*gossh.Client, error) {
 	if home != "" {
 		for _, name := range []string{"id_ed25519", "id_rsa", "id_ecdsa"} {
 			path := filepath.Join(home, ".ssh", name)
+			if _, err := os.Stat(path); err != nil {
+				continue // skip non-existent keys
+			}
 			if key := publicKeyFile(path); key != nil {
 				authMethods = append(authMethods, key)
 				authNames = append(authNames, "key:"+name)
