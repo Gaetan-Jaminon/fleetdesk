@@ -6,47 +6,58 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/Gaetan-Jaminon/fleetdesk)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Fleet management TUI — manage your platforms from a single pane over SSH with k9s-style navigation.
+Manage your entire platform infrastructure from a single TUI.
+VMs, Azure subscriptions, Kubernetes clusters — one tool, one view.
 
-## Overview
+## Why FleetDesk?
 
-`fleetdesk` is a terminal UI application that provides a unified view of your Linux VM fleet.
-Connect via SSH, browse systemd services and Podman containers, and manage them interactively.
+Platform teams juggle SSH terminals, Azure portal, kubectl contexts, and monitoring dashboards across dozens of targets. Context-switching kills productivity.
 
-No agents, no server, no infrastructure — just a single binary that reads a host list and connects via SSH.
+FleetDesk gives you a unified k9s-style interface to manage them all:
 
-## Screenshots
+- **No agents, no server** — single static binary, zero infrastructure
+- **No credentials to manage** — uses your existing SSH keys, `az` CLI, `kubectl` contexts
+- **No learning curve** — navigate with arrow keys, filter with `/`, sort with `1-N`
+- **Multi-platform** — manage VMs, Azure subscriptions, and Kubernetes clusters from the same tool
 
-### Fleet Picker
+Think Cockpit, but as a TUI. Think k9s, but for everything — not just Kubernetes.
+
+## Screenshot
+
 ![Fleet Picker](docs/screenshot-fleet-picker.png)
 
-### Host List
-![Host List](docs/screenshot-host-list.png)
+## What You Can Manage
 
-### Resource Picker
-![Resource Picker](docs/screenshot-resource-picker.png)
+### VM Fleets (via SSH)
 
-### Service List
-![Service List](docs/screenshot-service-list.png)
+| Resource | What it shows |
+|----------|--------------|
+| Services | systemd units — start, stop, restart, logs, status |
+| Containers | Podman — logs, inspect, exec shell |
+| Cron Jobs | user crontab + /etc/cron.d |
+| System Logs | journalctl by severity, structured detail view |
+| Updates | dnf check-update, apply all or security-only |
+| Disk | filesystem usage with threshold alerts |
+| Subscription | RHEL registration, repo health |
+| Accounts | local + IPA/IDM users, sudo detection |
+| Network | interfaces, ports, routes, firewall (auto-detect) |
+| Failed Logins | SSH login attempts |
+| Sudo Activity | who ran what as whom |
+| SELinux Denials | AVC denials |
+| Audit Summary | aureport authentication events |
+| Metrics Dashboard | fleet-wide CPU/MEM/DISK/Load per host |
 
-### Container List
-![Container List](docs/screenshot-container-list.png)
+### Azure Subscriptions (coming soon)
 
-## Features
+Resource groups, VMs, costs — via local `az` CLI.
 
-- k9s-style navigation: Fleet → Host → Services/Containers
-- Systemd service management: start, stop, restart, logs, status (with sudo)
-- Podman container inspection: logs, inspect, exec
-- Parallel SSH connections with async status updates
-- Host groups with visual separators
-- Service filter patterns (per-fleet, per-group, per-host)
-- Password fallback prompt when key auth fails
-- SSH shell into any host (`x` key)
-- Terminal handover for interactive commands
-- Fleet configuration via YAML files
-- Sort by state: failed first, then running, then inactive
+### Kubernetes Clusters (coming soon)
 
-## Install
+Pods, deployments, services, nodes — via local `kubectl`.
+
+## Quick Start
+
+### Install
 
 ```bash
 go install github.com/Gaetan-Jaminon/fleetdesk@latest
@@ -54,83 +65,90 @@ go install github.com/Gaetan-Jaminon/fleetdesk@latest
 
 Or download a binary from [Releases](https://github.com/Gaetan-Jaminon/fleetdesk/releases).
 
-## Configuration
+### Configure
 
-Fleet files live in `~/.config/fleetdesk/`:
+Create a fleet file in `~/.config/fleetdesk/`:
 
 ```yaml
-name: AAP Production
+# VM fleet
+name: My Platform
+type: vm
 
 defaults:
   user: ansible
   timeout: 10s
-  systemd_mode: system
 
 groups:
-  - name: Control Plane
+  - name: Web Servers
     hosts:
-      - name: aap-ctrl-01
-        hostname: aap-ctrl-01.example.com
-      - name: aap-ctrl-02
-        hostname: aap-ctrl-02.example.com
+      - name: web-01
+        hostname: web-01.example.com
+      - name: web-02
+        hostname: web-02.example.com
 
-  - name: Hub
+  - name: Databases
     hosts:
-      - name: aap-hub-01
-        hostname: aap-hub-01.example.com
-
-hosts:
-  - name: monitoring-01
-    hostname: monitoring-01.example.com
+      - name: db-01
+        hostname: db-01.example.com
 ```
-
-### Service Filtering
-
-Filter services using glob patterns at any level (defaults, group, or host):
 
 ```yaml
-defaults:
-  service_filter:
-    - "automation-*"
-    - "postgresql*"
-    - "redis*"
+# Azure fleet (coming soon)
+name: Azure Production
+type: azure
+
+groups:
+  - name: APP-PRD
+  - name: MANAGEMENT
 ```
 
-## Key Bindings
+```yaml
+# Kubernetes fleet (coming soon)
+name: AKS Production
+type: kubernetes
 
-### Fleet Picker
+groups:
+  - name: aks-app-prd-blue
+  - name: aks-app-prd-green
+```
 
-- `Enter` — select fleet
-- `e` — edit fleet file
-- `r` — reload config
-- `q` — quit
+### Run
 
-### Host List
+```bash
+fleetdesk
+```
 
-- `Enter` — drill into host
-- `x` — SSH shell
-- `r` — refresh
-- `Esc` — back
+Debug mode (logs to `~/.local/share/fleetdesk/debug.log`):
 
-### Service List
+```bash
+fleetdesk --debug
+```
 
-- `s` — start
-- `o` — stop
-- `t` — restart
-- `l` — logs (journalctl -f)
-- `i` — status detail
-- `Esc` — back
+## Navigation
 
-### Container List
+```
+Fleet Picker --> Host List --> Resource Picker --> View
+     |               |
+     |               +--> Metrics Dashboard (d)
+     |
+     +--> Azure / K8s (coming soon)
+```
 
-- `l` — logs
-- `i` — inspect
-- `e` — exec shell
-- `Esc` — back
+| Key | Action |
+|-----|--------|
+| `Up/Down` or `K/J` | Navigate |
+| `Enter` | Select / Detail |
+| `Esc` | Back |
+| `/` | Filter / Search |
+| `1-N` | Sort by column |
+| `r` | Refresh |
+| `d` | Metrics dashboard (from Host List) |
+| `x` | SSH shell (from Host List) |
+| `q` | Quit |
 
 ## SSH Authentication
 
-FleetDesk relies on your existing SSH setup:
+FleetDesk uses your existing SSH setup — no additional configuration needed:
 
 1. SSH agent
 2. `~/.ssh/config` (IdentityFile, User, Port, ProxyJump)
