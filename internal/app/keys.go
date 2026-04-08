@@ -255,12 +255,15 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.startProbe(), m.tickCmd())
 			case "azure":
 				m.flash = "Azure support coming soon"
+				m.flashError = false
 				return m, nil
 			case "kubernetes":
 				m.flash = "Kubernetes support coming soon"
+				m.flashError = false
 				return m, nil
 			default:
 				m.flash = "Unsupported fleet type"
+				m.flashError = false
 				return m, nil
 			}
 		}
