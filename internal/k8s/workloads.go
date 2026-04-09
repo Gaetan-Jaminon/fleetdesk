@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// FetchNamespaces fetches namespaces with resource counts (parallel).
 // FetchNamespaces fetches namespace list (fast, ~200ms).
 func FetchNamespaces(m *Manager, contextName string, logger *slog.Logger) ([]K8sNamespace, error) {
 	start := time.Now()
@@ -219,7 +218,10 @@ func FetchPods(m *Manager, contextName, namespace, workloadPrefix string, logger
 		return nil, err
 	}
 
-	// Filter by workload name prefix if specified
+	// Filter by workload name prefix if specified.
+	// Note: prefix matching may match pods from similarly-named workloads
+	// (e.g. "myapp" matches "myapp-v2-xxx"). A more robust approach would
+	// use owner references or label selectors.
 	var pods []K8sPod
 	if workloadPrefix == "" {
 		pods = allPods

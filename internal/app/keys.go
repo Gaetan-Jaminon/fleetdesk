@@ -2325,7 +2325,6 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.k8sPodLogCancel != nil {
 				m.k8sPodLogCancel()
 			}
-			m.k8sPodLogChan = nil
 			m.k8sPodLogStreaming = false
 		} else {
 			// Resume streaming
@@ -2345,7 +2344,6 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.k8sPodLogCancel != nil {
 			m.k8sPodLogCancel()
 		}
-		m.k8sPodLogChan = nil
 		m.k8sPodLogs = nil
 		m.k8sPodLogCursor = 0
 		m.k8sPodLogStreaming = false
@@ -2365,7 +2363,6 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.k8sPodLogCancel != nil {
 				m.k8sPodLogCancel()
 			}
-			m.k8sPodLogChan = nil
 			m.k8sPodLogStreaming = false
 			m.view = viewK8sPodList
 			m.sortColumn = 0

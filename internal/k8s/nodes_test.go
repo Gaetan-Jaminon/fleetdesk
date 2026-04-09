@@ -1,6 +1,9 @@
 package k8s
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestParseNodes(t *testing.T) {
 	input := []byte(`{"items":[
@@ -98,15 +101,61 @@ func TestFormatMemory(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"32874620Ki", "31Gi"},
-		{"1048576Ki", "1Gi"},
-		{"524288Ki", "512Mi"},
+		{"32874620Ki", "31.4Gi"},
+		{"1048576Ki", "1.0Gi"},
+		{"524288Ki", "0.5Gi"},
 		{"invalid", "invalid"},
+		// Mi suffix
+		{"8192Mi", "8.0Gi"},
+		{"512Mi", "0.5Gi"},
+		// Gi suffix (passthrough)
+		{"16Gi", "16Gi"},
+		{"1Gi", "1Gi"},
+		// Ti suffix
+		{"2Ti", "2048Gi"},
+		{"1Ti", "1024Gi"},
 	}
 	for _, tt := range tests {
 		got := formatMemory(tt.input)
 		if got != tt.want {
 			t.Errorf("formatMemory(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestFormatAge(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "2 hours ago",
+			input: time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+			want:  "2h",
+		},
+		{
+			name:  "3 days ago",
+			input: time.Now().Add(-3 * 24 * time.Hour).Format(time.RFC3339),
+			want:  "3d",
+		},
+		{
+			name:  "invalid input",
+			input: "not-a-timestamp",
+			want:  "—",
+		},
+		{
+			name:  "very recent",
+			input: time.Now().Add(-30 * time.Second).Format(time.RFC3339),
+			want:  "0m",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatAge(tt.input)
+			if got != tt.want {
+				t.Errorf("formatAge(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }

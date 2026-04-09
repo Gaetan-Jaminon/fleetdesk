@@ -1763,10 +1763,13 @@ func (m *Model) streamK8sPodLogs(namespace string, podNames []string) tea.Cmd {
 	ch := make(chan string, 200)
 	m.k8sPodLogChan = ch
 
+	var wg sync.WaitGroup
 	ctxName := m.selectedK8sContext
 
 	for _, pod := range podNames {
+		wg.Add(1)
 		go func(podName string) {
+			defer wg.Done()
 			args := []string{"logs", "-f",
 				"-n", namespace, podName,
 				"--context", ctxName,
@@ -1796,6 +1799,11 @@ func (m *Model) streamK8sPodLogs(namespace string, podNames []string) tea.Cmd {
 		}(pod)
 	}
 
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
 	return m.listenForLogLines()
 }
 
@@ -1806,36 +1814,39 @@ func (m Model) listenForLogLines() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		first, ok := <-ch
-		if !ok {
-			return k8sPodLogDoneMsg{}
-		}
-		var batch []k8s.K8sLogEntry
-		if e := parseStreamLine(first); e.Pod != "" {
-			batch = append(batch, e)
-		}
-		// Drain buffered lines (non-blocking), up to 50
-		for len(batch) < 50 {
-			select {
-			case line, ok := <-ch:
-				if !ok {
+		for {
+			first, ok := <-ch
+			if !ok {
+				return k8sPodLogDoneMsg{}
+			}
+			var batch []k8s.K8sLogEntry
+			if e := parseStreamLine(first); e.Pod != "" {
+				batch = append(batch, e)
+			}
+			// Drain buffered lines (non-blocking), up to 50
+			for len(batch) < 50 {
+				select {
+				case line, ok := <-ch:
+					if !ok {
+						if len(batch) > 0 {
+							return k8sPodLogBatchMsg{entries: batch}
+						}
+						return k8sPodLogDoneMsg{}
+					}
+					if e := parseStreamLine(line); e.Pod != "" {
+						batch = append(batch, e)
+					}
+				default:
 					if len(batch) > 0 {
 						return k8sPodLogBatchMsg{entries: batch}
 					}
-					return k8sPodLogDoneMsg{}
+					// All lines were continuations, loop back and wait for next line
+					goto waitNext
 				}
-				if e := parseStreamLine(line); e.Pod != "" {
-					batch = append(batch, e)
-				}
-			default:
-				if len(batch) > 0 {
-					return k8sPodLogBatchMsg{entries: batch}
-				}
-				// All lines were continuations, re-listen
-				return k8sPodLogBatchMsg{entries: nil}
 			}
+			return k8sPodLogBatchMsg{entries: batch}
+		waitNext:
 		}
-		return k8sPodLogBatchMsg{entries: batch}
 	}
 }
 

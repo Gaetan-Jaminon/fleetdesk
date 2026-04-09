@@ -1027,12 +1027,12 @@ func (m Model) startK8sProbe() tea.Cmd {
 		km := m.k8s
 		logger := m.logger
 		cmds = append(cmds, func() tea.Msg {
-			ctxCount := k8s.CountContexts(km, name)
-			if ctxCount == 0 {
+			contexts, err := k8s.MatchContexts(km, name, logger)
+			if err != nil || len(contexts) == 0 {
 				return k8sClusterProbeMsg{index: idx, err: fmt.Errorf("no kubectl context found")}
 			}
-			version, err := k8s.CheckCluster(km, name, logger)
-			return k8sClusterProbeMsg{index: idx, contextCount: ctxCount, k8sVersion: version, err: err}
+			version, checkErr := k8s.CheckCluster(km, name, logger)
+			return k8sClusterProbeMsg{index: idx, contextCount: len(contexts), k8sVersion: version, err: checkErr}
 		})
 	}
 	return tea.Batch(cmds...)

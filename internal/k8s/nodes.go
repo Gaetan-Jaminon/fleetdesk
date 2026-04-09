@@ -152,15 +152,11 @@ func ParseNodes(data []byte) ([]K8sNode, error) {
 	return nodes, nil
 }
 
-// ParseNodeDetail parses a single node JSON object.
+// ParseNodeDetail parses a single node JSON object (single unmarshal).
 func ParseNodeDetail(data []byte) (K8sNodeDetail, error) {
-	node, err := parseNodeItem(data)
-	if err != nil {
-		return K8sNodeDetail{}, err
-	}
-
 	var raw struct {
 		Metadata struct {
+			Name              string            `json:"name"`
 			Labels            map[string]string `json:"labels"`
 			CreationTimestamp string            `json:"creationTimestamp"`
 		} `json:"metadata"`
@@ -183,10 +179,16 @@ func ParseNodeDetail(data []byte) (K8sNodeDetail, error) {
 				Address string `json:"address"`
 			} `json:"addresses"`
 			NodeInfo struct {
+				KubeletVersion          string `json:"kubeletVersion"`
 				ContainerRuntimeVersion string `json:"containerRuntimeVersion"`
 				KernelVersion           string `json:"kernelVersion"`
 				OSImage                 string `json:"osImage"`
 			} `json:"nodeInfo"`
+			Capacity struct {
+				CPU    string `json:"cpu"`
+				Memory string `json:"memory"`
+				Pods   string `json:"pods"`
+			} `json:"capacity"`
 			Allocatable struct {
 				CPU    string `json:"cpu"`
 				Memory string `json:"memory"`
@@ -199,6 +201,42 @@ func ParseNodeDetail(data []byte) (K8sNodeDetail, error) {
 		return K8sNodeDetail{}, fmt.Errorf("parsing node detail: %w", err)
 	}
 
+	// Build base K8sNode fields
+	status := "Unknown"
+	for _, c := range raw.Status.Conditions {
+		if c.Type == "Ready" {
+			if c.Status == "True" {
+				status = "Ready"
+			} else {
+				status = "NotReady"
+			}
+			break
+		}
+	}
+
+	os := raw.Metadata.Labels["kubernetes.io/os"]
+	arch := raw.Metadata.Labels["kubernetes.io/arch"]
+	osStr := ""
+	if os != "" {
+		osStr = os + "/" + arch
+	}
+
+	node := K8sNode{
+		Name:    raw.Metadata.Name,
+		Pool:    raw.Metadata.Labels["agentpool"],
+		Status:  status,
+		Version: raw.Status.NodeInfo.KubeletVersion,
+		CPU:     raw.Status.Capacity.CPU,
+		Memory:  formatMemory(raw.Status.Capacity.Memory),
+		Pods:    raw.Status.Capacity.Pods,
+		OS:      osStr,
+		VMSize:  raw.Metadata.Labels["node.kubernetes.io/instance-type"],
+		Taints:  len(raw.Spec.Taints),
+		Age:     formatAge(raw.Metadata.CreationTimestamp),
+		CPUA:    raw.Status.Allocatable.CPU,
+	}
+
+	// Build detail fields
 	conditions := make([]K8sCondition, len(raw.Status.Conditions))
 	for i, c := range raw.Status.Conditions {
 		conditions[i] = K8sCondition{Type: c.Type, Status: c.Status}
@@ -209,7 +247,6 @@ func ParseNodeDetail(data []byte) (K8sNodeDetail, error) {
 		taints[i] = K8sTaint{Key: t.Key, Value: t.Value, Effect: t.Effect}
 	}
 
-	// Extract internal IP
 	internalIP := ""
 	for _, addr := range raw.Status.Addresses {
 		if addr.Type == "InternalIP" {
@@ -305,19 +342,29 @@ func parseNodeItem(data []byte) (K8sNode, error) {
 	}, nil
 }
 
-// formatMemory converts Ki memory to human-readable format.
+// formatMemory converts Ki/Mi/Gi/Ti memory to human-readable format.
 func formatMemory(mem string) string {
-	mem = strings.TrimSuffix(mem, "Ki")
-	ki, err := strconv.ParseInt(mem, 10, 64)
-	if err != nil {
-		return mem
+	if strings.HasSuffix(mem, "Ki") {
+		ki, err := strconv.ParseInt(strings.TrimSuffix(mem, "Ki"), 10, 64)
+		if err == nil {
+			gi := float64(ki) / 1024 / 1024
+			return fmt.Sprintf("%.1fGi", gi)
+		}
+	} else if strings.HasSuffix(mem, "Mi") {
+		mi, err := strconv.ParseInt(strings.TrimSuffix(mem, "Mi"), 10, 64)
+		if err == nil {
+			gi := float64(mi) / 1024
+			return fmt.Sprintf("%.1fGi", gi)
+		}
+	} else if strings.HasSuffix(mem, "Gi") {
+		return mem // already in Gi
+	} else if strings.HasSuffix(mem, "Ti") {
+		ti, err := strconv.ParseInt(strings.TrimSuffix(mem, "Ti"), 10, 64)
+		if err == nil {
+			return fmt.Sprintf("%dGi", ti*1024)
+		}
 	}
-	gi := ki / (1024 * 1024)
-	if gi > 0 {
-		return fmt.Sprintf("%dGi", gi)
-	}
-	mi := ki / 1024
-	return fmt.Sprintf("%dMi", mi)
+	return mem
 }
 
 // FetchNodeUsage fetches CPU/Memory usage for a node via kubectl top.

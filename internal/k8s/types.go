@@ -34,13 +34,6 @@ type K8sResourceCounts struct {
 	ArgoApps   int
 }
 
-// ClusterProbeResult is sent when a cluster connectivity check completes.
-type ClusterProbeResult struct {
-	Index        int
-	ContextCount int
-	Err          error
-}
-
 // K8sNode represents a Kubernetes node.
 type K8sNode struct {
 	Name    string

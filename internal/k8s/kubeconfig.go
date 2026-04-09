@@ -33,25 +33,6 @@ func MatchContexts(m *Manager, clusterName string, logger *slog.Logger) ([]K8sCo
 	return contexts, nil
 }
 
-// CountContexts returns the number of contexts matching a cluster name.
-func CountContexts(m *Manager, clusterName string) int {
-	out, err := m.RunCommand("config", "get-contexts", "--no-headers")
-	if err != nil {
-		return 0
-	}
-	count := 0
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		ctx := parseContextLine(line)
-		if strings.EqualFold(ctx.Cluster, clusterName) {
-			count++
-		}
-	}
-	return count
-}
-
 // parseContextLine parses a single line from `kubectl config get-contexts --no-headers`.
 // Format: CURRENT  NAME  CLUSTER  AUTHINFO  NAMESPACE
 func parseContextLine(line string) K8sContext {
