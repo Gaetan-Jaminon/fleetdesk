@@ -261,7 +261,7 @@ func (m Model) renderAzureVMDetail() string {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	scrollOffset := m.azureActivityCursor
+	scrollOffset := m.azureVMDetailScroll
 	if scrollOffset > maxScroll {
 		scrollOffset = maxScroll
 	}

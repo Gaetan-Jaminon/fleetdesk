@@ -57,6 +57,7 @@ func TestIsAzureTransitioningStateUnchanged(t *testing.T) {
 		{"stopping", true},
 		{"deallocating", true},
 		{"restarting", true},
+		{"deleting", true},
 		{"running", false},
 		{"deallocated", false},
 		{"succeeded", false},

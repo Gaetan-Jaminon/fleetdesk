@@ -71,7 +71,6 @@ type fetchK8sPodsRefreshMsg struct {
 	workload  string
 }
 
-
 type fetchAzureAKSMsg struct {
 	clusters []azure.AKSDetail
 	err      error
@@ -244,6 +243,7 @@ type Model struct {
 	showAzureVMDetail  bool
 	azureActivityLog    []azure.ActivityLogEntry
 	azureActivityCursor int
+	azureVMDetailScroll int
 	pendingTransition *transition           // pending action for confirm dispatch
 	transitions       map[string]transition // overlay: "type/name" → in-flight action
 	polling           bool                  // true if a poll chain is active

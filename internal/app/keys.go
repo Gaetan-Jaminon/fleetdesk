@@ -1749,27 +1749,28 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
-		if m.azureActivityCursor > 0 {
-			m.azureActivityCursor--
+		if m.azureVMDetailScroll > 0 {
+			m.azureVMDetailScroll--
 		}
 	case "down", "j":
-		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
-			m.azureActivityCursor++
-		}
+		m.azureVMDetailScroll++
 	case "a":
 		m.azureActivityLog = nil
 		m.azureActivityCursor = 0
+		m.azureVMDetailScroll = 0
 		m.flash = "Loading activity log..."
 		m.flashError = false
 		return m, m.fetchAzureActivityLog(m.azureVMDetail.ResourceGroup)
 	case "r":
 		vm := m.azureVMDetail
+		m.azureVMDetailScroll = 0
 		m.flash = "Refreshing..."
 		m.flashError = false
 		return m, tea.Batch(m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup), m.fetchAzureActivityLog(vm.ResourceGroup))
 	case "esc":
 		m.showAzureVMDetail = false
 		m.azureActivityLog = nil
+		m.azureVMDetailScroll = 0
 		m.view = viewAzureVMList
 	case "q":
 		return m, tea.Quit
