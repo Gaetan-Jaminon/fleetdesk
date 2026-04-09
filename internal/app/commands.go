@@ -1578,67 +1578,39 @@ func (m Model) startPoll() tea.Cmd {
 	})
 }
 
-// pollStates queries Resource Graph for power states of transitioning resources.
+// pollStates polls the current state of all active poll-strategy transitions.
 func (m Model) pollStates() tea.Cmd {
-	am := m.azure
-	sub := m.azureSubs[m.selectedAzureSub]
-	logger := m.logger
-
-	// Collect transitioning names by type (only poll-strategy transitions)
-	var vmNames, aksNames []string
-	for _, t := range m.transitions {
-		if t.Strategy != "poll" {
-			continue
-		}
-		switch t.ResourceType {
-		case "vm":
-			vmNames = append(vmNames, t.ResourceName)
-		case "aks":
-			aksNames = append(aksNames, t.ResourceName)
+	type pollTask struct {
+		key    string
+		pollFn func() (string, error)
+	}
+	var tasks []pollTask
+	for tKey, t := range m.transitions {
+		if t.Strategy == "poll" && t.PollFn != nil {
+			tasks = append(tasks, pollTask{key: tKey, pollFn: t.PollFn})
 		}
 	}
-
+	logger := m.logger
 	return func() tea.Msg {
-		allStates := make(map[string]string)
+		states := make(map[string]string)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-
-		if len(vmNames) > 0 {
+		for _, task := range tasks {
 			wg.Add(1)
-			go func() {
+			go func(t pollTask) {
 				defer wg.Done()
-				states, err := azure.FetchVMPowerStates(am, sub.ID, vmNames, logger)
+				state, err := t.pollFn()
 				if err != nil {
-					logger.Error("vm poll failed", "err", err)
+					logger.Error("poll failed", "key", t.key, "err", err)
 					return
 				}
 				mu.Lock()
-				for name, state := range states {
-					allStates["vm/"+name] = state
-				}
+				states[t.key] = state
 				mu.Unlock()
-			}()
+			}(task)
 		}
-
-		if len(aksNames) > 0 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				states, err := azure.FetchAKSPowerStates(am, sub.ID, aksNames, logger)
-				if err != nil {
-					logger.Error("aks poll failed", "err", err)
-					return
-				}
-				mu.Lock()
-				for name, state := range states {
-					allStates["aks/"+name] = state
-				}
-				mu.Unlock()
-			}()
-		}
-
 		wg.Wait()
-		return pollResultMsg{states: allStates}
+		return pollResultMsg{states: states}
 	}
 }
 
