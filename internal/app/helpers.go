@@ -7,7 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -321,6 +323,26 @@ func (m *Model) sortView() {
 		m.sortSELinuxDenials()
 	case viewSecurityAudit:
 		m.sortAuditEvents()
+	case viewAzureSubList:
+		m.sortAzureSubs()
+	case viewAzureVMList:
+		m.sortAzureVMs()
+	case viewAzureAKSList:
+		m.sortAzureAKS()
+	case viewK8sClusterList:
+		m.sortK8sClusters()
+	case viewK8sNodeList:
+		m.sortK8sNodes()
+	case viewK8sNodeDetail:
+		m.sortK8sNodePods()
+	case viewK8sNamespaceList:
+		m.sortK8sNamespaces()
+	case viewK8sWorkloadList:
+		m.sortK8sWorkloads()
+	case viewK8sPodList:
+		m.sortK8sPodList()
+	case viewK8sPodLogs:
+		m.sortK8sPodLogs()
 	}
 }
 
@@ -819,4 +841,531 @@ func retryWithPassword(sm *ssh.Manager, idx int, h config.Host, password string)
 	return func() tea.Msg {
 		return sm.ConnectWithPassword(idx, h, password)
 	}
+}
+
+// buildAzureSubList creates the runtime subscription list from an Azure fleet definition.
+// Groups in the fleet config represent Azure subscriptions.
+func buildAzureSubList(f config.Fleet) []azure.AzureSubscriptionItem {
+	var subs []azure.AzureSubscriptionItem
+	for _, g := range f.Groups {
+		subs = append(subs, azure.AzureSubscriptionItem{
+			Name:     g.Name,
+			TenantID: f.TenantID,
+			Status:   azure.SubConnecting,
+		})
+	}
+	return subs
+}
+
+// startAzureProbe launches parallel access checks for all subscriptions.
+func (m Model) startAzureProbe() tea.Cmd {
+	m.logger.Debug("startAzureProbe", "sub_count", len(m.azureSubs))
+	var cmds []tea.Cmd
+	for i, sub := range m.azureSubs {
+		idx := i
+		ss := sub
+		am := m.azure
+		logger := m.logger
+		cmds = append(cmds, func() tea.Msg {
+			info, err := azure.CheckSubscriptionAccess(am, ss.Name, ss.TenantID, logger)
+			return azure.SubscriptionProbeResult{Index: idx, Info: info, Err: err}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+// applyAzureProbeInfo updates a subscription item with successful access check results.
+func (m *Model) applyAzureProbeInfo(idx int, info azure.SubscriptionProbeInfo) {
+	m.azureSubs[idx].Status = azure.SubOnline
+	m.azureSubs[idx].ID = info.ID
+	m.azureSubs[idx].State = info.State
+	m.azureSubs[idx].Tenant = info.Tenant
+	m.azureSubs[idx].User = info.User
+}
+
+// isAzureTransitioningState returns true for Azure resource power states that indicate
+// an in-progress transition (not a final state like running, deallocated, stopped).
+// Case-insensitive: VMs use lowercase, AKS uses capitalized states.
+func isAzureTransitioningState(state string) bool {
+	switch strings.ToLower(state) {
+	case "starting", "stopping", "deallocating", "restarting":
+		return true
+	}
+	return false
+}
+
+// filteredAzureVMs returns VMs matching the current filter.
+func (m Model) filteredAzureVMs() []azure.VM {
+	if m.azureVMs == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.azureVMs
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []azure.VM
+	for _, vm := range m.azureVMs {
+		line := strings.ToLower(vm.Name + " " + vm.ResourceGroup + " " + vm.PowerState + " " + vm.VMSize + " " + vm.OSType + " " + vm.OSDisk + " " + vm.PrivateIP + " " + vm.Hostname)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, vm)
+		}
+	}
+	return filtered
+}
+
+// sortAzureVMs sorts the VM list by the active sort column.
+func (m *Model) sortAzureVMs() {
+	sort.Slice(m.azureVMs, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.azureVMs[i].Name) < strings.ToLower(m.azureVMs[j].Name)
+		case 2:
+			less = strings.ToLower(m.azureVMs[i].ResourceGroup) < strings.ToLower(m.azureVMs[j].ResourceGroup)
+		case 3:
+			less = m.azureVMs[i].PowerState < m.azureVMs[j].PowerState
+		case 4:
+			less = m.azureVMs[i].VMSize < m.azureVMs[j].VMSize
+		case 5:
+			less = m.azureVMs[i].OSDisk < m.azureVMs[j].OSDisk
+		case 6:
+			less = m.azureVMs[i].PrivateIP < m.azureVMs[j].PrivateIP
+		case 7:
+			less = strings.ToLower(m.azureVMs[i].Hostname) < strings.ToLower(m.azureVMs[j].Hostname)
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// filteredAzureAKS returns AKS clusters matching the current filter.
+func (m Model) filteredAzureAKS() []azure.AKSDetail {
+	if m.azureAKSClusters == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.azureAKSClusters
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []azure.AKSDetail
+	for _, c := range m.azureAKSClusters {
+		line := strings.ToLower(c.Name + " " + c.ResourceGroup + " " + c.PowerState + " " + c.ProvisioningState + " " + c.CreatedDate + " " + c.KubernetesVersion)
+		for _, v := range c.Tags {
+			line += " " + strings.ToLower(v)
+		}
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
+}
+
+// sortAzureAKS sorts the AKS cluster list by the active sort column.
+func (m *Model) sortAzureAKS() {
+	sort.Slice(m.azureAKSClusters, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.azureAKSClusters[i].Name) < strings.ToLower(m.azureAKSClusters[j].Name)
+		case 2:
+			less = strings.ToLower(m.azureAKSClusters[i].ResourceGroup) < strings.ToLower(m.azureAKSClusters[j].ResourceGroup)
+		case 3:
+			less = m.azureAKSClusters[i].PowerState < m.azureAKSClusters[j].PowerState
+		case 4:
+			less = m.azureAKSClusters[i].ProvisioningState < m.azureAKSClusters[j].ProvisioningState
+		case 5:
+			less = m.azureAKSClusters[i].KubernetesVersion < m.azureAKSClusters[j].KubernetesVersion
+		case 6:
+			less = m.azureAKSClusters[i].NodeCount < m.azureAKSClusters[j].NodeCount
+		case 7:
+			less = len(m.azureAKSClusters[i].Pools) < len(m.azureAKSClusters[j].Pools)
+		case 8:
+			less = m.azureAKSClusters[i].CreatedDate < m.azureAKSClusters[j].CreatedDate
+		default:
+			// Dynamic tag columns (9, 10, ...)
+			tagIdx := m.sortColumn - 9
+			tags := m.fleets[m.selectedFleet].DisplayTags
+			if tagIdx >= 0 && tagIdx < len(tags) {
+				tagName := tags[tagIdx]
+				vi := m.azureAKSClusters[i].Tags[tagName]
+				vj := m.azureAKSClusters[j].Tags[tagName]
+				less = vi < vj
+			} else {
+				return false
+			}
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// buildK8sClusterList creates the runtime cluster list from a Kubernetes fleet.
+func buildK8sClusterList(f config.Fleet) []k8s.K8sClusterItem {
+	var clusters []k8s.K8sClusterItem
+	for _, g := range f.Groups {
+		clusters = append(clusters, k8s.K8sClusterItem{
+			Name:   g.Name,
+			Status: k8s.ClusterChecking,
+		})
+	}
+	return clusters
+}
+
+// startK8sProbe launches parallel connectivity checks for all clusters.
+func (m Model) startK8sProbe() tea.Cmd {
+	m.logger.Debug("startK8sProbe", "cluster_count", len(m.k8sClusters))
+	var cmds []tea.Cmd
+	for i, c := range m.k8sClusters {
+		idx := i
+		name := c.Name
+		km := m.k8s
+		logger := m.logger
+		cmds = append(cmds, func() tea.Msg {
+			contexts, err := k8s.MatchContexts(km, name, logger)
+			if err != nil || len(contexts) == 0 {
+				return k8sClusterProbeMsg{index: idx, err: fmt.Errorf("no kubectl context found")}
+			}
+			version, checkErr := k8s.CheckCluster(km, name, logger)
+			return k8sClusterProbeMsg{index: idx, contextCount: len(contexts), k8sVersion: version, err: checkErr}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+// sortK8sClusters sorts the cluster list by the active sort column.
+func (m *Model) sortK8sClusters() {
+	sort.Slice(m.k8sClusters, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.k8sClusters[i].Name) < strings.ToLower(m.k8sClusters[j].Name)
+		case 2:
+			less = m.k8sClusters[i].Status < m.k8sClusters[j].Status
+		case 3:
+			less = m.k8sClusters[i].ContextCount < m.k8sClusters[j].ContextCount
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// sortAzureSubs sorts the subscription list by the active sort column.
+func (m *Model) sortAzureSubs() {
+	sort.Slice(m.azureSubs, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.azureSubs[i].Name) < strings.ToLower(m.azureSubs[j].Name)
+		case 2:
+			less = strings.ToLower(m.azureSubs[i].Tenant) < strings.ToLower(m.azureSubs[j].Tenant)
+		case 3:
+			less = strings.ToLower(m.azureSubs[i].User) < strings.ToLower(m.azureSubs[j].User)
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// filteredK8sNodes returns nodes matching the current filter.
+func (m Model) filteredK8sNodes() []k8s.K8sNode {
+	if m.k8sNodes == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.k8sNodes
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sNode
+	for _, n := range m.k8sNodes {
+		line := strings.ToLower(n.Name + " " + n.Pool + " " + n.Status + " " + n.Version + " " + n.VMSize)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, n)
+		}
+	}
+	return filtered
+}
+
+// sortK8sNodes sorts the node list by the active sort column.
+func (m *Model) sortK8sNodes() {
+	sort.Slice(m.k8sNodes, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = m.k8sNodes[i].Name < m.k8sNodes[j].Name
+		case 2:
+			less = m.k8sNodes[i].Status < m.k8sNodes[j].Status
+		case 3:
+			less = m.k8sNodes[i].Version < m.k8sNodes[j].Version
+		case 4:
+			less = m.k8sNodes[i].Taints < m.k8sNodes[j].Taints
+		case 5:
+			less = m.k8sNodes[i].CPUUsage < m.k8sNodes[j].CPUUsage
+		case 6:
+			less = m.k8sNodes[i].CPUPct < m.k8sNodes[j].CPUPct
+		case 7:
+			less = m.k8sNodes[i].MemUsage < m.k8sNodes[j].MemUsage
+		case 8:
+			less = m.k8sNodes[i].MemPct < m.k8sNodes[j].MemPct
+		case 9:
+			less = m.k8sNodes[i].CPUA < m.k8sNodes[j].CPUA
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// sortK8sNodePods sorts the pod list by the active sort column.
+func (m *Model) sortK8sNodePods() {
+	sort.Slice(m.k8sNodePods, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = m.k8sNodePods[i].Namespace < m.k8sNodePods[j].Namespace
+		case 2:
+			less = m.k8sNodePods[i].Name < m.k8sNodePods[j].Name
+		case 3:
+			less = m.k8sNodePods[i].Status < m.k8sNodePods[j].Status
+		case 4:
+			less = m.k8sNodePods[i].Ready < m.k8sNodePods[j].Ready
+		case 5:
+			less = m.k8sNodePods[i].CPUReq < m.k8sNodePods[j].CPUReq
+		case 6:
+			less = m.k8sNodePods[i].CPULim < m.k8sNodePods[j].CPULim
+		case 7:
+			less = m.k8sNodePods[i].MemReq < m.k8sNodePods[j].MemReq
+		case 8:
+			less = m.k8sNodePods[i].MemLim < m.k8sNodePods[j].MemLim
+		case 9:
+			less = m.k8sNodePods[i].Age < m.k8sNodePods[j].Age
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// filteredK8sNodePods returns node pods matching the current filter.
+func (m Model) filteredK8sNodePods() []k8s.K8sNodePod {
+	if m.k8sNodePods == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.k8sNodePods
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sNodePod
+	for _, p := range m.k8sNodePods {
+		line := strings.ToLower(p.Namespace + " " + p.Name + " " + p.Status)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
+}
+
+// filteredK8sContexts returns contexts matching the current filter.
+func (m Model) filteredK8sContexts() []k8s.K8sContext {
+	if m.k8sContexts == nil {
+		return nil
+	}
+	if m.filterText == "" {
+		return m.k8sContexts
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sContext
+	for _, ctx := range m.k8sContexts {
+		line := strings.ToLower(ctx.Name + " " + ctx.User + " " + ctx.Namespace)
+		if strings.Contains(line, filter) {
+			filtered = append(filtered, ctx)
+		}
+	}
+	return filtered
+}
+
+// filteredK8sNamespaces returns namespaces matching the current filter.
+func (m Model) filteredK8sNamespaces() []k8s.K8sNamespace {
+	if m.k8sNamespaces == nil { return nil }
+	if m.filterText == "" { return m.k8sNamespaces }
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sNamespace
+	for _, ns := range m.k8sNamespaces {
+		if strings.Contains(strings.ToLower(ns.Name+" "+ns.Status), filter) { filtered = append(filtered, ns) }
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sNamespaces() {
+	sort.Slice(m.k8sNamespaces, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1: less = m.k8sNamespaces[i].Name < m.k8sNamespaces[j].Name
+		case 2: less = m.k8sNamespaces[i].Status < m.k8sNamespaces[j].Status
+		case 3: less = m.k8sNamespaces[i].PodCount < m.k8sNamespaces[j].PodCount
+		case 4: less = m.k8sNamespaces[i].DeployCount < m.k8sNamespaces[j].DeployCount
+		case 5: less = m.k8sNamespaces[i].STSCount < m.k8sNamespaces[j].STSCount
+		case 6: less = m.k8sNamespaces[i].DSCount < m.k8sNamespaces[j].DSCount
+		case 7: less = m.k8sNamespaces[i].Age < m.k8sNamespaces[j].Age
+		default: return false
+		}
+		if m.sortAsc { return less }
+		return !less
+	})
+}
+
+// filteredK8sWorkloads returns workloads matching the current filter.
+func (m Model) filteredK8sWorkloads() []k8s.K8sWorkload {
+	if m.k8sWorkloads == nil { return nil }
+	if m.filterText == "" { return m.k8sWorkloads }
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sWorkload
+	for _, w := range m.k8sWorkloads {
+		if strings.Contains(strings.ToLower(w.Kind+" "+w.Name+" "+w.Ready), filter) { filtered = append(filtered, w) }
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sWorkloads() {
+	sort.Slice(m.k8sWorkloads, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1: less = m.k8sWorkloads[i].Name < m.k8sWorkloads[j].Name
+		case 2: less = m.k8sWorkloads[i].Ready < m.k8sWorkloads[j].Ready
+		case 3: less = m.k8sWorkloads[i].Age < m.k8sWorkloads[j].Age
+		default: return false
+		}
+		if m.sortAsc { return less }
+		return !less
+	})
+}
+
+// filteredK8sPodList returns pods matching the current filter.
+func (m Model) filteredK8sPodList() []k8s.K8sPod {
+	if m.k8sPodList == nil { return nil }
+	if m.filterText == "" { return m.k8sPodList }
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sPod
+	for _, p := range m.k8sPodList {
+		line := strings.ToLower(p.Name + " " + p.Status + " " + p.Node)
+		if strings.Contains(line, filter) { filtered = append(filtered, p) }
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sPodList() {
+	sort.Slice(m.k8sPodList, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1: less = m.k8sPodList[i].Name < m.k8sPodList[j].Name
+		case 2: less = m.k8sPodList[i].Status < m.k8sPodList[j].Status
+		case 3: less = m.k8sPodList[i].Ready < m.k8sPodList[j].Ready
+		case 4: less = m.k8sPodList[i].Restarts < m.k8sPodList[j].Restarts
+		case 5: less = m.k8sPodList[i].Node < m.k8sPodList[j].Node
+		case 6: less = m.k8sPodList[i].Age < m.k8sPodList[j].Age
+		default: return false
+		}
+		if m.sortAsc { return less }
+		return !less
+	})
+}
+
+// filteredK8sPodLogs returns log entries matching the current filter.
+// logLevelRank returns a numeric rank for log levels (higher = more severe).
+func logLevelRank(level string) int {
+	switch strings.ToLower(level) {
+	case "trace", "verbose":
+		return 0
+	case "debug":
+		return 1
+	case "information", "info":
+		return 2
+	case "warning", "warn":
+		return 3
+	case "error", "err":
+		return 4
+	case "fatal", "critical":
+		return 5
+	default:
+		return 0
+	}
+}
+
+// minLevelThreshold returns the minimum logLevelRank for the given filter setting.
+func minLevelThreshold(minLevel int) int {
+	switch minLevel {
+	case 1:
+		return 2 // Info+
+	case 2:
+		return 3 // Warn+
+	case 3:
+		return 4 // Error+
+	default:
+		return 0 // All
+	}
+}
+
+func (m Model) filteredK8sPodLogs() []k8s.K8sLogEntry {
+	if m.k8sPodLogs == nil {
+		return nil
+	}
+	threshold := minLevelThreshold(m.k8sPodLogMinLevel)
+	hasFilter := m.filterText != ""
+	if !hasFilter && threshold == 0 {
+		return m.k8sPodLogs
+	}
+	filter := strings.ToLower(m.filterText)
+	var filtered []k8s.K8sLogEntry
+	for _, e := range m.k8sPodLogs {
+		if threshold > 0 && logLevelRank(e.Level) < threshold {
+			continue
+		}
+		if hasFilter {
+			line := strings.ToLower(e.Timestamp + " " + e.Pod + " " + e.Level + " " + e.Message)
+			if !strings.Contains(line, filter) {
+				continue
+			}
+		}
+		filtered = append(filtered, e)
+	}
+	return filtered
+}
+
+func (m *Model) sortK8sPodLogs() {
+	sort.Slice(m.k8sPodLogs, func(i, j int) bool {
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = m.k8sPodLogs[i].RawTime < m.k8sPodLogs[j].RawTime
+		case 2:
+			less = m.k8sPodLogs[i].Level < m.k8sPodLogs[j].Level
+		case 3:
+			less = m.k8sPodLogs[i].Message < m.k8sPodLogs[j].Message
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
 }

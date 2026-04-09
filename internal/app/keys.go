@@ -6,6 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
 
@@ -37,6 +39,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diskCursor = 0
 			m.interfaceCursor = 0
 			m.routeCursor = 0
+			m.azureSubCursor = 0
+			m.azureVMCursor = 0
+			m.azureAKSCursor = 0
+			m.k8sClusterCursor = 0
+			m.k8sContextCursor = 0
+			m.k8sNodeCursor = 0
+			m.k8sNamespaceCursor = 0
+			m.k8sWorkloadCursor = 0
+			m.k8sPodCursor = 0
+			m.k8sPodContainerCursor = 0
 		case tea.KeyEsc:
 			m.filterActive = false
 			m.filterText = ""
@@ -56,6 +68,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.diskCursor = 0
 			m.interfaceCursor = 0
 			m.routeCursor = 0
+			m.azureSubCursor = 0
+			m.azureVMCursor = 0
+			m.azureAKSCursor = 0
+			m.k8sClusterCursor = 0
+			m.k8sContextCursor = 0
+			m.k8sNodeCursor = 0
+			m.k8sNamespaceCursor = 0
+			m.k8sWorkloadCursor = 0
+			m.k8sPodCursor = 0
+			m.k8sPodContainerCursor = 0
 		case tea.KeyBackspace:
 			if len(m.filterText) > 0 {
 				m.filterText = m.filterText[:len(m.filterText)-1]
@@ -75,6 +97,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.diskCursor = 0
 				m.interfaceCursor = 0
 				m.routeCursor = 0
+				m.azureSubCursor = 0
+				m.azureVMCursor = 0
+				m.azureAKSCursor = 0
+				m.k8sClusterCursor = 0
+				m.k8sContextCursor = 0
+				m.k8sNodeCursor = 0
+				m.k8sNamespaceCursor = 0
+				m.k8sWorkloadCursor = 0
+				m.k8sPodCursor = 0
+				m.k8sPodContainerCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -94,6 +126,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.diskCursor = 0
 				m.interfaceCursor = 0
 				m.routeCursor = 0
+				m.azureSubCursor = 0
+				m.azureVMCursor = 0
+				m.azureAKSCursor = 0
+				m.k8sClusterCursor = 0
+				m.k8sContextCursor = 0
+				m.k8sNodeCursor = 0
+				m.k8sNamespaceCursor = 0
+				m.k8sWorkloadCursor = 0
+				m.k8sPodCursor = 0
+				m.k8sPodContainerCursor = 0
 			}
 		}
 		return m, nil
@@ -119,6 +161,50 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// confirmed -- execute
 		m.showConfirm = false
+
+		// Azure resource action (VM or AKS)
+		if m.pendingAzureTransition != nil {
+			t := m.pendingAzureTransition
+			m.pendingAzureTransition = nil
+			key := t.ResourceType + "/" + t.ResourceName
+			if m.azureTransitions == nil {
+				m.azureTransitions = make(map[string]azureTransition)
+			}
+			m.azureTransitions[key] = *t
+			m.flash = ""
+			var execCmd tea.Cmd
+			switch t.ResourceType {
+			case "vm":
+				execCmd = m.executeAzureVMAction(t.ResourceName, t.ResourceGroup, t.Action)
+			case "aks":
+				execCmd = m.executeAzureAKSAction(t.ResourceName, t.ResourceGroup, t.Action)
+			}
+			if m.azurePolling {
+				return m, execCmd
+			}
+			m.azurePolling = true
+			return m, tea.Batch(execCmd, m.startAzurePoll())
+		}
+
+		// K8s context delete
+		if m.pendingK8sDeleteContext != "" {
+			ctxName := m.pendingK8sDeleteContext
+			m.pendingK8sDeleteContext = ""
+			km := m.k8s
+			clusterName := m.k8sClusters[m.selectedK8sCluster].Name
+			logger := m.logger
+			return m, func() tea.Msg {
+				_, err := km.RunCommand("config", "delete-context", ctxName)
+				if err != nil {
+					return fetchK8sContextsMsg{err: fmt.Errorf("delete context %s: %w", ctxName, err)}
+				}
+				logger.Debug("k8s context deleted", "context", ctxName)
+				// Refresh context list
+				contexts, err := k8s.MatchContexts(km, clusterName, logger)
+				return fetchK8sContextsMsg{contexts: contexts, err: err}
+			}
+		}
+
 		h := m.hosts[m.selectedHost]
 		cmd := m.confirmCmd
 		banner := m.confirmBanner
@@ -164,6 +250,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "q", "ctrl+c":
+		m.azure.Close()
 		return m, tea.Quit
 	}
 
@@ -212,6 +299,38 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSELinuxKeys(msg)
 	case viewSecurityAudit:
 		return m.handleAuditKeys(msg)
+	case viewAzureSubList:
+		return m.handleAzureSubListKeys(msg)
+	case viewAzureResourcePicker:
+		return m.handleAzureResourcePickerKeys(msg)
+	case viewAzureVMList:
+		return m.handleAzureVMListKeys(msg)
+	case viewAzureVMDetail:
+		return m.handleAzureVMDetailKeys(msg)
+	case viewAzureAKSList:
+		return m.handleAzureAKSListKeys(msg)
+	case viewAzureAKSDetail:
+		return m.handleAzureAKSDetailKeys(msg)
+	case viewK8sClusterList:
+		return m.handleK8sClusterListKeys(msg)
+	case viewK8sContextList:
+		return m.handleK8sContextListKeys(msg)
+	case viewK8sResourcePicker:
+		return m.handleK8sResourcePickerKeys(msg)
+	case viewK8sNodeList:
+		return m.handleK8sNodeListKeys(msg)
+	case viewK8sNodeDetail:
+		return m.handleK8sNodeDetailKeys(msg)
+	case viewK8sNamespaceList:
+		return m.handleK8sNamespaceListKeys(msg)
+	case viewK8sWorkloadList:
+		return m.handleK8sWorkloadListKeys(msg)
+	case viewK8sPodList:
+		return m.handleK8sPodListKeys(msg)
+	case viewK8sPodDetail:
+		return m.handleK8sPodDetailKeys(msg)
+	case viewK8sPodLogs:
+		return m.handleK8sPodLogKeys(msg)
 	}
 	return m, nil
 }
@@ -254,13 +373,36 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.view = viewHostList
 				return m, tea.Batch(m.startProbe(), m.tickCmd())
 			case "azure":
-				m.flash = "Azure support coming soon"
-				m.flashError = false
-				return m, nil
+				if err := m.azure.CheckPrerequisites(); err != nil {
+					if azure.IsNotInstalled(err) {
+						m.flash = "az CLI not found — install Azure CLI to use Azure fleets"
+					} else if azure.IsNotLoggedIn(err) {
+						m.flash = "Not logged in to Azure — run 'az login' first"
+					} else {
+						m.flash = fmt.Sprintf("Azure error: %v", err)
+					}
+					m.flashError = true
+					return m, nil
+				}
+				m.selectedFleet = m.fleetCursor
+				m.azureSubs = buildAzureSubList(f)
+				m.azureSubCursor = 0
+				m.sortColumn = 0
+				m.filterText = ""
+				m.filterActive = false
+				m.view = viewAzureSubList
+				return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
 			case "kubernetes":
-				m.flash = "Kubernetes support coming soon"
-				m.flashError = false
-				return m, nil
+				if err := m.k8s.CheckPrerequisites(); err != nil {
+					m.flash = "kubectl not found — install kubectl to use Kubernetes fleets"
+					m.flashError = true
+					return m, nil
+				}
+				m.selectedFleet = m.fleetCursor
+				m.k8sClusters = buildK8sClusterList(f)
+				m.k8sClusterCursor = 0
+				m.view = viewK8sClusterList
+				return m, m.startK8sProbe()
 			default:
 				m.flash = "Unsupported fleet type"
 				m.flashError = false
@@ -1421,6 +1563,818 @@ func (m Model) handleMetricsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetchAllMetrics()
 	case "esc":
 		m.view = viewHostList
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureSubCursor > 0 {
+			m.azureSubCursor--
+		}
+	case "down", "j":
+		if m.azureSubCursor < len(m.azureSubs)-1 {
+			m.azureSubCursor++
+		}
+	case "enter":
+		if len(m.azureSubs) > 0 {
+			m.selectedAzureSub = m.azureSubCursor
+			m.azureResourceCursor = 0
+			m.azureResourceCounts = azure.AzureResourceCounts{}
+			m.azureResourceErr = nil
+			m.azureCountsLoaded = false
+			m.view = viewAzureResourcePicker
+			return m, m.fetchAzureResourceCounts()
+		}
+	case "r":
+		f := m.fleets[m.selectedFleet]
+		m.azureSubs = buildAzureSubList(f)
+		m.azureSubCursor = 0
+		m.flash = "Refreshing..."
+		m.flashError = false
+		return m, m.startAzureProbe()
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.azureSubCursor = 0
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "esc":
+		m.view = viewFleetPicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+const azureResourceCount = 2
+
+func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureResourceCursor > 0 {
+			m.azureResourceCursor--
+		}
+	case "down", "j":
+		if m.azureResourceCursor < azureResourceCount-1 {
+			m.azureResourceCursor++
+		}
+	case "enter":
+		switch m.azureResourceCursor {
+		case 0: // VMs
+			m.azureVMs = nil
+			m.azureVMCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewAzureVMList
+			return m, m.fetchAzureVMs()
+		case 1: // AKS Clusters
+			m.azureAKSClusters = nil
+			m.azureAKSCursor = 0
+			m.sortColumn = 0
+			m.sortAsc = true
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewAzureAKSList
+			return m, m.fetchAzureAKSClusters()
+		}
+	case "r":
+		m.azureResourceCounts = azure.AzureResourceCounts{}
+		m.azureResourceErr = nil
+		m.azureCountsLoaded = false
+		return m, m.fetchAzureResourceCounts()
+	case "esc":
+		m.view = viewAzureSubList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredAzureVMs()
+		if m.azureVMCursor > 0 {
+			m.azureVMCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredAzureVMs()
+		if m.azureVMCursor < len(filtered)-1 {
+			m.azureVMCursor++
+		}
+	case "enter":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.flash = fmt.Sprintf("Loading %s...", vm.Name)
+			m.azureActivityLog = nil
+			m.azureActivityCursor = 0
+			return m, tea.Batch(m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup), m.fetchAzureActivityLog(vm.ResourceGroup))
+		}
+	case "s":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", vm.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+				Action: "start", Display: "starting...", TargetState: "running",
+			}
+		}
+	case "o":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("deallocate %s? [Y/n]", vm.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+				Action: "deallocate", Display: "deallocating...", TargetState: "deallocated",
+			}
+		}
+	case "t":
+		filtered := m.filteredAzureVMs()
+		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
+			vm := filtered[m.azureVMCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("restart %s? [Y/n]", vm.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+				Action: "restart", Display: "restarting...", TargetState: "running",
+			}
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.azureVMCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		m.azureVMs = nil
+		m.azureVMCursor = 0
+		return m, m.fetchAzureVMs()
+	case "esc":
+		m.view = viewAzureResourcePicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureActivityCursor > 0 {
+			m.azureActivityCursor--
+		}
+	case "down", "j":
+		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
+			m.azureActivityCursor++
+		}
+	case "a":
+		m.azureActivityLog = nil
+		m.azureActivityCursor = 0
+		m.flash = "Loading activity log..."
+		m.flashError = false
+		return m, m.fetchAzureActivityLog(m.azureVMDetail.ResourceGroup)
+	case "esc":
+		m.showAzureVMDetail = false
+		m.azureActivityLog = nil
+		m.view = viewAzureVMList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredAzureAKS()
+		if m.azureAKSCursor > 0 {
+			m.azureAKSCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredAzureAKS()
+		if m.azureAKSCursor < len(filtered)-1 {
+			m.azureAKSCursor++
+		}
+	case "enter":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.azureAKSDetail = c
+			m.azureActivityLog = nil
+			m.azureActivityCursor = 0
+			m.view = viewAzureAKSDetail
+			return m, m.fetchAzureActivityLog(c.ResourceGroup)
+		}
+	case "s":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", c.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
+				Action: "start", Display: "starting...", TargetState: "succeeded",
+			}
+		}
+	case "o":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("stop %s? [Y/n]", c.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
+				Action: "stop", Display: "stopping...", TargetState: "succeeded",
+			}
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.azureAKSCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		m.azureAKSClusters = nil
+		m.azureAKSCursor = 0
+		return m, m.fetchAzureAKSClusters()
+	case "esc":
+		m.view = viewAzureResourcePicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleAzureAKSDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.azureActivityCursor > 0 {
+			m.azureActivityCursor--
+		}
+	case "down", "j":
+		if m.azureActivityCursor < len(m.azureActivityLog)-1 {
+			m.azureActivityCursor++
+		}
+	case "a":
+		m.azureActivityLog = nil
+		m.azureActivityCursor = 0
+		m.flash = "Loading activity log..."
+		m.flashError = false
+		return m, m.fetchAzureActivityLog(m.azureAKSDetail.ResourceGroup)
+	case "esc":
+		m.azureActivityLog = nil
+		m.view = viewAzureAKSList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+const k8sResourceCount = 3
+
+func (m Model) handleK8sClusterListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.k8sClusterCursor > 0 {
+			m.k8sClusterCursor--
+		}
+	case "down", "j":
+		if m.k8sClusterCursor < len(m.k8sClusters)-1 {
+			m.k8sClusterCursor++
+		}
+	case "enter":
+		if len(m.k8sClusters) > 0 {
+			c := m.k8sClusters[m.k8sClusterCursor]
+			if c.Status != k8s.ClusterOnline {
+				m.flash = "Cluster not available"
+				m.flashError = true
+				return m, nil
+			}
+			m.selectedK8sCluster = m.k8sClusterCursor
+			m.k8sContexts = nil
+			m.k8sContextCursor = 0
+			m.view = viewK8sContextList
+			return m, m.fetchK8sContexts(c.Name)
+		}
+	case "r":
+		f := m.fleets[m.selectedFleet]
+		m.k8sClusters = buildK8sClusterList(f)
+		m.k8sClusterCursor = 0
+		return m, m.startK8sProbe()
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sClusterCursor = 0
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "esc":
+		m.view = viewFleetPicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sContextListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.k8sContextCursor > 0 {
+			m.k8sContextCursor--
+		}
+	case "down", "j":
+		if m.k8sContextCursor < len(m.k8sContexts)-1 {
+			m.k8sContextCursor++
+		}
+	case "enter":
+		if len(m.k8sContexts) > 0 && m.k8sContextCursor < len(m.k8sContexts) {
+			m.selectedK8sContext = m.k8sContexts[m.k8sContextCursor].Name
+			m.k8sResourceCursor = 0
+			m.k8sResourceCounts = k8s.K8sResourceCounts{}
+			m.k8sResourceErrors = nil
+			m.k8sCountsLoaded = false
+			m.view = viewK8sResourcePicker
+			return m, m.fetchK8sResourceCounts()
+		}
+	case "d":
+		if len(m.k8sContexts) > 0 && m.k8sContextCursor < len(m.k8sContexts) {
+			ctx := m.k8sContexts[m.k8sContextCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("delete context %s? [Y/n]", ctx.Name)
+			m.pendingK8sDeleteContext = ctx.Name
+		}
+	case "r":
+		m.k8sContexts = nil
+		m.k8sContextCursor = 0
+		return m, m.fetchK8sContexts(m.k8sClusters[m.selectedK8sCluster].Name)
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sContextCursor = 0
+	case "esc":
+		m.view = viewK8sClusterList
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.k8sResourceCursor > 0 {
+			m.k8sResourceCursor--
+		}
+	case "down", "j":
+		if m.k8sResourceCursor < k8sResourceCount-1 {
+			m.k8sResourceCursor++
+		}
+	case "enter":
+		switch m.k8sResourceCursor {
+		case 0:
+			m.k8sNamespaces = nil
+			m.k8sNamespaceCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewK8sNamespaceList
+			return m, m.fetchK8sNamespaces()
+		case 1:
+			m.k8sNodes = nil
+			m.k8sNodeCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewK8sNodeList
+			return m, m.fetchK8sNodes()
+		case 2:
+			m.flash = "ArgoCD Apps view coming in next PR"
+			m.flashError = false
+		}
+	case "r":
+		m.k8sResourceCounts = k8s.K8sResourceCounts{}
+		m.k8sResourceErrors = nil
+		m.k8sCountsLoaded = false
+		return m, m.fetchK8sResourceCounts()
+	case "esc":
+		m.view = viewK8sContextList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sNodeListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sNodes()
+		if m.k8sNodeCursor > 0 {
+			m.k8sNodeCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sNodes()
+		if m.k8sNodeCursor < len(filtered)-1 {
+			m.k8sNodeCursor++
+		}
+	case "enter":
+		filtered := m.filteredK8sNodes()
+		if len(filtered) > 0 && m.k8sNodeCursor < len(filtered) {
+			node := filtered[m.k8sNodeCursor]
+			m.flash = fmt.Sprintf("Loading %s...", node.Name)
+			m.k8sNodeUsage = nil
+			m.k8sNodePods = nil
+			m.k8sNodePodCursor = 0
+			return m, tea.Batch(
+				m.fetchK8sNodeDetail(node.Name),
+				m.fetchK8sNodeUsage(node.Name),
+				m.fetchK8sNodePods(node.Name),
+			)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sNodeCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		m.k8sNodes = nil
+		m.k8sNodeCursor = 0
+		return m, m.fetchK8sNodes()
+	case "esc":
+		m.view = viewK8sResourcePicker
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sNodeDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sNodePods()
+		if m.k8sNodePodCursor > 0 {
+			m.k8sNodePodCursor--
+		}
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sNodePods()
+		if m.k8sNodePodCursor < len(filtered)-1 {
+			m.k8sNodePodCursor++
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sNodePodCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortView()
+	case "r":
+		nodeName := m.k8sNodeDetail.Name
+		m.k8sNodeUsage = nil
+		m.k8sNodePods = nil
+		m.k8sNodePodCursor = 0
+		return m, tea.Batch(
+			m.fetchK8sNodeDetail(nodeName),
+			m.fetchK8sNodeUsage(nodeName),
+			m.fetchK8sNodePods(nodeName),
+		)
+	case "esc":
+		if m.filterActive {
+			m.filterActive = false
+			m.filterText = ""
+			m.k8sNodePodCursor = 0
+		} else {
+			m.view = viewK8sNodeList
+			m.filterText = ""
+			m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sNamespaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sNamespaces()
+		if m.k8sNamespaceCursor > 0 { m.k8sNamespaceCursor-- }
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sNamespaces()
+		if m.k8sNamespaceCursor < len(filtered)-1 { m.k8sNamespaceCursor++ }
+	case "enter":
+		filtered := m.filteredK8sNamespaces()
+		if len(filtered) > 0 && m.k8sNamespaceCursor < len(filtered) {
+			m.selectedK8sNamespace = m.k8sNamespaceCursor
+			m.k8sWorkloads = nil
+			m.k8sWorkloadCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			m.view = viewK8sWorkloadList
+			return m, m.fetchK8sWorkloads(filtered[m.k8sNamespaceCursor].Name)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sNamespaceCursor = 0
+	case "1", "2", "3", "4", "5", "6", "7":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
+		m.sortView()
+	case "r":
+		m.k8sNamespaces = nil
+		m.k8sNamespaceCursor = 0
+		return m, m.fetchK8sNamespaces()
+	case "esc":
+		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sNamespaceCursor = 0 } else {
+			m.view = viewK8sResourcePicker; m.sortColumn = 0; m.filterText = ""; m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sWorkloadListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sWorkloads()
+		if m.k8sWorkloadCursor > 0 { m.k8sWorkloadCursor-- }
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sWorkloads()
+		if m.k8sWorkloadCursor < len(filtered)-1 { m.k8sWorkloadCursor++ }
+	case "enter":
+		filtered := m.filteredK8sWorkloads()
+		if len(filtered) > 0 && m.k8sWorkloadCursor < len(filtered) {
+			w := filtered[m.k8sWorkloadCursor]
+			m.selectedK8sWorkload = m.k8sWorkloadCursor
+			m.k8sPodList = nil
+			m.k8sPodCursor = 0
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+			ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+			m.view = viewK8sPodList
+			return m, m.fetchK8sPods(ns, w.Name)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sWorkloadCursor = 0
+	case "1", "2", "3":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
+		m.sortView()
+	case "r":
+		m.k8sWorkloads = nil
+		m.k8sWorkloadCursor = 0
+		ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+		return m, m.fetchK8sWorkloads(ns)
+	case "esc":
+		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sWorkloadCursor = 0 } else {
+			m.view = viewK8sNamespaceList; m.sortColumn = 0; m.filterText = ""; m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		filtered := m.filteredK8sPodList()
+		if m.k8sPodCursor > 0 { m.k8sPodCursor-- }
+		_ = filtered
+	case "down", "j":
+		filtered := m.filteredK8sPodList()
+		if m.k8sPodCursor < len(filtered)-1 { m.k8sPodCursor++ }
+	case "enter":
+		filtered := m.filteredK8sPodList()
+		if len(filtered) > 0 && m.k8sPodCursor < len(filtered) {
+			p := filtered[m.k8sPodCursor]
+			m.flash = fmt.Sprintf("Loading %s...", p.Name)
+			m.k8sPodContainerCursor = 0
+			return m, m.fetchK8sPodDetail(p.Namespace, p.Name)
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+		m.k8sPodCursor = 0
+	case "1", "2", "3", "4", "5", "6":
+		col := int(msg.Runes[0] - '0')
+		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
+		m.sortView()
+	case "l":
+		filtered := m.filteredK8sPodList()
+		if len(filtered) == 0 {
+			return m, nil
+		}
+		var podNames []string
+		for _, p := range filtered {
+			podNames = append(podNames, p.Name)
+		}
+		m.k8sPodLogs = nil
+		m.k8sPodLogCursor = 0
+		m.k8sPodLogStreaming = false
+		m.k8sPodLogAllContainers = false
+		m.k8sPodLogMinLevel = 0
+		m.filterText = ""
+		m.filterActive = false
+		m.sortColumn = 0
+		wl := m.k8sWorkloads[m.selectedK8sWorkload]
+		m.flash = fmt.Sprintf("Loading logs for %s...", wl.Name)
+		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+		return m, m.fetchK8sPodLogs(ns, podNames)
+	case "r":
+		m.k8sPodList = nil
+		m.k8sPodCursor = 0
+		ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+		w := m.filteredK8sWorkloads()[m.selectedK8sWorkload]
+		return m, m.fetchK8sPods(ns, w.Name)
+	case "esc":
+		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sPodCursor = 0 } else {
+			m.view = viewK8sWorkloadList; m.sortColumn = 0; m.filterText = ""; m.filterActive = false
+		}
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.k8sPodContainerCursor > 0 {
+			m.k8sPodContainerCursor--
+		}
+	case "down", "j":
+		m.k8sPodContainerCursor++
+	case "g":
+		m.k8sPodContainerCursor = 0
+	case "esc":
+		m.view = viewK8sPodList
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Detail view: any key closes it
+	if m.showK8sLogDetail {
+		m.showK8sLogDetail = false
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "enter":
+		filtered := m.filteredK8sPodLogs()
+		if len(filtered) > 0 && m.k8sPodLogCursor < len(filtered) {
+			m.showK8sLogDetail = true
+		}
+	case "up", "k":
+		if m.k8sPodLogCursor > 0 {
+			m.k8sPodLogCursor--
+		}
+	case "down", "j":
+		filtered := m.filteredK8sPodLogs()
+		if m.k8sPodLogCursor < len(filtered)-1 {
+			m.k8sPodLogCursor++
+		}
+	case "G":
+		filtered := m.filteredK8sPodLogs()
+		if len(filtered) > 0 {
+			m.k8sPodLogCursor = len(filtered) - 1
+		}
+	case "g":
+		m.k8sPodLogCursor = 0
+	case "s":
+		if m.k8sPodLogStreaming {
+			// Stop streaming
+			if m.k8sPodLogCancel != nil {
+				m.k8sPodLogCancel()
+			}
+			m.k8sPodLogStreaming = false
+		} else {
+			// Resume streaming
+			var podNames []string
+			for _, p := range m.k8sPodList {
+				podNames = append(podNames, p.Name)
+			}
+			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+			return m, m.streamK8sPodLogs(ns, podNames)
+		}
+	case "d":
+		// Cycle level filter: All → Info+ → Warn+ → Error+ → All
+		m.k8sPodLogMinLevel = (m.k8sPodLogMinLevel + 1) % 4
+		m.k8sPodLogCursor = 0
+	case "c":
+		// Toggle sidecar container logs
+		if m.k8sPodLogCancel != nil {
+			m.k8sPodLogCancel()
+		}
+		m.k8sPodLogs = nil
+		m.k8sPodLogCursor = 0
+		m.k8sPodLogStreaming = false
+		m.k8sPodLogAllContainers = !m.k8sPodLogAllContainers
+		var podNames []string
+		for _, p := range m.k8sPodList {
+			podNames = append(podNames, p.Name)
+		}
+		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+		return m, m.fetchK8sPodLogs(ns, podNames)
+	case "esc":
+		if m.filterActive {
+			m.filterActive = false
+			m.filterText = ""
+			m.k8sPodLogCursor = 0
+		} else {
+			if m.k8sPodLogCancel != nil {
+				m.k8sPodLogCancel()
+			}
+			m.k8sPodLogStreaming = false
+			m.view = viewK8sPodList
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+		}
+	case "q":
+		if m.k8sPodLogCancel != nil {
+			m.k8sPodLogCancel()
+		}
+		return m, tea.Quit
 	}
 	return m, nil
 }

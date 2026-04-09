@@ -1,18 +1,149 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
 // tickMsg triggers a periodic host probe refresh.
 type tickMsg time.Time
+
+// azureResourceCountsMsg is sent when Azure resource counts are fetched.
+type azureResourceCountsMsg struct {
+	counts azure.AzureResourceCounts
+	err    error
+}
+
+type fetchAzureVMsMsg struct {
+	vms []azure.VM
+	err error
+}
+
+type fetchAzureVMDetailMsg struct {
+	detail azure.VMDetail
+	err    error
+}
+
+type azureActionMsg struct {
+	resourceType string // "vm" or "aks"
+	name         string
+	action       string
+	err          error
+}
+
+// azureTransition tracks an in-flight Azure resource action for optimistic UI.
+type azureTransition struct {
+	ResourceType  string // "vm" or "aks"
+	ResourceName  string
+	ResourceGroup string
+	Action        string // "start", "deallocate", "restart", "stop"
+	Display       string // "starting...", "deallocating...", or real state from poll
+	TargetState   string // "running", "deallocated", "succeeded"
+	Confirmed     bool   // true once Azure reports a transitioning state (prevents stale target match)
+}
+
+type azurePollMsg time.Time
+
+type azurePollResultMsg struct {
+	states map[string]string // "type/name" (lowercase name) → power state
+}
+
+type azureTransitionExpireMsg struct {
+	key string // "vm/myvm" or "aks/mycluster"
+}
+
+type fetchAzureAKSMsg struct {
+	clusters []azure.AKSDetail
+	err      error
+}
+
+type k8sClusterProbeMsg struct {
+	index        int
+	contextCount int
+	k8sVersion   string
+	err          error
+}
+
+type fetchK8sContextsMsg struct {
+	contexts []k8s.K8sContext
+	err      error
+}
+
+type k8sResourceCountsMsg struct {
+	counts k8s.K8sResourceCounts
+	errs   []string
+}
+
+type fetchK8sNodesMsg struct {
+	nodes []k8s.K8sNode
+	err   error
+}
+
+type fetchK8sNodeDetailMsg struct {
+	detail k8s.K8sNodeDetail
+	err    error
+}
+
+type fetchK8sNodeUsageMsg struct {
+	usage k8s.K8sNodeUsage
+	err   error
+}
+
+type fetchK8sNodePodsMsg struct {
+	pods []k8s.K8sNodePod
+	err  error
+}
+
+type fetchK8sNamespacesMsg struct {
+	namespaces []k8s.K8sNamespace
+	err        error
+}
+
+type fetchK8sNamespaceCountsMsg struct {
+	counts map[string][4]int
+	err    error
+}
+
+type fetchK8sWorkloadsMsg struct {
+	workloads []k8s.K8sWorkload
+	err       error
+}
+
+type fetchK8sPodsMsg struct {
+	pods []k8s.K8sPod
+	err  error
+}
+
+type fetchK8sPodDetailMsg struct {
+	detail k8s.K8sPodDetail
+	err    error
+}
+
+type fetchK8sPodLogsMsg struct {
+	entries []k8s.K8sLogEntry
+	err     error
+}
+
+type k8sPodLogBatchMsg struct {
+	entries []k8s.K8sLogEntry
+}
+
+type k8sPodLogDoneMsg struct{}
+
+type fetchAzureActivityLogMsg struct {
+	entries []azure.ActivityLogEntry
+	err     error
+}
 
 func (m Model) tickCmd() tea.Cmd {
 	interval, err := time.ParseDuration(m.fleets[m.selectedFleet].Defaults.RefreshInterval)
@@ -49,6 +180,22 @@ const (
 	viewSecuritySudo
 	viewSecuritySELinux
 	viewSecurityAudit
+	viewAzureSubList
+	viewAzureResourcePicker
+	viewAzureVMList
+	viewAzureVMDetail
+	viewAzureAKSList
+	viewAzureAKSDetail
+	viewK8sClusterList
+	viewK8sContextList
+	viewK8sResourcePicker
+	viewK8sNodeList
+	viewK8sNodeDetail
+	viewK8sNamespaceList
+	viewK8sWorkloadList
+	viewK8sPodList
+	viewK8sPodDetail
+	viewK8sPodLogs
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -68,6 +215,75 @@ type Model struct {
 	selectedFleet int
 	hosts         []config.Host
 	hostCursor    int
+
+	// azure subscription list
+	azureSubs      []azure.AzureSubscriptionItem
+	azureSubCursor int
+
+	// azure resource picker
+	selectedAzureSub    int
+	azureResourceCursor int
+	azureResourceCounts azure.AzureResourceCounts
+	azureResourceErr error
+	azureCountsLoaded   bool
+
+	// azure VM list
+	azureVMs           []azure.VM
+	azureVMCursor      int
+	azureVMDetail      azure.VMDetail
+	showAzureVMDetail  bool
+	azureActivityLog    []azure.ActivityLogEntry
+	azureActivityCursor int
+	pendingAzureTransition *azureTransition           // pending action for confirm dispatch
+	azureTransitions      map[string]azureTransition // overlay: "type/name" → in-flight action
+	azurePolling          bool                       // true if a poll chain is active
+
+	// azure AKS list
+	azureAKSClusters []azure.AKSDetail
+	azureAKSCursor   int
+	azureAKSDetail   azure.AKSDetail
+
+	// kubernetes
+	k8s                *k8s.Manager
+	k8sClusters        []k8s.K8sClusterItem
+	k8sClusterCursor   int
+	selectedK8sCluster int
+	k8sContexts        []k8s.K8sContext
+	k8sContextCursor   int
+	selectedK8sContext  string
+	k8sResourceCursor  int
+	k8sResourceCounts  k8s.K8sResourceCounts
+	k8sResourceErrors  []string
+	k8sCountsLoaded          bool
+	pendingK8sDeleteContext  string
+	k8sNodes        []k8s.K8sNode
+	k8sNodeCursor   int
+	k8sNodeDetail   k8s.K8sNodeDetail
+	k8sNodeUsage  *k8s.K8sNodeUsage // nil = loading
+	k8sNodePods   []k8s.K8sNodePod // nil = loading
+	k8sNodePodCursor int
+
+	// k8s workloads
+	k8sNamespaces         []k8s.K8sNamespace
+	k8sNamespaceCursor    int
+	selectedK8sNamespace  int
+	k8sWorkloads          []k8s.K8sWorkload
+	k8sWorkloadCursor     int
+	selectedK8sWorkload   int
+	k8sPodList            []k8s.K8sPod
+	k8sPodCursor          int
+	k8sPodDetail          k8s.K8sPodDetail
+	k8sPodContainerCursor int
+
+	// k8s pod logs
+	k8sPodLogs         []k8s.K8sLogEntry
+	k8sPodLogCursor    int
+	k8sPodLogCancel    context.CancelFunc
+	k8sPodLogChan      chan string
+	k8sPodLogStreaming     bool
+	k8sPodLogAllContainers bool // true = show sidecar logs too
+	k8sPodLogMinLevel      int  // 0=all, 1=Info+, 2=Warn+, 3=Error+
+	showK8sLogDetail      bool
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -177,7 +393,8 @@ type Model struct {
 	confirmBanner  string
 
 	// SSH
-	ssh    *ssh.Manager
+	ssh   *ssh.Manager
+	azure *azure.Manager
 	logger *slog.Logger
 
 	// password prompt
@@ -201,7 +418,9 @@ func NewModel(fleets []config.Fleet, logger *slog.Logger, version string) Model 
 	return Model{
 		view:    viewFleetPicker,
 		fleets:  fleets,
-		ssh:     ssh.NewManager(logger),
+		ssh:   ssh.NewManager(logger),
+		azure: azure.NewManager(logger),
+		k8s:   k8s.NewManager(logger),
 		logger:  logger,
 		version: version,
 	}
@@ -239,6 +458,348 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.applyProbeInfo(msg.Index, msg.Info)
 			}
+		}
+		return m, nil
+
+	case azure.SubscriptionProbeResult:
+		if msg.Index < len(m.azureSubs) {
+			if msg.Err != nil {
+				m.azureSubs[msg.Index].Status = azure.SubError
+				m.azureSubs[msg.Index].Error = msg.Err.Error()
+			} else {
+				m.applyAzureProbeInfo(msg.Index, msg.Info)
+			}
+		}
+		return m, nil
+
+	case azureResourceCountsMsg:
+		m.azureResourceCounts = msg.counts
+		m.azureResourceErr = msg.err
+		m.azureCountsLoaded = true
+		return m, nil
+
+	case fetchAzureVMsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureVMs = msg.vms
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchAzureVMDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureVMDetail = msg.detail
+			// Copy network info from list VM (populated by graph, not az vm show).
+			// Match by resource ID instead of cursor position to avoid race
+			// when user scrolls while the detail fetch is in flight.
+			for _, listVM := range m.azureVMs {
+				if strings.EqualFold(listVM.ID, msg.detail.ID) {
+					m.azureVMDetail.VNet = listVM.VNet
+					m.azureVMDetail.Subnet = listVM.Subnet
+					if m.azureVMDetail.PrivateIP == "" {
+						m.azureVMDetail.PrivateIP = listVM.PrivateIP
+					}
+					break
+				}
+			}
+			m.showAzureVMDetail = true
+			m.view = viewAzureVMDetail
+			m.flash = ""
+		}
+		return m, nil
+
+	case azureActionMsg:
+		if m.azureTransitions == nil {
+			m.azureTransitions = make(map[string]azureTransition)
+		}
+		key := msg.resourceType + "/" + msg.name
+		if msg.err != nil {
+			// Action failed — update overlay to show error, schedule removal
+			m.azureTransitions[key] = azureTransition{
+				ResourceType: msg.resourceType,
+				ResourceName: msg.name,
+				Action:       msg.action,
+				Display:      msg.action + " failed",
+			}
+			return m, expireAzureTransition(key)
+		}
+		// Action succeeded — overlay already set by confirm handler, poll already started
+		return m, nil
+
+	case azurePollMsg:
+		if len(m.azureTransitions) == 0 {
+			return m, nil // no transitions to track
+		}
+		return m, m.pollAzureStates()
+
+	case azurePollResultMsg:
+		if m.azureTransitions == nil {
+			return m, nil
+		}
+		changed := false
+		for tKey, t := range m.azureTransitions {
+			lookupName := strings.ToLower(t.ResourceName)
+			lookupKey := t.ResourceType + "/" + lookupName
+			if state, ok := msg.states[lookupKey]; ok {
+				if isAzureTransitioningState(state) {
+					// Azure confirms the action is in progress
+					t.Confirmed = true
+					t.Display = state
+					m.azureTransitions[tKey] = t
+				} else if state == t.TargetState && t.Confirmed {
+					// Target reached and we've seen a transitioning state first
+					switch t.ResourceType {
+					case "vm":
+						for i := range m.azureVMs {
+							if strings.EqualFold(m.azureVMs[i].Name, t.ResourceName) {
+								m.azureVMs[i].PowerState = state
+								break
+							}
+						}
+					case "aks":
+						// Don't update PowerState here — poll returns provisioningState.
+						// The list refresh below will fetch the real PowerState.
+					}
+					delete(m.azureTransitions, tKey)
+					changed = true
+				}
+			}
+		}
+		// Refresh list data if any transitions completed
+		var cmds []tea.Cmd
+		if changed {
+			cmds = append(cmds, m.fetchAzureVMs())
+			cmds = append(cmds, m.fetchAzureAKSClusters())
+		}
+		// Continue polling if transitions remain, otherwise stop
+		if len(m.azureTransitions) > 0 {
+			cmds = append(cmds, m.startAzurePoll())
+		} else {
+			m.azurePolling = false
+		}
+		if len(cmds) > 0 {
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case azureTransitionExpireMsg:
+		if m.azureTransitions != nil {
+			delete(m.azureTransitions, msg.key)
+			if len(m.azureTransitions) == 0 {
+				m.azurePolling = false
+			}
+		}
+		return m, nil
+
+	case k8sClusterProbeMsg:
+		if msg.index < len(m.k8sClusters) {
+			if msg.err != nil {
+				m.k8sClusters[msg.index].Status = k8s.ClusterError
+				m.k8sClusters[msg.index].Error = msg.err.Error()
+			} else {
+				m.k8sClusters[msg.index].Status = k8s.ClusterOnline
+				m.k8sClusters[msg.index].ContextCount = msg.contextCount
+				m.k8sClusters[msg.index].K8sVersion = msg.k8sVersion
+			}
+		}
+		return m, nil
+
+	case fetchK8sContextsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sContexts = msg.contexts
+			m.flash = ""
+		}
+		return m, nil
+
+	case k8sResourceCountsMsg:
+		m.k8sResourceCounts = msg.counts
+		m.k8sResourceErrors = msg.errs
+		m.k8sCountsLoaded = true
+		return m, nil
+
+	case fetchK8sNodesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sNodes = msg.nodes
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sNodeDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sNodeDetail = msg.detail
+			m.view = viewK8sNodeDetail
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sNodeUsageMsg:
+		if msg.err == nil {
+			m.k8sNodeUsage = &msg.usage
+		}
+		return m, nil
+
+	case fetchK8sNodePodsMsg:
+		if msg.err == nil {
+			m.k8sNodePods = msg.pods
+		}
+		return m, nil
+
+	case fetchK8sNamespacesMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sNamespaces = msg.namespaces
+			m.flash = ""
+		}
+		// Start background count fetch
+		return m, m.fetchK8sNamespaceCounts()
+
+	case fetchK8sNamespaceCountsMsg:
+		if msg.err == nil && msg.counts != nil {
+			for i := range m.k8sNamespaces {
+				if c, ok := msg.counts[m.k8sNamespaces[i].Name]; ok {
+					m.k8sNamespaces[i].PodCount = c[0]
+					m.k8sNamespaces[i].DeployCount = c[1]
+					m.k8sNamespaces[i].STSCount = c[2]
+					m.k8sNamespaces[i].DSCount = c[3]
+				}
+			}
+		}
+		return m, nil
+
+	case fetchK8sWorkloadsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sWorkloads = msg.workloads
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sPodsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sPodList = msg.pods
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sPodDetailMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sPodDetail = msg.detail
+			m.view = viewK8sPodDetail
+			m.flash = ""
+		}
+		return m, nil
+
+	case fetchK8sPodLogsMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.k8sPodLogs = msg.entries
+			m.k8sPodLogCursor = 0
+			m.view = viewK8sPodLogs
+			m.flash = ""
+			// Start streaming
+			pods := m.k8sPodList
+			var podNames []string
+			for _, p := range pods {
+				podNames = append(podNames, p.Name)
+			}
+			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+			return m, m.streamK8sPodLogs(ns, podNames)
+		}
+		return m, nil
+
+	case k8sPodLogBatchMsg:
+		// Prepend new entries (newest first)
+		wasAtTop := m.k8sPodLogCursor == 0
+		m.k8sPodLogs = append(msg.entries, m.k8sPodLogs...)
+		// Cap at 500 lines (trim oldest from end)
+		if len(m.k8sPodLogs) > 500 {
+			m.k8sPodLogs = m.k8sPodLogs[:500]
+		}
+		// Auto-scroll: keep cursor at top (newest) if user was there
+		if wasAtTop {
+			m.k8sPodLogCursor = 0
+		} else {
+			// Shift cursor down to keep the same entry selected
+			m.k8sPodLogCursor += len(msg.entries)
+		}
+		// Re-subscribe
+		if m.k8sPodLogChan != nil {
+			return m, m.listenForLogLines()
+		}
+		return m, nil
+
+	case k8sPodLogDoneMsg:
+		m.k8sPodLogChan = nil
+		m.k8sPodLogStreaming = false
+		return m, nil
+
+	case fetchAzureAKSMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureAKSClusters = msg.clusters
+			m.flash = ""
+			// Auto-detect transitioning clusters and start polling
+			for _, c := range msg.clusters {
+				if strings.ToLower(c.ProvisioningState) != "succeeded" {
+					key := "aks/" + c.Name
+					if _, exists := m.azureTransitions[key]; !exists {
+						if m.azureTransitions == nil {
+							m.azureTransitions = make(map[string]azureTransition)
+						}
+						m.azureTransitions[key] = azureTransition{
+							ResourceType: "aks",
+							ResourceName: c.Name,
+							ResourceGroup: c.ResourceGroup,
+							Action:       strings.ToLower(c.ProvisioningState),
+							Display:      c.ProvisioningState,
+							TargetState:  "succeeded",
+							Confirmed:    true, // already transitioning
+						}
+					}
+				}
+			}
+			if len(m.azureTransitions) > 0 && !m.azurePolling {
+				m.azurePolling = true
+				return m, m.startAzurePoll()
+			}
+		}
+		return m, nil
+
+	case fetchAzureActivityLogMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Activity log: %v", msg.err)
+			m.flashError = true
+		} else {
+			m.azureActivityLog = msg.entries
+			m.flash = ""
 		}
 		return m, nil
 
@@ -587,6 +1148,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == viewHostList {
 			return m, tea.Batch(m.startProbe(), m.tickCmd())
 		}
+		if m.view == viewAzureSubList {
+			return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -642,6 +1206,38 @@ func (m Model) View() string {
 		return m.renderSELinuxDenials()
 	case viewSecurityAudit:
 		return m.renderAuditSummary()
+	case viewAzureSubList:
+		return m.renderAzureSubList()
+	case viewAzureResourcePicker:
+		return m.renderAzureResourcePicker()
+	case viewAzureVMList:
+		return m.renderAzureVMList()
+	case viewAzureVMDetail:
+		return m.renderAzureVMDetail()
+	case viewAzureAKSList:
+		return m.renderAzureAKSList()
+	case viewAzureAKSDetail:
+		return m.renderAzureAKSDetail()
+	case viewK8sClusterList:
+		return m.renderK8sClusterList()
+	case viewK8sContextList:
+		return m.renderK8sContextList()
+	case viewK8sResourcePicker:
+		return m.renderK8sResourcePicker()
+	case viewK8sNodeList:
+		return m.renderK8sNodeList()
+	case viewK8sNodeDetail:
+		return m.renderK8sNodeDetail()
+	case viewK8sNamespaceList:
+		return m.renderK8sNamespaceList()
+	case viewK8sWorkloadList:
+		return m.renderK8sWorkloadList()
+	case viewK8sPodList:
+		return m.renderK8sPodList()
+	case viewK8sPodDetail:
+		return m.renderK8sPodDetail()
+	case viewK8sPodLogs:
+		return m.renderK8sPodLogs()
 	}
 	return ""
 }
