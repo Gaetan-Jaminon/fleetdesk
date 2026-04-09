@@ -119,12 +119,15 @@ func ParseGraphAKS(data []byte) ([]AKSDetail, error) {
 	return clusters, nil
 }
 
-// AKSAction performs an AKS action (start, stop) asynchronously.
+// AKSAction performs an AKS action (start, stop, delete) asynchronously.
 func AKSAction(m *Manager, clusterName, rgName, subName, tenantID, action string, logger *slog.Logger) error {
 	start := time.Now()
 	logger.Debug("azure aks action start", "action", action, "cluster", clusterName, "rg", rgName)
 
 	args := []string{"aks", action, "--name", clusterName, "--resource-group", rgName, "--subscription", subName, "--no-wait"}
+	if action == "delete" {
+		args = append(args, "--yes")
+	}
 	if tenantID != "" {
 		args = append(args, "--tenant", tenantID)
 	}
@@ -159,7 +162,7 @@ func FetchAKSPowerStates(m *Manager, subID string, clusterNames []string, logger
 
 	query := fmt.Sprintf("Resources | where type =~ 'microsoft.containerservice/managedclusters' "+
 		"| where name in~ (%s) "+
-		"| project name, provisioningState = properties.provisioningState", nameFilter)
+		"| project name, provisioningState = properties.provisioningState, powerState = properties.powerState.code", nameFilter)
 
 	args := []string{"graph", "query", "-q", query, "--subscriptions", subID, "--first", "1000"}
 	data, err := m.RunCommand(args...)
@@ -176,12 +179,14 @@ func FetchAKSPowerStates(m *Manager, subID string, clusterNames []string, logger
 	return states, nil
 }
 
-// ParseAKSPowerStates parses Resource Graph output into a cluster name → provisioning state map.
+// ParseAKSPowerStates parses Resource Graph output into a cluster name → power state map.
+// Uses powerState (Running/Stopped) for start/stop tracking, falls back to provisioningState.
 func ParseAKSPowerStates(data []byte) (map[string]string, error) {
 	var result struct {
 		Data []struct {
 			Name              string `json:"name"`
 			ProvisioningState string `json:"provisioningState"`
+			PowerState        string `json:"powerState"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -190,7 +195,11 @@ func ParseAKSPowerStates(data []byte) (map[string]string, error) {
 
 	states := make(map[string]string, len(result.Data))
 	for _, r := range result.Data {
-		states[strings.ToLower(r.Name)] = strings.ToLower(r.ProvisioningState)
+		state := r.PowerState
+		if state == "" {
+			state = r.ProvisioningState
+		}
+		states[strings.ToLower(r.Name)] = strings.ToLower(state)
 	}
 	return states, nil
 }

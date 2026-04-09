@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,33 +35,42 @@ type fetchAzureVMDetailMsg struct {
 	err    error
 }
 
-type azureActionMsg struct {
-	resourceType string // "vm" or "aks"
+type actionResultMsg struct {
+	resourceType string
 	name         string
 	action       string
 	err          error
 }
 
-// azureTransition tracks an in-flight Azure resource action for optimistic UI.
-type azureTransition struct {
-	ResourceType  string // "vm" or "aks"
+// transition tracks an in-flight resource action for optimistic UI.
+type transition struct {
+	ResourceType  string // "vm", "aks", "k8s-pod", "k8s-context"
 	ResourceName  string
-	ResourceGroup string
-	Action        string // "start", "deallocate", "restart", "stop"
-	Display       string // "starting...", "deallocating...", or real state from poll
-	TargetState   string // "running", "deallocated", "succeeded"
-	Confirmed     bool   // true once Azure reports a transitioning state (prevents stale target match)
+	ResourceGroup string // Azure only
+	Namespace     string // K8s only
+	Action        string // "start", "deallocate", "restart", "stop", "delete"
+	Display       string // "starting...", "deleting...", or real state from poll
+	TargetState   string // "running", "deallocated", "succeeded"; empty for oneshot
+	Confirmed     bool   // true once transitioning state seen (poll strategy only)
+	PollCount     int    // number of poll cycles completed
+	Strategy      string // "poll" or "oneshot"
 }
 
-type azurePollMsg time.Time
+type pollTickMsg time.Time
 
-type azurePollResultMsg struct {
-	states map[string]string // "type/name" (lowercase name) → power state
+type pollResultMsg struct {
+	states map[string]string
 }
 
-type azureTransitionExpireMsg struct {
-	key string // "vm/myvm" or "aks/mycluster"
+type transitionExpireMsg struct {
+	key string
 }
+
+type fetchK8sPodsRefreshMsg struct {
+	namespace string
+	workload  string
+}
+
 
 type fetchAzureAKSMsg struct {
 	clusters []azure.AKSDetail
@@ -234,9 +244,9 @@ type Model struct {
 	showAzureVMDetail  bool
 	azureActivityLog    []azure.ActivityLogEntry
 	azureActivityCursor int
-	pendingAzureTransition *azureTransition           // pending action for confirm dispatch
-	azureTransitions      map[string]azureTransition // overlay: "type/name" → in-flight action
-	azurePolling          bool                       // true if a poll chain is active
+	pendingTransition *transition           // pending action for confirm dispatch
+	transitions       map[string]transition // overlay: "type/name" → in-flight action
+	polling           bool                  // true if a poll chain is active
 
 	// azure AKS list
 	azureAKSClusters []azure.AKSDetail
@@ -255,7 +265,6 @@ type Model struct {
 	k8sResourceCounts  k8s.K8sResourceCounts
 	k8sResourceErrors  []string
 	k8sCountsLoaded          bool
-	pendingK8sDeleteContext  string
 	k8sNodes        []k8s.K8sNode
 	k8sNodeCursor   int
 	k8sNodeDetail   k8s.K8sNodeDetail
@@ -284,6 +293,8 @@ type Model struct {
 	k8sPodLogAllContainers bool // true = show sidecar logs too
 	k8sPodLogMinLevel      int  // 0=all, 1=Info+, 2=Warn+, 3=Error+
 	showK8sLogDetail      bool
+	k8sLogDetailScroll    int  // scroll offset for log detail view
+	k8sPodLogFromDetail   bool // true when logs opened from pod detail (Esc returns to detail)
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -504,6 +515,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.azureVMDetail.PrivateIP == "" {
 						m.azureVMDetail.PrivateIP = listVM.PrivateIP
 					}
+					if m.azureVMDetail.PowerState == "" {
+						m.azureVMDetail.PowerState = listVM.PowerState
+					}
 					break
 				}
 			}
@@ -513,46 +527,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case azureActionMsg:
-		if m.azureTransitions == nil {
-			m.azureTransitions = make(map[string]azureTransition)
+	case actionResultMsg:
+		if m.transitions == nil {
+			m.transitions = make(map[string]transition)
 		}
 		key := msg.resourceType + "/" + msg.name
+		t, exists := m.transitions[key]
+
 		if msg.err != nil {
-			// Action failed — update overlay to show error, schedule removal
-			m.azureTransitions[key] = azureTransition{
+			// Action failed — show error overlay, schedule removal
+			m.transitions[key] = transition{
 				ResourceType: msg.resourceType,
 				ResourceName: msg.name,
 				Action:       msg.action,
 				Display:      msg.action + " failed",
+				Strategy:     t.Strategy,
 			}
-			return m, expireAzureTransition(key)
+			return m, expireTransition(key)
 		}
-		// Action succeeded — overlay already set by confirm handler, poll already started
+
+		// For oneshot: action succeeded, remove transition immediately + refresh
+		if exists && t.Strategy == "oneshot" {
+			delete(m.transitions, key)
+			return m, m.refreshAfterAction(t)
+		}
+
+		// For poll: overlay already set, poll already started — nothing to do
 		return m, nil
 
-	case azurePollMsg:
-		if len(m.azureTransitions) == 0 {
+	case pollTickMsg:
+		if len(m.transitions) == 0 {
 			return m, nil // no transitions to track
 		}
-		return m, m.pollAzureStates()
+		return m, m.pollStates()
 
-	case azurePollResultMsg:
-		if m.azureTransitions == nil {
+	case pollResultMsg:
+		if m.transitions == nil {
 			return m, nil
 		}
 		changed := false
-		for tKey, t := range m.azureTransitions {
+		for tKey, t := range m.transitions {
+			t.PollCount++
 			lookupName := strings.ToLower(t.ResourceName)
 			lookupKey := t.ResourceType + "/" + lookupName
+			m.transitions[tKey] = t // persist PollCount increment
+			if _, ok := msg.states[lookupKey]; !ok && t.TargetState == "gone" && t.PollCount >= 2 {
+				// Resource no longer in poll results — deleted
+				delete(m.transitions, tKey)
+				changed = true
+				continue
+			}
 			if state, ok := msg.states[lookupKey]; ok {
 				if isAzureTransitioningState(state) {
 					// Azure confirms the action is in progress
 					t.Confirmed = true
 					t.Display = state
-					m.azureTransitions[tKey] = t
-				} else if state == t.TargetState && t.Confirmed {
-					// Target reached and we've seen a transitioning state first
+					m.transitions[tKey] = t
+				} else if state == t.TargetState && (t.Confirmed || t.PollCount >= 3) {
+					// Target reached (either saw transitioning state, or 3+ polls passed)
 					switch t.ResourceType {
 					case "vm":
 						for i := range m.azureVMs {
@@ -565,36 +597,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Don't update PowerState here — poll returns provisioningState.
 						// The list refresh below will fetch the real PowerState.
 					}
-					delete(m.azureTransitions, tKey)
+					delete(m.transitions, tKey)
 					changed = true
 				}
 			}
 		}
-		// Refresh list data if any transitions completed
+		// Refresh AKS list if any transitions completed (VMs are updated in-place above)
 		var cmds []tea.Cmd
 		if changed {
-			cmds = append(cmds, m.fetchAzureVMs())
 			cmds = append(cmds, m.fetchAzureAKSClusters())
 		}
 		// Continue polling if transitions remain, otherwise stop
-		if len(m.azureTransitions) > 0 {
-			cmds = append(cmds, m.startAzurePoll())
+		if len(m.transitions) > 0 {
+			cmds = append(cmds, m.startPoll())
 		} else {
-			m.azurePolling = false
+			m.polling = false
 		}
 		if len(cmds) > 0 {
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil
 
-	case azureTransitionExpireMsg:
-		if m.azureTransitions != nil {
-			delete(m.azureTransitions, msg.key)
-			if len(m.azureTransitions) == 0 {
-				m.azurePolling = false
+	case transitionExpireMsg:
+		if m.transitions != nil {
+			delete(m.transitions, msg.key)
+			if len(m.transitions) == 0 {
+				m.polling = false
 			}
 		}
 		return m, nil
+
+	case fetchK8sPodsRefreshMsg:
+		return m, m.fetchK8sPods(msg.namespace, msg.workload)
 
 	case k8sClusterProbeMsg:
 		if msg.index < len(m.k8sClusters) {
@@ -616,6 +650,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.k8sContexts = msg.contexts
 			m.flash = ""
+			// Auto-select if only one context
+			if len(msg.contexts) == 1 {
+				m.selectedK8sContext = msg.contexts[0].Name
+				m.k8sResourceCursor = 0
+				m.k8sCountsLoaded = false
+				m.view = viewK8sResourcePicker
+				return m, m.fetchK8sResourceCounts()
+			}
 		}
 		return m, nil
 
@@ -698,6 +740,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashError = true
 		} else {
 			m.k8sPodList = msg.pods
+			// Sort pods by name for stable ordering
+			sort.Slice(m.k8sPodList, func(i, j int) bool {
+				return m.k8sPodList[i].Name < m.k8sPodList[j].Name
+			})
 			m.flash = ""
 		}
 		return m, nil
@@ -770,25 +816,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, c := range msg.clusters {
 				if strings.ToLower(c.ProvisioningState) != "succeeded" {
 					key := "aks/" + c.Name
-					if _, exists := m.azureTransitions[key]; !exists {
-						if m.azureTransitions == nil {
-							m.azureTransitions = make(map[string]azureTransition)
+					if _, exists := m.transitions[key]; !exists {
+						if m.transitions == nil {
+							m.transitions = make(map[string]transition)
 						}
-						m.azureTransitions[key] = azureTransition{
-							ResourceType: "aks",
-							ResourceName: c.Name,
+						// Determine target based on the transitioning action
+						target := "running" // default for starting/creating
+						action := strings.ToLower(c.ProvisioningState)
+						if action == "stopping" {
+							target = "stopped"
+						} else if action == "deleting" {
+							target = "gone"
+						}
+						m.transitions[key] = transition{
+							ResourceType:  "aks",
+							ResourceName:  c.Name,
 							ResourceGroup: c.ResourceGroup,
-							Action:       strings.ToLower(c.ProvisioningState),
-							Display:      c.ProvisioningState,
-							TargetState:  "succeeded",
-							Confirmed:    true, // already transitioning
+							Action:        action,
+							Display:       c.ProvisioningState,
+							TargetState:   target,
+							Confirmed:     true,
+							Strategy:      "poll",
 						}
 					}
 				}
 			}
-			if len(m.azureTransitions) > 0 && !m.azurePolling {
-				m.azurePolling = true
-				return m, m.startAzurePoll()
+			if len(m.transitions) > 0 && !m.polling {
+				m.polling = true
+				return m, m.startPoll()
 			}
 		}
 		return m, nil
@@ -1151,6 +1206,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == viewAzureSubList {
 			return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
 		}
+		if m.view == viewAzureAKSList {
+			return m, tea.Batch(m.fetchAzureAKSClusters(), m.tickCmd())
+		}
+		if m.view == viewK8sPodList {
+			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+			w := m.k8sWorkloads[m.selectedK8sWorkload]
+			return m, tea.Batch(m.fetchK8sPods(ns, w.Name), m.tickCmd())
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -1158,6 +1221,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// refreshAfterAction dispatches list refresh commands after a oneshot action completes.
+func (m Model) refreshAfterAction(t transition) tea.Cmd {
+	switch t.ResourceType {
+	case "k8s-pod":
+		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+		w := m.k8sWorkloads[m.selectedK8sWorkload]
+		// Immediate refresh + delayed refresh (3s) to catch pod termination
+		return tea.Batch(
+			m.fetchK8sPods(ns, w.Name),
+			tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+				return fetchK8sPodsRefreshMsg{namespace: ns, workload: w.Name}
+			}),
+		)
+	case "k8s-context":
+		return m.fetchK8sContexts(m.k8sClusters[m.selectedK8sCluster].Name)
+	case "aks":
+		return m.fetchAzureAKSClusters()
+	default:
+		return nil
+	}
 }
 
 func (m Model) View() string {

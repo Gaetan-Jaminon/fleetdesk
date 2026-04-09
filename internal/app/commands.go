@@ -1509,7 +1509,7 @@ func (m Model) executeAzureVMAction(vmName, rgName, action string) tea.Cmd {
 	logger := m.logger
 	return func() tea.Msg {
 		err := azure.VMAction(am, vmName, rgName, sub.Name, sub.TenantID, action, logger)
-		return azureActionMsg{resourceType: "vm", name: vmName, action: action, err: err}
+		return actionResultMsg{resourceType: "vm", name: vmName, action: action, err: err}
 	}
 }
 
@@ -1520,7 +1520,42 @@ func (m Model) executeAzureAKSAction(clusterName, rgName, action string) tea.Cmd
 	logger := m.logger
 	return func() tea.Msg {
 		err := azure.AKSAction(am, clusterName, rgName, sub.Name, sub.TenantID, action, logger)
-		return azureActionMsg{resourceType: "aks", name: clusterName, action: action, err: err}
+		return actionResultMsg{resourceType: "aks", name: clusterName, action: action, err: err}
+	}
+}
+
+// executeK8sPodAction executes a kubectl pod action (delete).
+func (m Model) executeK8sPodAction(namespace, podName, action string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		var err error
+		switch action {
+		case "delete":
+			_, err = km.RunCommand("delete", "pod", podName, "-n", namespace, "--context", ctxName, "--wait=false")
+		}
+		if err != nil {
+			logger.Error("k8s pod action failed", "pod", podName, "action", action, "err", err)
+		} else {
+			logger.Debug("k8s pod action complete", "pod", podName, "action", action)
+		}
+		return actionResultMsg{resourceType: "k8s-pod", name: podName, action: action, err: err}
+	}
+}
+
+// executeK8sContextDelete deletes a kubectl context.
+func (m Model) executeK8sContextDelete(ctxName string) tea.Cmd {
+	km := m.k8s
+	logger := m.logger
+	return func() tea.Msg {
+		_, err := km.RunCommand("config", "delete-context", ctxName)
+		if err != nil {
+			logger.Error("k8s context delete failed", "context", ctxName, "err", err)
+			return actionResultMsg{resourceType: "k8s-context", name: ctxName, action: "delete", err: fmt.Errorf("delete context %s: %w", ctxName, err)}
+		}
+		logger.Debug("k8s context deleted", "context", ctxName)
+		return actionResultMsg{resourceType: "k8s-context", name: ctxName, action: "delete", err: nil}
 	}
 }
 
@@ -1536,22 +1571,25 @@ func (m Model) fetchAzureActivityLog(rgName string) tea.Cmd {
 	}
 }
 
-// startAzurePoll schedules the next Azure resource state poll in 5 seconds.
-func (m Model) startAzurePoll() tea.Cmd {
+// startPoll schedules the next resource state poll in 5 seconds.
+func (m Model) startPoll() tea.Cmd {
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-		return azurePollMsg(t)
+		return pollTickMsg(t)
 	})
 }
 
-// pollAzureStates queries Resource Graph for power states of transitioning Azure resources.
-func (m Model) pollAzureStates() tea.Cmd {
+// pollStates queries Resource Graph for power states of transitioning resources.
+func (m Model) pollStates() tea.Cmd {
 	am := m.azure
 	sub := m.azureSubs[m.selectedAzureSub]
 	logger := m.logger
 
-	// Collect transitioning names by type
+	// Collect transitioning names by type (only poll-strategy transitions)
 	var vmNames, aksNames []string
-	for _, t := range m.azureTransitions {
+	for _, t := range m.transitions {
+		if t.Strategy != "poll" {
+			continue
+		}
 		switch t.ResourceType {
 		case "vm":
 			vmNames = append(vmNames, t.ResourceName)
@@ -1600,14 +1638,14 @@ func (m Model) pollAzureStates() tea.Cmd {
 		}
 
 		wg.Wait()
-		return azurePollResultMsg{states: allStates}
+		return pollResultMsg{states: allStates}
 	}
 }
 
-// expireAzureTransition removes a failed transition after a delay.
-func expireAzureTransition(key string) tea.Cmd {
+// expireTransition removes a failed transition after a delay.
+func expireTransition(key string) tea.Cmd {
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-		return azureTransitionExpireMsg{key: key}
+		return transitionExpireMsg{key: key}
 	})
 }
 

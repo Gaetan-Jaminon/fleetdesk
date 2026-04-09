@@ -117,7 +117,7 @@ func (m Model) renderAzureAKSList() string {
 			}
 		}
 		// Account for transition overlay display strings
-		for k, t := range m.azureTransitions {
+		for k, t := range m.transitions {
 			if strings.HasPrefix(k, "aks/") && len(t.Display) > provCol {
 				provCol = len(t.Display)
 			}
@@ -176,7 +176,7 @@ func (m Model) renderAzureAKSList() string {
 
 			status := c.PowerState
 			prov := c.ProvisioningState
-			if t, ok := m.azureTransitions["aks/"+c.Name]; ok {
+			if t, ok := m.transitions["aks/"+c.Name]; ok {
 				prov = t.Display
 			}
 			// Pad before coloring so ANSI codes don't affect width
@@ -235,6 +235,7 @@ func (m Model) renderAzureAKSList() string {
 			{"Enter", "Detail"},
 			{"s", "Start"},
 			{"o", "Stop"},
+			{"d", "Delete"},
 			{"/", "Filter"},
 			{sortLabel, "Sort"},
 			{"r", "Refresh"},

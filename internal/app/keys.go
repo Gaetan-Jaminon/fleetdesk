@@ -162,15 +162,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// confirmed -- execute
 		m.showConfirm = false
 
-		// Azure resource action (VM or AKS)
-		if m.pendingAzureTransition != nil {
-			t := m.pendingAzureTransition
-			m.pendingAzureTransition = nil
+		if m.pendingTransition != nil {
+			t := m.pendingTransition
+			m.pendingTransition = nil
 			key := t.ResourceType + "/" + t.ResourceName
-			if m.azureTransitions == nil {
-				m.azureTransitions = make(map[string]azureTransition)
+			if m.transitions == nil {
+				m.transitions = make(map[string]transition)
 			}
-			m.azureTransitions[key] = *t
+			m.transitions[key] = *t
 			m.flash = ""
 			var execCmd tea.Cmd
 			switch t.ResourceType {
@@ -178,31 +177,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				execCmd = m.executeAzureVMAction(t.ResourceName, t.ResourceGroup, t.Action)
 			case "aks":
 				execCmd = m.executeAzureAKSAction(t.ResourceName, t.ResourceGroup, t.Action)
+			case "k8s-pod":
+				execCmd = m.executeK8sPodAction(t.Namespace, t.ResourceName, t.Action)
+			case "k8s-context":
+				execCmd = m.executeK8sContextDelete(t.ResourceName)
 			}
-			if m.azurePolling {
-				return m, execCmd
+			// Only start poll chain for poll-strategy transitions
+			if t.Strategy == "poll" && !m.polling {
+				m.polling = true
+				return m, tea.Batch(execCmd, m.startPoll())
 			}
-			m.azurePolling = true
-			return m, tea.Batch(execCmd, m.startAzurePoll())
-		}
-
-		// K8s context delete
-		if m.pendingK8sDeleteContext != "" {
-			ctxName := m.pendingK8sDeleteContext
-			m.pendingK8sDeleteContext = ""
-			km := m.k8s
-			clusterName := m.k8sClusters[m.selectedK8sCluster].Name
-			logger := m.logger
-			return m, func() tea.Msg {
-				_, err := km.RunCommand("config", "delete-context", ctxName)
-				if err != nil {
-					return fetchK8sContextsMsg{err: fmt.Errorf("delete context %s: %w", ctxName, err)}
-				}
-				logger.Debug("k8s context deleted", "context", ctxName)
-				// Refresh context list
-				contexts, err := k8s.MatchContexts(km, clusterName, logger)
-				return fetchK8sContextsMsg{contexts: contexts, err: err}
-			}
+			return m, execCmd
 		}
 
 		h := m.hosts[m.selectedHost]
@@ -1689,33 +1674,48 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredAzureVMs()
 		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
 			vm := filtered[m.azureVMCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", vm.Name)
-			m.pendingAzureTransition = &azureTransition{
-				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
-				Action: "start", Display: "starting...", TargetState: "running",
+			if vm.PowerState == "running" {
+				m.flash = fmt.Sprintf("%s is already running", vm.Name)
+			} else {
+				m.showConfirm = true
+				m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", vm.Name)
+				m.pendingTransition = &transition{
+					ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+					Action: "start", Display: "starting...", TargetState: "running",
+					Strategy: "poll",
+				}
 			}
 		}
 	case "o":
 		filtered := m.filteredAzureVMs()
 		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
 			vm := filtered[m.azureVMCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("deallocate %s? [Y/n]", vm.Name)
-			m.pendingAzureTransition = &azureTransition{
-				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
-				Action: "deallocate", Display: "deallocating...", TargetState: "deallocated",
+			if vm.PowerState == "deallocated" {
+				m.flash = fmt.Sprintf("%s is already deallocated", vm.Name)
+			} else {
+				m.showConfirm = true
+				m.confirmMessage = fmt.Sprintf("deallocate %s? [Y/n]", vm.Name)
+				m.pendingTransition = &transition{
+					ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+					Action: "deallocate", Display: "deallocating...", TargetState: "deallocated",
+					Strategy: "poll",
+				}
 			}
 		}
 	case "t":
 		filtered := m.filteredAzureVMs()
 		if len(filtered) > 0 && m.azureVMCursor < len(filtered) {
 			vm := filtered[m.azureVMCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("restart %s? [Y/n]", vm.Name)
-			m.pendingAzureTransition = &azureTransition{
-				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
-				Action: "restart", Display: "restarting...", TargetState: "running",
+			if vm.PowerState != "running" {
+				m.flash = fmt.Sprintf("%s is not running (state: %s)", vm.Name, vm.PowerState)
+			} else {
+				m.showConfirm = true
+				m.confirmMessage = fmt.Sprintf("restart %s? [Y/n]", vm.Name)
+				m.pendingTransition = &transition{
+					ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+					Action: "restart", Display: "restarting...", TargetState: "running",
+					Strategy: "poll",
+				}
 			}
 		}
 	case "/":
@@ -1762,6 +1762,11 @@ func (m Model) handleAzureVMDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = "Loading activity log..."
 		m.flashError = false
 		return m, m.fetchAzureActivityLog(m.azureVMDetail.ResourceGroup)
+	case "r":
+		vm := m.azureVMDetail
+		m.flash = "Refreshing..."
+		m.flashError = false
+		return m, tea.Batch(m.fetchAzureVMDetail(vm.Name, vm.ResourceGroup), m.fetchAzureActivityLog(vm.ResourceGroup))
 	case "esc":
 		m.showAzureVMDetail = false
 		m.azureActivityLog = nil
@@ -1801,9 +1806,10 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			c := filtered[m.azureAKSCursor]
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", c.Name)
-			m.pendingAzureTransition = &azureTransition{
+			m.pendingTransition = &transition{
 				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
-				Action: "start", Display: "starting...", TargetState: "succeeded",
+				Action: "start", Display: "starting...", TargetState: "running",
+				Strategy: "poll",
 			}
 		}
 	case "o":
@@ -1812,9 +1818,22 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			c := filtered[m.azureAKSCursor]
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("stop %s? [Y/n]", c.Name)
-			m.pendingAzureTransition = &azureTransition{
+			m.pendingTransition = &transition{
 				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
-				Action: "stop", Display: "stopping...", TargetState: "succeeded",
+				Action: "stop", Display: "stopping...", TargetState: "stopped",
+				Strategy: "poll",
+			}
+		}
+	case "d":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("DELETE cluster %s? This is irreversible! [Y/n]", c.Name)
+			m.pendingTransition = &transition{
+				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
+				Action: "delete", Display: "deleting...", TargetState: "gone",
+				Strategy: "poll",
 			}
 		}
 	case "/":
@@ -1950,7 +1969,11 @@ func (m Model) handleK8sContextListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ctx := m.k8sContexts[m.k8sContextCursor]
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("delete context %s? [Y/n]", ctx.Name)
-			m.pendingK8sDeleteContext = ctx.Name
+			m.pendingTransition = &transition{
+				ResourceType: "k8s-context", ResourceName: ctx.Name,
+				Action: "delete", Display: "deleting...",
+				Strategy: "oneshot",
+			}
 		}
 	case "r":
 		m.k8sContexts = nil
@@ -2250,6 +2273,7 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.k8sPodLogStreaming = false
 		m.k8sPodLogAllContainers = false
 		m.k8sPodLogMinLevel = 0
+		m.k8sPodLogFromDetail = false
 		m.filterText = ""
 		m.filterActive = false
 		m.sortColumn = 0
@@ -2257,6 +2281,18 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = fmt.Sprintf("Loading logs for %s...", wl.Name)
 		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
 		return m, m.fetchK8sPodLogs(ns, podNames)
+	case "d":
+		filtered := m.filteredK8sPodList()
+		if len(filtered) > 0 && m.k8sPodCursor < len(filtered) {
+			p := filtered[m.k8sPodCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("delete pod %s? [Y/n]", p.Name)
+			m.pendingTransition = &transition{
+				ResourceType: "k8s-pod", ResourceName: p.Name,
+				Namespace:    p.Namespace, Action: "delete",
+				Display:      "deleting...", Strategy: "oneshot",
+			}
+		}
 	case "r":
 		m.k8sPodList = nil
 		m.k8sPodCursor = 0
@@ -2283,6 +2319,21 @@ func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.k8sPodContainerCursor++
 	case "g":
 		m.k8sPodContainerCursor = 0
+	case "l":
+		if m.k8sPodDetail.Name != "" {
+			m.k8sPodLogs = nil
+			m.k8sPodLogCursor = 0
+			m.k8sPodLogStreaming = false
+			m.k8sPodLogAllContainers = false
+			m.k8sPodLogMinLevel = 0
+			m.k8sPodLogFromDetail = true
+			m.filterText = ""
+			m.filterActive = false
+			m.sortColumn = 0
+			m.flash = fmt.Sprintf("Loading logs for %s...", m.k8sPodDetail.Name)
+			ns := m.k8sPodDetail.Namespace
+			return m, m.fetchK8sPodLogs(ns, []string{m.k8sPodDetail.Name})
+		}
 	case "esc":
 		m.view = viewK8sPodList
 	case "q":
@@ -2292,9 +2343,21 @@ func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Detail view: any key closes it
+	// Detail view: scroll or close
 	if m.showK8sLogDetail {
-		m.showK8sLogDetail = false
+		switch msg.String() {
+		case "up", "k":
+			if m.k8sLogDetailScroll > 0 {
+				m.k8sLogDetailScroll--
+			}
+		case "down", "j":
+			m.k8sLogDetailScroll++
+		case "g":
+			m.k8sLogDetailScroll = 0
+		default:
+			m.showK8sLogDetail = false
+			m.k8sLogDetailScroll = 0
+		}
 		return m, nil
 	}
 
@@ -2303,6 +2366,7 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredK8sPodLogs()
 		if len(filtered) > 0 && m.k8sPodLogCursor < len(filtered) {
 			m.showK8sLogDetail = true
+			m.k8sLogDetailScroll = 0
 		}
 	case "up", "k":
 		if m.k8sPodLogCursor > 0 {
@@ -2365,7 +2429,12 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.k8sPodLogCancel()
 			}
 			m.k8sPodLogStreaming = false
-			m.view = viewK8sPodList
+			if m.k8sPodLogFromDetail {
+				m.view = viewK8sPodDetail
+				m.k8sPodLogFromDetail = false
+			} else {
+				m.view = viewK8sPodList
+			}
 			m.sortColumn = 0
 			m.filterText = ""
 			m.filterActive = false
