@@ -7,13 +7,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func hasAzureResourceError(errs []string, prefix string) bool {
-	for _, e := range errs {
-		if strings.HasPrefix(e, prefix) {
-			return true
-		}
+func hasAzureResourceError(err error, prefix string) bool {
+	if err == nil {
+		return false
 	}
-	return false
+	return strings.Contains(err.Error(), prefix)
 }
 
 func (m Model) renderAzureResourcePicker() string {
@@ -53,7 +51,7 @@ func (m Model) renderAzureResourcePicker() string {
 
 		countStr := "..."
 		if m.azureCountsLoaded {
-			if hasAzureResourceError(m.azureResourceErrors, errorPrefixes[i]) {
+			if hasAzureResourceError(m.azureResourceErr, errorPrefixes[i]) {
 				countStr = "err"
 			} else {
 				countStr = fmt.Sprintf("%d", r.count)

@@ -24,7 +24,7 @@ func ParseJSONCount(data []byte) int {
 
 // FetchResourceCounts fetches VM, RG, and AKS counts using a single Resource Graph query.
 // Falls back to 3 separate az CLI calls if subID is empty or graph fails.
-func FetchResourceCounts(m *Manager, subName, subID, tenantID string, logger *slog.Logger) (AzureResourceCounts, []string) {
+func FetchResourceCounts(m *Manager, subName, subID, tenantID string, logger *slog.Logger) (AzureResourceCounts, error) {
 	start := time.Now()
 	logger.Debug("azure resource counts start", "subscription", subName)
 
@@ -81,7 +81,7 @@ func fetchCountsGraph(m *Manager, subName, subID string, logger *slog.Logger, st
 }
 
 // fetchCountsLegacy uses 3 separate az CLI calls with goroutines (slow fallback).
-func fetchCountsLegacy(m *Manager, subName, tenantID string, logger *slog.Logger, start time.Time) (AzureResourceCounts, []string) {
+func fetchCountsLegacy(m *Manager, subName, tenantID string, logger *slog.Logger, start time.Time) (AzureResourceCounts, error) {
 	logger.Debug("azure resource counts legacy (3 az calls)", "subscription", subName)
 
 	type result struct {
@@ -143,5 +143,8 @@ func fetchCountsLegacy(m *Manager, subName, tenantID string, logger *slog.Logger
 	logger.Debug("azure resource counts complete (legacy)", "subscription", subName,
 		"vms", counts.VMs, "rgs", counts.RGs, "aks", counts.AKS,
 		"total_elapsed", time.Since(start))
-	return counts, errs
+	if len(errs) > 0 {
+		return counts, fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return counts, nil
 }

@@ -1475,8 +1475,8 @@ func (m Model) fetchAzureResourceCounts() tea.Cmd {
 	sub := m.azureSubs[m.selectedAzureSub]
 	logger := m.logger
 	return func() tea.Msg {
-		counts, errs := azure.FetchResourceCounts(am, sub.Name, sub.ID, sub.TenantID, logger)
-		return azureResourceCountsMsg{counts: counts, errs: errs}
+		counts, err := azure.FetchResourceCounts(am, sub.Name, sub.ID, sub.TenantID, logger)
+		return azureResourceCountsMsg{counts: counts, err: err}
 	}
 }
 

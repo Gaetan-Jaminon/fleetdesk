@@ -76,6 +76,13 @@ func FetchVMs(m *Manager, subName, subID, tenantID string, logger *slog.Logger) 
 
 	wg.Wait()
 
+	if vms != nil && len(vms) == 1000 {
+		logger.Warn("resource graph query returned 1000 results, results may be truncated", "query", "vms")
+	}
+	if nicMap != nil && len(nicMap) == 1000 {
+		logger.Warn("resource graph query returned 1000 results, results may be truncated", "query", "nics")
+	}
+
 	if vmErr != nil {
 		logger.Error("azure graph vm query failed, falling back", "err", vmErr)
 		return fetchVMsLegacy(m, subName, tenantID, logger, start)
@@ -378,11 +385,17 @@ func FetchVMPowerStates(m *Manager, subID string, vmNames []string, logger *slog
 	logger.Debug("azure poll vm states start", "count", len(vmNames))
 
 	// Build name filter: name in~ ('vm-01','vm-02')
-	quoted := make([]string, len(vmNames))
-	for i, n := range vmNames {
-		quoted[i] = "'" + n + "'"
+	// Skip names containing single quotes to prevent KQL injection.
+	var safe []string
+	for _, n := range vmNames {
+		if !strings.ContainsRune(n, '\'') {
+			safe = append(safe, "'"+n+"'")
+		}
 	}
-	nameFilter := strings.Join(quoted, ",")
+	if len(safe) == 0 {
+		return nil, nil
+	}
+	nameFilter := strings.Join(safe, ",")
 
 	query := fmt.Sprintf("Resources | where type =~ 'microsoft.compute/virtualMachines' "+
 		"| where name in~ (%s) "+
@@ -423,14 +436,10 @@ func ParseVMPowerStates(data []byte) (map[string]string, error) {
 	return states, nil
 }
 
-// splitLast returns the part after the last "/" in s.
+// splitLast returns the part after the last occurrence of sep in s.
 func splitLast(s, sep string) string {
-	i := len(s) - 1
-	for i >= 0 && string(s[i]) != sep {
-		i--
+	if i := strings.LastIndex(s, sep); i >= 0 {
+		return s[i+len(sep):]
 	}
-	if i < 0 {
-		return s
-	}
-	return s[i+1:]
+	return s
 }

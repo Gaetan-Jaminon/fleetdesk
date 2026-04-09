@@ -92,7 +92,6 @@ type VMDetail struct {
 	OSDiskSizeGB int
 	CreatedTime  string
 	NICName      string
-	NSG          string
 }
 
 // ActivityLogEntry represents an Azure activity log entry.

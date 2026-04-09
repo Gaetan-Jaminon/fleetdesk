@@ -21,7 +21,7 @@ type tickMsg time.Time
 // azureResourceCountsMsg is sent when Azure resource counts are fetched.
 type azureResourceCountsMsg struct {
 	counts azure.AzureResourceCounts
-	errs   []string
+	err    error
 }
 
 type fetchAzureVMsMsg struct {
@@ -224,7 +224,7 @@ type Model struct {
 	selectedAzureSub    int
 	azureResourceCursor int
 	azureResourceCounts azure.AzureResourceCounts
-	azureResourceErrors []string
+	azureResourceErr error
 	azureCountsLoaded   bool
 
 	// azure VM list
@@ -474,7 +474,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case azureResourceCountsMsg:
 		m.azureResourceCounts = msg.counts
-		m.azureResourceErrors = msg.errs
+		m.azureResourceErr = msg.err
 		m.azureCountsLoaded = true
 		return m, nil
 
@@ -494,14 +494,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.flashError = true
 		} else {
 			m.azureVMDetail = msg.detail
-			// Copy network info from list VM (populated by graph, not az vm show)
-			filtered := m.filteredAzureVMs()
-			if m.azureVMCursor < len(filtered) {
-				listVM := filtered[m.azureVMCursor]
-				m.azureVMDetail.VNet = listVM.VNet
-				m.azureVMDetail.Subnet = listVM.Subnet
-				if m.azureVMDetail.PrivateIP == "" {
-					m.azureVMDetail.PrivateIP = listVM.PrivateIP
+			// Copy network info from list VM (populated by graph, not az vm show).
+			// Match by resource ID instead of cursor position to avoid race
+			// when user scrolls while the detail fetch is in flight.
+			for _, listVM := range m.azureVMs {
+				if strings.EqualFold(listVM.ID, msg.detail.ID) {
+					m.azureVMDetail.VNet = listVM.VNet
+					m.azureVMDetail.Subnet = listVM.Subnet
+					if m.azureVMDetail.PrivateIP == "" {
+						m.azureVMDetail.PrivateIP = listVM.PrivateIP
+					}
+					break
 				}
 			}
 			m.showAzureVMDetail = true

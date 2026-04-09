@@ -14,13 +14,18 @@ import (
 // Manager wraps az CLI execution for Azure fleet operations.
 type Manager struct {
 	mu      sync.Mutex
+	ctx     context.Context
+	cancel  context.CancelFunc
 	version string // cached from az version
 	logger  *slog.Logger
 }
 
 // NewManager creates a new Azure CLI manager.
 func NewManager(logger *slog.Logger) *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
+		ctx:    ctx,
+		cancel: cancel,
 		logger: logger,
 	}
 }
@@ -81,7 +86,7 @@ func (m *Manager) RunCommand(args ...string) ([]byte, error) {
 	m.logger.Debug("az run start", "cmd", cmdDesc)
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(m.ctx, 120*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "az", args...)
@@ -114,8 +119,9 @@ func (m *Manager) RunCommand(args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// Close releases any resources held by the manager.
+// Close cancels the root context and releases any resources held by the manager.
 func (m *Manager) Close() {
+	m.cancel()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.version = ""

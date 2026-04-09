@@ -250,6 +250,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "q", "ctrl+c":
+		m.azure.Close()
 		return m, tea.Quit
 	}
 
@@ -1581,7 +1582,7 @@ func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedAzureSub = m.azureSubCursor
 			m.azureResourceCursor = 0
 			m.azureResourceCounts = azure.AzureResourceCounts{}
-			m.azureResourceErrors = nil
+			m.azureResourceErr = nil
 			m.azureCountsLoaded = false
 			m.view = viewAzureResourcePicker
 			return m, m.fetchAzureResourceCounts()
@@ -1651,7 +1652,7 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		}
 	case "r":
 		m.azureResourceCounts = azure.AzureResourceCounts{}
-		m.azureResourceErrors = nil
+		m.azureResourceErr = nil
 		m.azureCountsLoaded = false
 		return m, m.fetchAzureResourceCounts()
 	case "esc":

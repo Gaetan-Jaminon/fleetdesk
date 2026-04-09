@@ -38,6 +38,10 @@ func FetchAKSClusters(m *Manager, subName, subID, tenantID string, logger *slog.
 		return nil, err
 	}
 
+	if len(clusters) == 1000 {
+		logger.Warn("resource graph query returned 1000 results, results may be truncated", "query", "aks")
+	}
+
 	logger.Debug("azure fetch aks complete", "subscription", subName, "count", len(clusters), "elapsed", time.Since(start))
 	return clusters, nil
 }
@@ -141,11 +145,17 @@ func FetchAKSPowerStates(m *Manager, subID string, clusterNames []string, logger
 	logger.Debug("azure poll aks states start", "count", len(clusterNames))
 
 	// Build name filter: name in~ ('c1','c2')
-	quoted := make([]string, len(clusterNames))
-	for i, n := range clusterNames {
-		quoted[i] = "'" + n + "'"
+	// Skip names containing single quotes to prevent KQL injection.
+	var safe []string
+	for _, n := range clusterNames {
+		if !strings.ContainsRune(n, '\'') {
+			safe = append(safe, "'"+n+"'")
+		}
 	}
-	nameFilter := strings.Join(quoted, ",")
+	if len(safe) == 0 {
+		return nil, nil
+	}
+	nameFilter := strings.Join(safe, ",")
 
 	query := fmt.Sprintf("Resources | where type =~ 'microsoft.containerservice/managedclusters' "+
 		"| where name in~ (%s) "+
