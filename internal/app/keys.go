@@ -2291,7 +2291,8 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pendingTransition = &transition{
 				ResourceType: "k8s-pod", ResourceName: p.Name,
 				Namespace:    p.Namespace, Action: "delete",
-				Display:      "deleting...", Strategy: "oneshot",
+				Display:      "deleting...", TargetState: "gone",
+				Strategy:     "poll",
 			}
 		}
 	case "r":
@@ -2322,18 +2323,22 @@ func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.k8sPodContainerCursor = 0
 	case "l":
 		if m.k8sPodDetail.Name != "" {
-			m.k8sPodLogs = nil
-			m.k8sPodLogCursor = 0
-			m.k8sPodLogStreaming = false
-			m.k8sPodLogAllContainers = false
-			m.k8sPodLogMinLevel = 0
-			m.k8sPodLogFromDetail = true
-			m.filterText = ""
-			m.filterActive = false
-			m.sortColumn = 0
-			m.flash = fmt.Sprintf("Loading logs for %s...", m.k8sPodDetail.Name)
-			ns := m.k8sPodDetail.Namespace
-			return m, m.fetchK8sPodLogs(ns, []string{m.k8sPodDetail.Name})
+			if m.k8sPodDetail.Status != "Running" {
+				m.flash = fmt.Sprintf("%s is not running (status: %s)", m.k8sPodDetail.Name, m.k8sPodDetail.Status)
+			} else {
+				m.k8sPodLogs = nil
+				m.k8sPodLogCursor = 0
+				m.k8sPodLogStreaming = false
+				m.k8sPodLogAllContainers = false
+				m.k8sPodLogMinLevel = 0
+				m.k8sPodLogFromDetail = true
+				m.filterText = ""
+				m.filterActive = false
+				m.sortColumn = 0
+				m.flash = fmt.Sprintf("Loading logs for %s...", m.k8sPodDetail.Name)
+				ns := m.k8sPodDetail.Namespace
+				return m, m.fetchK8sPodLogs(ns, []string{m.k8sPodDetail.Name})
+			}
 		}
 	case "esc":
 		m.view = viewK8sPodList
@@ -2355,9 +2360,22 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.k8sLogDetailScroll++
 		case "g":
 			m.k8sLogDetailScroll = 0
-		default:
+		case "esc", "q", "enter":
 			m.showK8sLogDetail = false
 			m.k8sLogDetailScroll = 0
+			if m.k8sLogDetailWasStreaming {
+				m.k8sLogDetailWasStreaming = false
+				ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+				var podNames []string
+				if m.k8sPodLogFromDetail {
+					podNames = []string{m.k8sPodDetail.Name}
+				} else {
+					for _, p := range m.filteredK8sPodList() {
+						podNames = append(podNames, p.Name)
+					}
+				}
+				return m, m.streamK8sPodLogs(ns, podNames)
+			}
 		}
 		return m, nil
 	}
@@ -2368,6 +2386,12 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(filtered) > 0 && m.k8sPodLogCursor < len(filtered) {
 			m.showK8sLogDetail = true
 			m.k8sLogDetailScroll = 0
+			// Stop streaming to prevent log updates while viewing detail
+			m.k8sLogDetailWasStreaming = m.k8sPodLogStreaming
+			if m.k8sPodLogCancel != nil {
+				m.k8sPodLogCancel()
+			}
+			m.k8sPodLogStreaming = false
 		}
 	case "up", "k":
 		if m.k8sPodLogCursor > 0 {

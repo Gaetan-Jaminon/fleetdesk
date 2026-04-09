@@ -1580,12 +1580,15 @@ func (m Model) startPoll() tea.Cmd {
 
 // pollStates queries Resource Graph for power states of transitioning resources.
 func (m Model) pollStates() tea.Cmd {
-	am := m.azure
-	sub := m.azureSubs[m.selectedAzureSub]
 	logger := m.logger
 
 	// Collect transitioning names by type (only poll-strategy transitions)
 	var vmNames, aksNames []string
+	type k8sPodRef struct {
+		name      string
+		namespace string
+	}
+	var k8sPods []k8sPodRef
 	for _, t := range m.transitions {
 		if t.Strategy != "poll" {
 			continue
@@ -1595,7 +1598,17 @@ func (m Model) pollStates() tea.Cmd {
 			vmNames = append(vmNames, t.ResourceName)
 		case "aks":
 			aksNames = append(aksNames, t.ResourceName)
+		case "k8s-pod":
+			k8sPods = append(k8sPods, k8sPodRef{name: t.ResourceName, namespace: t.Namespace})
 		}
+	}
+
+	// Only capture Azure state if there are Azure transitions
+	var am *azure.Manager
+	var subID string
+	if len(vmNames) > 0 || len(aksNames) > 0 {
+		am = m.azure
+		subID = m.azureSubs[m.selectedAzureSub].ID
 	}
 
 	return func() tea.Msg {
@@ -1607,7 +1620,7 @@ func (m Model) pollStates() tea.Cmd {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				states, err := azure.FetchVMPowerStates(am, sub.ID, vmNames, logger)
+				states, err := azure.FetchVMPowerStates(am, subID, vmNames, logger)
 				if err != nil {
 					logger.Error("vm poll failed", "err", err)
 					return
@@ -1624,7 +1637,7 @@ func (m Model) pollStates() tea.Cmd {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				states, err := azure.FetchAKSPowerStates(am, sub.ID, aksNames, logger)
+				states, err := azure.FetchAKSPowerStates(am, subID, aksNames, logger)
 				if err != nil {
 					logger.Error("aks poll failed", "err", err)
 					return
@@ -1635,6 +1648,26 @@ func (m Model) pollStates() tea.Cmd {
 				}
 				mu.Unlock()
 			}()
+		}
+
+		if len(k8sPods) > 0 {
+			km := m.k8s
+			ctxName := m.selectedK8sContext
+			for _, p := range k8sPods {
+				wg.Add(1)
+				go func(name, ns string) {
+					defer wg.Done()
+					_, err := km.RunCommand("get", "pod", name, "-n", ns, "--context", ctxName, "-o", "name")
+					mu.Lock()
+					if err != nil {
+						// Pod not found — it's gone
+						allStates["k8s-pod/"+name] = "gone"
+					} else {
+						allStates["k8s-pod/"+name] = "exists"
+					}
+					mu.Unlock()
+				}(p.name, p.namespace)
+			}
 		}
 
 		wg.Wait()

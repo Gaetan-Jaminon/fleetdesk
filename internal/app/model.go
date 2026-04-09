@@ -66,11 +66,6 @@ type transitionExpireMsg struct {
 	key string
 }
 
-type fetchK8sPodsRefreshMsg struct {
-	namespace string
-	workload  string
-}
-
 type fetchAzureAKSMsg struct {
 	clusters []azure.AKSDetail
 	err      error
@@ -294,6 +289,7 @@ type Model struct {
 	k8sPodLogMinLevel      int  // 0=all, 1=Info+, 2=Warn+, 3=Error+
 	showK8sLogDetail      bool
 	k8sLogDetailScroll    int  // scroll offset for log detail view
+	k8sLogDetailWasStreaming bool // resume streaming after closing detail
 	k8sPodLogFromDetail   bool // true when logs opened from pod detail (Esc returns to detail)
 
 	// metrics dashboard
@@ -533,6 +529,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		key := msg.resourceType + "/" + msg.name
 		t, exists := m.transitions[key]
+		m.logger.Debug("actionResultMsg", "key", key, "exists", exists, "strategy", t.Strategy, "err", msg.err, "view", m.view)
 
 		if msg.err != nil {
 			// Action failed — show error overlay, schedule removal
@@ -565,7 +562,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.transitions == nil {
 			return m, nil
 		}
-		changed := false
+		var cmds []tea.Cmd
 		for tKey, t := range m.transitions {
 			t.PollCount++
 			lookupName := strings.ToLower(t.ResourceName)
@@ -573,39 +570,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.transitions[tKey] = t // persist PollCount increment
 			if _, ok := msg.states[lookupKey]; !ok && t.TargetState == "gone" && t.PollCount >= 2 {
 				// Resource no longer in poll results — deleted
+				cmds = append(cmds, m.refreshAfterAction(t))
 				delete(m.transitions, tKey)
-				changed = true
 				continue
 			}
 			if state, ok := msg.states[lookupKey]; ok {
 				if isAzureTransitioningState(state) {
-					// Azure confirms the action is in progress
 					t.Confirmed = true
 					t.Display = state
 					m.transitions[tKey] = t
 				} else if state == t.TargetState && (t.Confirmed || t.PollCount >= 3) {
-					// Target reached (either saw transitioning state, or 3+ polls passed)
-					switch t.ResourceType {
-					case "vm":
+					// Target reached — update in-place for VMs
+					if t.ResourceType == "vm" {
 						for i := range m.azureVMs {
 							if strings.EqualFold(m.azureVMs[i].Name, t.ResourceName) {
 								m.azureVMs[i].PowerState = state
 								break
 							}
 						}
-					case "aks":
-						// Don't update PowerState here — poll returns provisioningState.
-						// The list refresh below will fetch the real PowerState.
 					}
+					cmds = append(cmds, m.refreshAfterAction(t))
 					delete(m.transitions, tKey)
-					changed = true
 				}
 			}
-		}
-		// Refresh AKS list if any transitions completed (VMs are updated in-place above)
-		var cmds []tea.Cmd
-		if changed {
-			cmds = append(cmds, m.fetchAzureAKSClusters())
 		}
 		// Continue polling if transitions remain, otherwise stop
 		if len(m.transitions) > 0 {
@@ -627,8 +614,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case fetchK8sPodsRefreshMsg:
-		return m, m.fetchK8sPods(msg.namespace, msg.workload)
 
 	case k8sClusterProbeMsg:
 		if msg.index < len(m.k8sClusters) {
@@ -744,6 +729,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sort.Slice(m.k8sPodList, func(i, j int) bool {
 				return m.k8sPodList[i].Name < m.k8sPodList[j].Name
 			})
+			for _, p := range m.k8sPodList {
+				m.logger.Debug("fetchK8sPodsMsg pod", "name", p.Name, "status", p.Status, "ready", p.Ready)
+			}
 			m.flash = ""
 		}
 		return m, nil
@@ -1223,23 +1211,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// refreshAfterAction dispatches list refresh commands after a oneshot action completes.
+// refreshAfterAction dispatches list refresh commands after a transition completes.
 func (m Model) refreshAfterAction(t transition) tea.Cmd {
 	switch t.ResourceType {
-	case "k8s-pod":
-		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
-		w := m.k8sWorkloads[m.selectedK8sWorkload]
-		// Immediate refresh + delayed refresh (3s) to catch pod termination
-		return tea.Batch(
-			m.fetchK8sPods(ns, w.Name),
-			tea.Tick(3*time.Second, func(time.Time) tea.Msg {
-				return fetchK8sPodsRefreshMsg{namespace: ns, workload: w.Name}
-			}),
-		)
-	case "k8s-context":
-		return m.fetchK8sContexts(m.k8sClusters[m.selectedK8sCluster].Name)
+	case "vm":
+		// VMs are updated in-place, no list refresh needed
+		return nil
 	case "aks":
 		return m.fetchAzureAKSClusters()
+	case "k8s-pod":
+		if m.view == viewK8sPodList {
+			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+			w := m.k8sWorkloads[m.selectedK8sWorkload]
+			return m.fetchK8sPods(ns, w.Name)
+		}
+		return nil
+	case "k8s-context":
+		return m.fetchK8sContexts(m.k8sClusters[m.selectedK8sCluster].Name)
 	default:
 		return nil
 	}
