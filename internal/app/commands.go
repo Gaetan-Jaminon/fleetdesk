@@ -1,16 +1,21 @@
 package app
 
 import (
+	"bufio"
+	"context"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -1504,7 +1509,18 @@ func (m Model) executeAzureVMAction(vmName, rgName, action string) tea.Cmd {
 	logger := m.logger
 	return func() tea.Msg {
 		err := azure.VMAction(am, vmName, rgName, sub.Name, sub.TenantID, action, logger)
-		return azureVMActionMsg{action: action, vm: vmName, err: err}
+		return azureActionMsg{resourceType: "vm", name: vmName, action: action, err: err}
+	}
+}
+
+// executeAzureAKSAction executes an AKS cluster power action (start, stop).
+func (m Model) executeAzureAKSAction(clusterName, rgName, action string) tea.Cmd {
+	am := m.azure
+	sub := m.azureSubs[m.selectedAzureSub]
+	logger := m.logger
+	return func() tea.Msg {
+		err := azure.AKSAction(am, clusterName, rgName, sub.Name, sub.TenantID, action, logger)
+		return azureActionMsg{resourceType: "aks", name: clusterName, action: action, err: err}
 	}
 }
 
@@ -1520,36 +1536,78 @@ func (m Model) fetchAzureActivityLog(rgName string) tea.Cmd {
 	}
 }
 
-// startVMPoll schedules the next VM state poll in 5 seconds.
-func (m Model) startVMPoll() tea.Cmd {
+// startAzurePoll schedules the next Azure resource state poll in 5 seconds.
+func (m Model) startAzurePoll() tea.Cmd {
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-		return azureVMPollMsg(t)
+		return azurePollMsg(t)
 	})
 }
 
-// pollAzureVMStates queries Resource Graph for power states of transitioning VMs.
-func (m Model) pollAzureVMStates() tea.Cmd {
+// pollAzureStates queries Resource Graph for power states of transitioning Azure resources.
+func (m Model) pollAzureStates() tea.Cmd {
 	am := m.azure
 	sub := m.azureSubs[m.selectedAzureSub]
 	logger := m.logger
-	vmNames := make([]string, 0, len(m.azureVMTransitions))
-	for name := range m.azureVMTransitions {
-		vmNames = append(vmNames, name)
-	}
-	return func() tea.Msg {
-		states, err := azure.FetchVMPowerStates(am, sub.ID, vmNames, logger)
-		if err != nil {
-			logger.Error("vm poll failed", "err", err)
-			return azureVMPollResultMsg{states: nil}
+
+	// Collect transitioning names by type
+	var vmNames, aksNames []string
+	for _, t := range m.azureTransitions {
+		switch t.ResourceType {
+		case "vm":
+			vmNames = append(vmNames, t.ResourceName)
+		case "aks":
+			aksNames = append(aksNames, t.ResourceName)
 		}
-		return azureVMPollResultMsg{states: states}
+	}
+
+	return func() tea.Msg {
+		allStates := make(map[string]string)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+
+		if len(vmNames) > 0 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				states, err := azure.FetchVMPowerStates(am, sub.ID, vmNames, logger)
+				if err != nil {
+					logger.Error("vm poll failed", "err", err)
+					return
+				}
+				mu.Lock()
+				for name, state := range states {
+					allStates["vm/"+name] = state
+				}
+				mu.Unlock()
+			}()
+		}
+
+		if len(aksNames) > 0 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				states, err := azure.FetchAKSPowerStates(am, sub.ID, aksNames, logger)
+				if err != nil {
+					logger.Error("aks poll failed", "err", err)
+					return
+				}
+				mu.Lock()
+				for name, state := range states {
+					allStates["aks/"+name] = state
+				}
+				mu.Unlock()
+			}()
+		}
+
+		wg.Wait()
+		return azurePollResultMsg{states: allStates}
 	}
 }
 
-// expireVMTransition removes a failed transition after a delay.
-func expireVMTransition(vmName string) tea.Cmd {
+// expireAzureTransition removes a failed transition after a delay.
+func expireAzureTransition(key string) tea.Cmd {
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-		return azureVMTransitionExpireMsg{vmName: vmName}
+		return azureTransitionExpireMsg{key: key}
 	})
 }
 
@@ -1562,4 +1620,247 @@ func (m Model) fetchAzureAKSClusters() tea.Cmd {
 		clusters, err := azure.FetchAKSClusters(am, sub.Name, sub.ID, sub.TenantID, logger)
 		return fetchAzureAKSMsg{clusters: clusters, err: err}
 	}
+}
+
+// fetchK8sContexts discovers kubectl contexts for a cluster.
+func (m Model) fetchK8sContexts(clusterName string) tea.Cmd {
+	km := m.k8s
+	logger := m.logger
+	return func() tea.Msg {
+		contexts, err := k8s.MatchContexts(km, clusterName, logger)
+		return fetchK8sContextsMsg{contexts: contexts, err: err}
+	}
+}
+
+// fetchK8sResourceCounts fetches namespace, node, and ArgoCD app counts.
+func (m Model) fetchK8sResourceCounts() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		counts, errs := k8s.FetchResourceCounts(km, ctxName, logger)
+		return k8sResourceCountsMsg{counts: counts, errs: errs}
+	}
+}
+
+// fetchK8sNodes fetches the node list for the selected K8s context.
+func (m Model) fetchK8sNodes() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		nodes, err := k8s.FetchNodes(km, ctxName, logger)
+		return fetchK8sNodesMsg{nodes: nodes, err: err}
+	}
+}
+
+// fetchK8sNodeDetail fetches extended properties for a single node.
+func (m Model) fetchK8sNodeDetail(nodeName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		detail, err := k8s.FetchNodeDetail(km, ctxName, nodeName, logger)
+		return fetchK8sNodeDetailMsg{detail: detail, err: err}
+	}
+}
+
+// fetchK8sNodeUsage fetches CPU/Memory usage via kubectl top.
+func (m Model) fetchK8sNodeUsage(nodeName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		usage, err := k8s.FetchNodeUsage(km, ctxName, nodeName, logger)
+		return fetchK8sNodeUsageMsg{usage: usage, err: err}
+	}
+}
+
+// fetchK8sNodePods fetches pods running on a node.
+func (m Model) fetchK8sNodePods(nodeName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		pods, err := k8s.FetchNodePods(km, ctxName, nodeName, logger)
+		return fetchK8sNodePodsMsg{pods: pods, err: err}
+	}
+}
+
+// fetchK8sNamespaces fetches namespace list (fast, ~200ms).
+func (m Model) fetchK8sNamespaces() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		ns, err := k8s.FetchNamespaces(km, ctxName, logger)
+		return fetchK8sNamespacesMsg{namespaces: ns, err: err}
+	}
+}
+
+// fetchK8sNamespaceCounts fetches resource counts per namespace (slow, background).
+func (m Model) fetchK8sNamespaceCounts() tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		counts, err := k8s.FetchNamespaceCounts(km, ctxName, logger)
+		return fetchK8sNamespaceCountsMsg{counts: counts, err: err}
+	}
+}
+
+// fetchK8sWorkloads fetches workloads in a namespace.
+func (m Model) fetchK8sWorkloads(namespace string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		workloads, err := k8s.FetchWorkloads(km, ctxName, namespace, logger)
+		return fetchK8sWorkloadsMsg{workloads: workloads, err: err}
+	}
+}
+
+// fetchK8sPods fetches pods for a workload in a namespace.
+func (m Model) fetchK8sPods(namespace, workloadName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		pods, err := k8s.FetchPods(km, ctxName, namespace, workloadName, logger)
+		return fetchK8sPodsMsg{pods: pods, err: err}
+	}
+}
+
+// fetchK8sPodDetail fetches extended pod properties.
+func (m Model) fetchK8sPodDetail(namespace, podName string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	logger := m.logger
+	return func() tea.Msg {
+		detail, err := k8s.FetchPodDetail(km, ctxName, namespace, podName, logger)
+		return fetchK8sPodDetailMsg{detail: detail, err: err}
+	}
+}
+
+// fetchK8sPodLogs fetches initial log lines from all pods of a workload.
+func (m Model) fetchK8sPodLogs(namespace string, podNames []string) tea.Cmd {
+	km := m.k8s
+	ctxName := m.selectedK8sContext
+	allContainers := m.k8sPodLogAllContainers
+	logger := m.logger
+	return func() tea.Msg {
+		entries, err := k8s.FetchWorkloadLogs(km, ctxName, namespace, podNames, 50, allContainers, logger)
+		return fetchK8sPodLogsMsg{entries: entries, err: err}
+	}
+}
+
+// streamK8sPodLogs starts kubectl logs -f for each pod, sending lines to a shared channel.
+func (m *Model) streamK8sPodLogs(namespace string, podNames []string) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.k8sPodLogCancel = cancel
+	m.k8sPodLogStreaming = true
+
+	ch := make(chan string, 200)
+	m.k8sPodLogChan = ch
+
+	var wg sync.WaitGroup
+	ctxName := m.selectedK8sContext
+
+	for _, pod := range podNames {
+		wg.Add(1)
+		go func(podName string) {
+			defer wg.Done()
+			args := []string{"logs", "-f",
+				"-n", namespace, podName,
+				"--context", ctxName,
+				"--timestamps",
+				"--tail=0"}
+			if m.k8sPodLogAllContainers {
+				args = append(args, "--all-containers")
+			}
+			cmd := exec.CommandContext(ctx, "kubectl", args...)
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				return
+			}
+			if err := cmd.Start(); err != nil {
+				return
+			}
+			scanner := bufio.NewScanner(stdout)
+			for scanner.Scan() {
+				line := podName + "\t" + scanner.Text()
+				select {
+				case ch <- line:
+				case <-ctx.Done():
+					return
+				}
+			}
+			cmd.Wait()
+		}(pod)
+	}
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	return m.listenForLogLines()
+}
+
+// listenForLogLines returns a tea.Cmd that blocks until log lines arrive from the stream channel.
+func (m Model) listenForLogLines() tea.Cmd {
+	ch := m.k8sPodLogChan
+	if ch == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		for {
+			first, ok := <-ch
+			if !ok {
+				return k8sPodLogDoneMsg{}
+			}
+			var batch []k8s.K8sLogEntry
+			if e := parseStreamLine(first); e.Pod != "" {
+				batch = append(batch, e)
+			}
+			// Drain buffered lines (non-blocking), up to 50
+			for len(batch) < 50 {
+				select {
+				case line, ok := <-ch:
+					if !ok {
+						if len(batch) > 0 {
+							return k8sPodLogBatchMsg{entries: batch}
+						}
+						return k8sPodLogDoneMsg{}
+					}
+					if e := parseStreamLine(line); e.Pod != "" {
+						batch = append(batch, e)
+					}
+				default:
+					if len(batch) > 0 {
+						return k8sPodLogBatchMsg{entries: batch}
+					}
+					// All lines were continuations, loop back and wait for next line
+					goto waitNext
+				}
+			}
+			return k8sPodLogBatchMsg{entries: batch}
+		waitNext:
+		}
+	}
+}
+
+// parseStreamLine parses a "podName\ttimestamp message" line from the stream channel.
+// Returns a zero-value entry (empty Pod) for continuation lines without timestamps.
+func parseStreamLine(line string) k8s.K8sLogEntry {
+	parts := strings.SplitN(line, "\t", 2)
+	if len(parts) != 2 {
+		return k8s.K8sLogEntry{}
+	}
+	entry := k8s.ParseLogLine(parts[0], parts[1])
+	// Skip continuation lines (no timestamp = not a real log entry)
+	if entry.Timestamp == "" {
+		return k8s.K8sLogEntry{}
+	}
+	return entry
 }

@@ -7,14 +7,47 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func aksStatusStyle(state string) lipgloss.Style {
+// formatAKSDate extracts the date portion from an ISO timestamp (e.g. "2026-03-17T14:59:29Z" → "2026-03-17").
+func formatAKSDate(s string) string {
+	if s == "" {
+		return "-"
+	}
+	if idx := strings.IndexByte(s, 'T'); idx > 0 {
+		return s[:idx]
+	}
+	return s
+}
+
+// ansiColor wraps text with ANSI foreground color code only (no background reset).
+// This preserves the row background applied by borderedRow.
+func ansiColor(text string, code string) string {
+	if code == "" {
+		return text
+	}
+	return fmt.Sprintf("\033[%sm%s\033[39m", code, text)
+}
+
+func aksStatusColorCode(state string) string {
 	switch strings.ToLower(state) {
 	case "running":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")) // green
+		return "32" // green
 	case "stopped":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("1")) // red
+		return "31" // red
 	default:
-		return lipgloss.NewStyle()
+		return ""
+	}
+}
+
+func aksProvisioningColorCode(state string) string {
+	switch strings.ToLower(state) {
+	case "succeeded":
+		return "32" // green
+	case "starting", "stopping":
+		return "33" // yellow
+	case "failed":
+		return "31" // red
+	default:
+		return ""
 	}
 }
 
@@ -27,6 +60,7 @@ func (m Model) renderAzureAKSList() string {
 	iw := w - 2
 
 	filtered := m.filteredAzureAKS()
+	displayTags := m.fleets[m.selectedFleet].DisplayTags
 	filterInfo := ""
 	if m.filterText != "" {
 		filterInfo = fmt.Sprintf(" [filter: %s]", m.filterText)
@@ -48,7 +82,15 @@ func (m Model) renderAzureAKSList() string {
 		rgCol := len("RESOURCE GROUP")
 		versionCol := len("K8S VERSION")
 		statusCol := 10
+		provCol := len("PROVISIONING")
+		createdCol := len("CREATED")
 		nodesCol := 7
+
+		// Compute tag column widths
+		tagColWidths := make([]int, len(displayTags))
+		for ti, tag := range displayTags {
+			tagColWidths[ti] = len(strings.ToUpper(tag))
+		}
 
 		for _, c := range filtered {
 			if len(c.Name) > nameCol {
@@ -60,19 +102,55 @@ func (m Model) renderAzureAKSList() string {
 			if len(c.KubernetesVersion) > versionCol {
 				versionCol = len(c.KubernetesVersion)
 			}
+			if len(c.ProvisioningState) > provCol {
+				provCol = len(c.ProvisioningState)
+			}
+			if d := formatAKSDate(c.CreatedDate); len(d) > createdCol {
+				createdCol = len(d)
+			}
+			for ti, tag := range displayTags {
+				if c.Tags != nil {
+					if v, ok := c.Tags[tag]; ok && len(v) > tagColWidths[ti] {
+						tagColWidths[ti] = len(v)
+					}
+				}
+			}
+		}
+		// Account for transition overlay display strings
+		for k, t := range m.azureTransitions {
+			if strings.HasPrefix(k, "aks/") && len(t.Display) > provCol {
+				provCol = len(t.Display)
+			}
 		}
 		nameCol += 2
 		rgCol += 2
 		versionCol += 2
+		provCol += 2
+		createdCol += 2
+		for ti := range tagColWidths {
+			tagColWidths[ti] += 2
+		}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+		poolsCol := 7
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s",
 			nameCol, "NAME"+m.sortIndicator(1),
 			rgCol, "RESOURCE GROUP"+m.sortIndicator(2),
 			statusCol, "STATUS"+m.sortIndicator(3),
-			versionCol, "K8S VERSION"+m.sortIndicator(4),
-			nodesCol, "NODES"+m.sortIndicator(5),
-			"POOLS"+m.sortIndicator(6),
+			provCol, "PROVISIONING"+m.sortIndicator(4),
+			versionCol, "K8S VERSION"+m.sortIndicator(5),
+			nodesCol, "NODES"+m.sortIndicator(6),
+			poolsCol, "POOLS"+m.sortIndicator(7),
+			createdCol, "CREATED"+m.sortIndicator(8),
 		)
+		for ti, tag := range displayTags {
+			colNum := 9 + ti
+			header := strings.ToUpper(tag) + m.sortIndicator(colNum)
+			if ti == len(displayTags)-1 {
+				hdr += fmt.Sprintf("  %s", header)
+			} else {
+				hdr += fmt.Sprintf("  %-*s", tagColWidths[ti], header)
+			}
+		}
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
 
@@ -97,13 +175,38 @@ func (m Model) renderAzureAKSList() string {
 			}
 
 			status := c.PowerState
+			prov := c.ProvisioningState
+			if t, ok := m.azureTransitions["aks/"+c.Name]; ok {
+				prov = t.Display
+			}
+			// Pad before coloring so ANSI codes don't affect width
+			statusPadded := fmt.Sprintf("%-*s", statusCol, status)
+			provPadded := fmt.Sprintf("%-*s", provCol, prov)
+			statusColored := ansiColor(statusPadded, aksStatusColorCode(status))
+			provColored := ansiColor(provPadded, aksProvisioningColorCode(prov))
+			created := formatAKSDate(c.CreatedDate)
 			nodes := fmt.Sprintf("%d", c.NodeCount)
 			pools := fmt.Sprintf("%d", len(c.Pools))
 
-			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+			line := fmt.Sprintf("%s  %-*s  %-*s  %s  %s  %-*s  %-*s  %-*s  %-*s",
 				cur, nameCol, c.Name, rgCol, c.ResourceGroup,
-				statusCol, status, versionCol, c.KubernetesVersion,
-				nodesCol, nodes, pools)
+				statusColored, provColored,
+				versionCol, c.KubernetesVersion, nodesCol, nodes,
+				poolsCol, pools, createdCol, created)
+
+			for ti, tag := range displayTags {
+				val := "-"
+				if c.Tags != nil {
+					if v, ok := c.Tags[tag]; ok {
+						val = v
+					}
+				}
+				if ti == len(displayTags)-1 {
+					line += fmt.Sprintf("  %s", val)
+				} else {
+					line += fmt.Sprintf("  %-*s", tagColWidths[ti], val)
+				}
+			}
 
 			var style lipgloss.Style
 			if i == m.azureAKSCursor {
@@ -125,11 +228,15 @@ func (m Model) renderAzureAKSList() string {
 	} else if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
+		maxSortCol := 8 + len(displayTags)
+		sortLabel := fmt.Sprintf("1-%d", maxSortCol)
 		s += m.renderHintBar([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
+			{"s", "Start"},
+			{"o", "Stop"},
 			{"/", "Filter"},
-			{"1-6", "Sort"},
+			{sortLabel, "Sort"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
@@ -161,9 +268,21 @@ func (m Model) renderAzureAKSDetail() string {
 		{"Resource Group", d.ResourceGroup},
 		{"Location", d.Location},
 		{"Status", d.PowerState},
+		{"Provisioning", d.ProvisioningState},
+		{"Created", formatAKSDate(d.CreatedDate)},
 		{"K8s Version", d.KubernetesVersion},
 		{"Network Plugin", d.NetworkPlugin},
 		{"Total Nodes", fmt.Sprintf("%d", d.NodeCount)},
+	}
+
+	for _, tag := range m.fleets[m.selectedFleet].DisplayTags {
+		val := "-"
+		if d.Tags != nil {
+			if v, ok := d.Tags[tag]; ok {
+				val = v
+			}
+		}
+		items = append(items, struct{ key, val string }{"Tag: " + tag, val})
 	}
 
 	keyWidth := 0
@@ -179,7 +298,10 @@ func (m Model) renderAzureAKSDetail() string {
 			val = "—"
 		}
 		if item.key == "Status" {
-			val = aksStatusStyle(d.PowerState).Render(val)
+			val = ansiColor(val, aksStatusColorCode(d.PowerState))
+		}
+		if item.key == "Provisioning" {
+			val = ansiColor(val, aksProvisioningColorCode(d.ProvisioningState))
 		}
 		line := fmt.Sprintf("    %-*s  %s", keyWidth, item.key, val)
 		var style lipgloss.Style

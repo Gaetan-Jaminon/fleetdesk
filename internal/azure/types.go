@@ -33,6 +33,9 @@ type AKSCluster struct {
 	KubernetesVersion string
 	NodeCount         int
 	PowerState        string // Running, Stopped
+	ProvisioningState string // Succeeded, Starting, Stopping
+	CreatedDate       string // from tags.created_Date
+	Tags              map[string]string
 	ID                string
 }
 

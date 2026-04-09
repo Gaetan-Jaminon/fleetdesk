@@ -412,6 +412,51 @@ func TestConfigPath(t *testing.T) {
 	}
 }
 
+func TestParseFleetFile_DisplayTags(t *testing.T) {
+	yaml := `
+name: AKS Fleet
+type: azure
+display_tags:
+  - release
+  - Team
+groups:
+  - name: APP-DEV
+`
+	path := writeTempYAML(t, yaml)
+	f, err := ParseFleetFile(path)
+	if err != nil {
+		t.Fatalf("ParseFleetFile() error = %v", err)
+	}
+
+	if len(f.DisplayTags) != 2 {
+		t.Fatalf("len(DisplayTags) = %d, want 2", len(f.DisplayTags))
+	}
+	if f.DisplayTags[0] != "release" {
+		t.Errorf("DisplayTags[0] = %q, want %q", f.DisplayTags[0], "release")
+	}
+	if f.DisplayTags[1] != "Team" {
+		t.Errorf("DisplayTags[1] = %q, want %q", f.DisplayTags[1], "Team")
+	}
+}
+
+func TestParseFleetFile_NoDisplayTags(t *testing.T) {
+	yaml := `
+name: AKS Fleet
+type: azure
+groups:
+  - name: APP-DEV
+`
+	path := writeTempYAML(t, yaml)
+	f, err := ParseFleetFile(path)
+	if err != nil {
+		t.Fatalf("ParseFleetFile() error = %v", err)
+	}
+
+	if f.DisplayTags != nil {
+		t.Errorf("DisplayTags = %v, want nil", f.DisplayTags)
+	}
+}
+
 // helpers
 
 func writeTempYAML(t *testing.T, content string) string {

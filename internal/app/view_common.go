@@ -46,7 +46,7 @@ func (m Model) renderHintBar(hints [][]string) string {
 
 // borderedRow wraps content with | on each side, clamped to exactly w display columns.
 func borderedRow(content string, w int, style lipgloss.Style) string {
-	dw := runewidth.StringWidth(content)
+	dw := lipgloss.Width(content)
 	if dw > w {
 		truncated := ""
 		col := 0
@@ -59,7 +59,7 @@ func borderedRow(content string, w int, style lipgloss.Style) string {
 			col += rw
 		}
 		content = truncated + "\u2026"
-		dw = runewidth.StringWidth(content)
+		dw = lipgloss.Width(content)
 	}
 	if dw < w {
 		content += strings.Repeat(" ", w-dw)
