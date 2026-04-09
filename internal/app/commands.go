@@ -1578,100 +1578,39 @@ func (m Model) startPoll() tea.Cmd {
 	})
 }
 
-// pollStates queries Resource Graph for power states of transitioning resources.
+// pollStates polls the current state of all active poll-strategy transitions.
 func (m Model) pollStates() tea.Cmd {
+	type pollTask struct {
+		key    string
+		pollFn func() (string, error)
+	}
+	var tasks []pollTask
+	for tKey, t := range m.transitions {
+		if t.Strategy == "poll" && t.PollFn != nil {
+			tasks = append(tasks, pollTask{key: tKey, pollFn: t.PollFn})
+		}
+	}
 	logger := m.logger
-
-	// Collect transitioning names by type (only poll-strategy transitions)
-	var vmNames, aksNames []string
-	type k8sPodRef struct {
-		name      string
-		namespace string
-	}
-	var k8sPods []k8sPodRef
-	for _, t := range m.transitions {
-		if t.Strategy != "poll" {
-			continue
-		}
-		switch t.ResourceType {
-		case "vm":
-			vmNames = append(vmNames, t.ResourceName)
-		case "aks":
-			aksNames = append(aksNames, t.ResourceName)
-		case "k8s-pod":
-			k8sPods = append(k8sPods, k8sPodRef{name: t.ResourceName, namespace: t.Namespace})
-		}
-	}
-
-	// Only capture Azure state if there are Azure transitions
-	var am *azure.Manager
-	var subID string
-	if len(vmNames) > 0 || len(aksNames) > 0 {
-		am = m.azure
-		subID = m.azureSubs[m.selectedAzureSub].ID
-	}
-
 	return func() tea.Msg {
-		allStates := make(map[string]string)
+		states := make(map[string]string)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-
-		if len(vmNames) > 0 {
+		for _, task := range tasks {
 			wg.Add(1)
-			go func() {
+			go func(t pollTask) {
 				defer wg.Done()
-				states, err := azure.FetchVMPowerStates(am, subID, vmNames, logger)
+				state, err := t.pollFn()
 				if err != nil {
-					logger.Error("vm poll failed", "err", err)
+					logger.Error("poll failed", "key", t.key, "err", err)
 					return
 				}
 				mu.Lock()
-				for name, state := range states {
-					allStates["vm/"+name] = state
-				}
+				states[t.key] = state
 				mu.Unlock()
-			}()
+			}(task)
 		}
-
-		if len(aksNames) > 0 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				states, err := azure.FetchAKSPowerStates(am, subID, aksNames, logger)
-				if err != nil {
-					logger.Error("aks poll failed", "err", err)
-					return
-				}
-				mu.Lock()
-				for name, state := range states {
-					allStates["aks/"+name] = state
-				}
-				mu.Unlock()
-			}()
-		}
-
-		if len(k8sPods) > 0 {
-			km := m.k8s
-			ctxName := m.selectedK8sContext
-			for _, p := range k8sPods {
-				wg.Add(1)
-				go func(name, ns string) {
-					defer wg.Done()
-					_, err := km.RunCommand("get", "pod", name, "-n", ns, "--context", ctxName, "-o", "name")
-					mu.Lock()
-					if err != nil {
-						// Pod not found — it's gone
-						allStates["k8s-pod/"+name] = "gone"
-					} else {
-						allStates["k8s-pod/"+name] = "exists"
-					}
-					mu.Unlock()
-				}(p.name, p.namespace)
-			}
-		}
-
 		wg.Wait()
-		return pollResultMsg{states: allStates}
+		return pollResultMsg{states: states}
 	}
 }
 
