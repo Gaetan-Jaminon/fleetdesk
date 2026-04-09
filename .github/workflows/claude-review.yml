@@ -27,30 +27,30 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            You are reviewing a Go TUI application (Bubble Tea) that manages Linux VM fleets over SSH.
+            /code-review --comment ${{ github.event.pull_request.number }}
 
-            ## Architecture rules
-            - Package structure: internal/config/, internal/ssh/, internal/app/, internal/views/
-            - internal/ssh/ must NOT import Bubble Tea — it contains pure data-fetching and parsing logic
+            ## Project-specific CLAUDE.md rules (treat as part of CLAUDE.md for compliance checks)
+
+            This is a Go TUI application (Bubble Tea) managing fleets of Linux VMs (SSH), Azure resources (az CLI), and Kubernetes clusters (kubectl).
+
+            ### Architecture rules
+            - Package structure: internal/config/, internal/ssh/, internal/azure/, internal/k8s/, internal/app/
+            - Backend packages (ssh/, azure/, k8s/) must NOT import Bubble Tea — pure data-fetching and parsing only
             - Each view follows the pattern: fetch function → message type → model handler → render function
             - Destructive actions require [Y/n] confirmation prompts
+            - Action engine: generic transition system with poll/oneshot strategies. The engine must NOT switch on resource type — use closures (PollFn, RefreshFn) set by the caller. If a new backend requires editing the engine core, the abstraction is broken.
 
-            ## Security rules
+            ### Design principles
+            - When code claims to be "generic" or "connector-agnostic", verify it actually is: can a new backend be added without modifying the shared engine?
+            - Flag switch statements on resource/backend type in shared code as architecture violations
+            - Polymorphism via closures or interfaces, not type switches
+            - Bubble Tea Model is a value type — closures that mutate model state capture a stale snapshot. Flag this pattern.
+            - Don't over-abstract, but don't under-abstract either. Three similar switch cases = time to refactor.
+
+            ### Security rules
             - No hardcoded credentials, keys, or secrets
             - SSH passwords must never be logged, stored, or cached beyond the session
             - User input used in SSH commands must be sanitized — no command injection
             - No secrets in error messages or log output
-
-            ## Review checklist
-            - Code correctness and potential bugs
-            - Go conventions: error handling, table-driven tests, named return values only when useful
-            - Tests exist for new parsers and helpers in ssh/ and config/
-            - PR scope matches the PR description — flag unrelated changes
-
-            ## How to report
-            - Only flag real issues — not style nitpicks or subjective preferences
-            - Use inline comments for specific code issues with a fix suggestion
-            - Use a top-level comment for a short summary (approve, request changes, or observations)
-            - Rate each issue: 🔴 must fix, 🟡 should fix, 🟢 suggestion
           claude_args: |
-            --model claude-sonnet-4-6 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --model claude-opus-4-6 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
