@@ -108,9 +108,14 @@ func (m Model) renderK8sPodList() string {
 				cur = " \u25b8 "
 			}
 
+			status := p.Status
+			if t, ok := m.transitions["k8s-pod/"+p.Name]; ok {
+				status = t.Display
+			}
+
 			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %*d  %-*s  %s",
 				cur, nameCol, p.Name,
-				statusCol, p.Status,
+				statusCol, status,
 				readyCol, p.Ready,
 				restartsCol, p.Restarts,
 				nodeCol, p.Node,
@@ -132,13 +137,16 @@ func (m Model) renderK8sPodList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	if m.filterActive {
+	if m.showConfirm {
+		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
+	} else if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
 	} else {
 		s += m.renderHintBar([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Detail"},
 			{"l", "Logs"},
+			{"d", "Delete"},
 			{"/", "Filter"},
 			{"1-6", "Sort"},
 			{"r", "Refresh"},
@@ -461,6 +469,7 @@ func (m Model) renderK8sPodDetail() string {
 	s += m.renderHintBar([][]string{
 		{"\u2191\u2193", "Scroll"},
 		{"g", "Top"},
+		{"l", "Logs"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
 	})

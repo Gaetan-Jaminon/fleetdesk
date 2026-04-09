@@ -888,7 +888,7 @@ func (m *Model) applyAzureProbeInfo(idx int, info azure.SubscriptionProbeInfo) {
 // Case-insensitive: VMs use lowercase, AKS uses capitalized states.
 func isAzureTransitioningState(state string) bool {
 	switch strings.ToLower(state) {
-	case "starting", "stopping", "deallocating", "restarting":
+	case "starting", "stopping", "deallocating", "restarting", "deleting":
 		return true
 	}
 	return false

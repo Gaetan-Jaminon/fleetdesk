@@ -32,7 +32,11 @@ func (m Model) renderK8sPodLogs() string {
 	if m.filterText != "" {
 		filterInfo = fmt.Sprintf(" [filter: %s]", m.filterText)
 	}
-	breadcrumb := f.Name + " \u203a " + cluster.Name + " \u203a " + m.selectedK8sContext + " \u203a " + ns.Name + " \u203a " + wl.Name + " \u203a Logs"
+	logTarget := wl.Name
+	if m.k8sPodLogFromDetail {
+		logTarget = m.k8sPodDetail.Name
+	}
+	breadcrumb := f.Name + " \u203a " + cluster.Name + " \u203a " + m.selectedK8sContext + " \u203a " + ns.Name + " \u203a " + logTarget + " \u203a Logs"
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sPodLogCursor+1, len(filtered)) + "\n"
 
 	// Status bar with colored indicators
@@ -263,9 +267,34 @@ func (m Model) renderK8sLogDetail(e k8s.K8sLogEntry, fleetName, clusterName, nsN
 		s += borderedRow(line, iw, style) + "\n"
 	}
 
+	// Apply scrollable viewport
+	contentLines := strings.Split(s, "\n")
+	maxVisible := m.height - 4
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+	totalLines := len(contentLines)
+	maxScroll := totalLines - maxVisible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	scrollOffset := m.k8sLogDetailScroll
+	if scrollOffset > maxScroll {
+		scrollOffset = maxScroll
+	}
+	endLine := scrollOffset + maxVisible
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+	s = strings.Join(contentLines[scrollOffset:endLine], "\n") + "\n"
+
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += hintBarStyle.Width(m.width).Render("  Press any key to return")
+	s += m.renderHintBar([][]string{
+		{"\u2191\u2193", "Scroll"},
+		{"g", "Top"},
+		{"Esc", "Back"},
+	})
 	return s
 }
 

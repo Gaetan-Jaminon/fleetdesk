@@ -77,7 +77,7 @@ func (m Model) renderAzureVMList() string {
 			}
 		}
 		// Account for transition overlay display strings
-		for k, t := range m.azureTransitions {
+		for k, t := range m.transitions {
 			if strings.HasPrefix(k, "vm/") && len(t.Display) > statusCol {
 				statusCol = len(t.Display)
 			}
@@ -124,7 +124,7 @@ func (m Model) renderAzureVMList() string {
 
 			// Overlay: check if VM has an in-flight transition
 			status := vm.PowerState
-			if t, ok := m.azureTransitions["vm/"+vm.Name]; ok {
+			if t, ok := m.transitions["vm/"+vm.Name]; ok {
 				status = t.Display
 			}
 
@@ -249,12 +249,38 @@ func (m Model) renderAzureVMDetail() string {
 	// Activity log section
 	s += m.renderActivityLog(iw)
 
+	// Apply scrollable viewport
+	contentLines := strings.Split(s, "\n")
+	// headerLines = 2 (breadcrumb + top border), footerLines = 2 (bottom border + hint bar)
+	maxVisible := m.height - 4
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+	totalLines := len(contentLines)
+	maxScroll := totalLines - maxVisible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	scrollOffset := m.azureVMDetailScroll
+	if scrollOffset > maxScroll {
+		scrollOffset = maxScroll
+	}
+	if scrollOffset < 0 {
+		scrollOffset = 0
+	}
+	endLine := scrollOffset + maxVisible
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+	s = strings.Join(contentLines[scrollOffset:endLine], "\n") + "\n"
+
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
 
 	s += m.renderHintBar([][]string{
 		{"↑↓", "Scroll"},
 		{"a", "Activity Log"},
+		{"r", "Refresh"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
 	})

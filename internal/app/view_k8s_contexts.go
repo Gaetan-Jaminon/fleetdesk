@@ -70,8 +70,13 @@ func (m Model) renderK8sContextList() string {
 				prefix = "* "
 			}
 
+			displayName := ctx.Name
+			if t, ok := m.transitions["k8s-context/"+ctx.Name]; ok {
+				displayName = ctx.Name + " " + t.Display
+			}
+
 			line := fmt.Sprintf("%s  %s%-*s  %s",
-				cur, prefix, nameCol-len(prefix), ctx.Name, ctx.User)
+				cur, prefix, nameCol-len(prefix), displayName, ctx.User)
 
 			var style lipgloss.Style
 			if i == m.k8sContextCursor {
