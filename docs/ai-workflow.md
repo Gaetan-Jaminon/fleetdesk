@@ -14,7 +14,7 @@ opusplan mode:
 design-reviewer subagent  →  Opus    (called by Sonnet when design needs validation)
 ```
 
-When the Advisor API (`advisor_20260301`) becomes available in Claude Code CLI, it will replace the `opusplan` + subagent pattern with a native Sonnet-calls-Opus-for-guidance flow.
+When a native advisor API becomes available in Claude Code CLI, it will replace the `opusplan` + subagent pattern with a built-in Sonnet-calls-Opus-for-guidance flow.
 
 ## Toolbox
 
@@ -281,10 +281,10 @@ What we need to create:
 
 | Item | Type | Location | Status |
 |------|------|----------|--------|
-| `/release-plan` | Skill | `.claude/skills/release-plan/SKILL.md` | TODO |
-| `design-reviewer` | Subagent | `.claude/agents/design-reviewer.md` | TODO |
-| `/test-plan` | Skill | `.claude/skills/test-plan/SKILL.md` | TODO |
-| pre-flight | Hook | `.claude/settings.json` | TODO |
+| `/release-plan` | Skill | `.claude/skills/release-plan/SKILL.md` | Done |
+| `design-reviewer` | Subagent | `.claude/agents/design-reviewer.md` | Done |
+| `/test-plan` | Skill | `.claude/skills/test-plan/SKILL.md` | Done |
+| pre-flight | Hook | `.claude/settings.json` | Done |
 | Claude GH config | GitHub Action | `.github/workflows/claude-review.yml` | Done |
 | feature-dev | Plugin | Anthropic built-in | Available |
 | code-review | Plugin | Anthropic built-in | Available |

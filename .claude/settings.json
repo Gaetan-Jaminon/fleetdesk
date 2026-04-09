@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "make check 2>&1 | tail -5; exit ${PIPESTATUS[0]}"
+            "command": "make check"
           }
         ]
       }

@@ -25,7 +25,7 @@ Follow the AI Workflow: [docs/ai-workflow.md](docs/ai-workflow.md)
 
 Generic transition system with poll/oneshot strategies using closures.
 
-- Engine must NOT switch on resource type — use closures (ExecFn, PollFn, RefreshFn, IsTransitioning) set by the caller
+- Engine must NOT switch on resource type — use closures set by the caller for execution, polling, refresh, and state detection
 - If a new backend requires editing the engine core, the abstraction is broken
 - Bubble Tea Model is a value type — closures that mutate model state capture a stale snapshot
 
