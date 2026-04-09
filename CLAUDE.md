@@ -37,6 +37,16 @@ make build    # build binary
 make test     # run unit tests
 ```
 
+## Security
+
+- No hardcoded credentials, keys, or secrets — use environment variables
+- Sanitize user input before shell execution (SSH commands, kubectl, az CLI)
+- No secrets in error messages, log output, or debug logs
+- Passwords: never cache, log, or persist beyond the session
+- SSH auth: each method tried individually to avoid MaxAuthTries exhaustion
+- API keys: from `$LINEAR_API_KEY`, `$ANTHROPIC_API_KEY` — never in code
+- Proactively flag security implications during design review, even if the plan doesn't mention them
+
 ## Git
 
 - One PR per FLE (squash merge)
