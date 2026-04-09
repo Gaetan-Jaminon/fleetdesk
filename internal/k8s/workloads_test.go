@@ -109,6 +109,146 @@ func TestParsePodDetail(t *testing.T) {
 	}
 }
 
+func TestParseLogLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		podName string
+		line    string
+		want    K8sLogEntry
+	}{
+		{
+			name:    "standard timestamp line",
+			podName: "web-abc123",
+			line:    "2026-04-08T10:30:01.123456789Z Processing message #42",
+			want:    K8sLogEntry{Timestamp: "10:30:01", Pod: "web-abc123", Message: "Processing message #42", RawTime: "2026-04-08T10:30:01.123456789Z"},
+		},
+		{
+			name:    "no timestamp",
+			podName: "web-abc123",
+			line:    "plain log line without timestamp",
+			want:    K8sLogEntry{Timestamp: "", Pod: "web-abc123", Message: "plain log line without timestamp", RawTime: ""},
+		},
+		{
+			name:    "empty line",
+			podName: "web-abc123",
+			line:    "",
+			want:    K8sLogEntry{Timestamp: "", Pod: "web-abc123", Message: "", RawTime: ""},
+		},
+		{
+			name:    "timestamp with timezone offset",
+			podName: "api-xyz789",
+			line:    "2026-04-08T10:30:01+02:00 Heartbeat OK",
+			want:    K8sLogEntry{Timestamp: "10:30:01", Pod: "api-xyz789", Message: "Heartbeat OK", RawTime: "2026-04-08T10:30:01+02:00"},
+		},
+		{
+			name:    "message with spaces",
+			podName: "web-abc123",
+			line:    "2026-04-08T10:30:01.000Z   multiple   spaces   here",
+			want:    K8sLogEntry{Timestamp: "10:30:01", Pod: "web-abc123", Message: "  multiple   spaces   here", RawTime: "2026-04-08T10:30:01.000Z"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseLogLine(tc.podName, tc.line)
+			if got.Timestamp != tc.want.Timestamp {
+				t.Errorf("Timestamp = %q, want %q", got.Timestamp, tc.want.Timestamp)
+			}
+			if got.Pod != tc.want.Pod {
+				t.Errorf("Pod = %q, want %q", got.Pod, tc.want.Pod)
+			}
+			if got.Message != tc.want.Message {
+				t.Errorf("Message = %q, want %q", got.Message, tc.want.Message)
+			}
+			if got.RawTime != tc.want.RawTime {
+				t.Errorf("RawTime = %q, want %q", got.RawTime, tc.want.RawTime)
+			}
+			if got.Level != tc.want.Level {
+				t.Errorf("Level = %q, want %q", got.Level, tc.want.Level)
+			}
+		})
+	}
+}
+
+func TestParseLogLineFormats(t *testing.T) {
+	tests := []struct {
+		name      string
+		podName   string
+		line      string
+		wantLevel string
+		wantMsg   string
+	}{
+		{
+			name:      "JSON with level and message",
+			podName:   "web-1",
+			line:      `2026-04-08T10:30:01.000Z {"level":"Debug","message":"Set ambient context user to Unknown"}`,
+			wantLevel: "Debug",
+			wantMsg:   "Set ambient context user to Unknown",
+		},
+		{
+			name:      "JSON with msg field",
+			podName:   "web-1",
+			line:      `2026-04-08T10:30:01.000Z {"level":"Error","msg":"connection failed"}`,
+			wantLevel: "Error",
+			wantMsg:   "connection failed",
+		},
+		{
+			name:      "logfmt with quoted msg and context",
+			podName:   "alloy-0",
+			line:      `2026-04-08T16:54:22.977Z ts=2026-04-08T16:54:22.977Z level=info msg="opened log stream" target=foo/bar`,
+			wantLevel: "info",
+			wantMsg:   "opened log stream | target=foo/bar",
+		},
+		{
+			name:      "logfmt with trailing context",
+			podName:   "alloy-1",
+			line:      `2026-04-08T16:54:23.000Z level=warn msg="high latency detected" duration=5s host=node-1`,
+			wantLevel: "warn",
+			wantMsg:   "high latency detected | duration=5s host=node-1",
+		},
+		{
+			name:      "klog info",
+			podName:   "alloy-2",
+			line:      `2026-04-08T16:54:24.238Z I0408 16:54:24.238156       1 warnings.go:110] "Warning: v1 Endpoints is deprecated"`,
+			wantLevel: "Info",
+			wantMsg:   "Warning: v1 Endpoints is deprecated",
+		},
+		{
+			name:      "klog warning",
+			podName:   "ctrl-0",
+			line:      `2026-04-08T10:00:00.000Z W0408 10:00:00.123456       1 handler.go:42] "request timed out"`,
+			wantLevel: "Warning",
+			wantMsg:   "request timed out",
+		},
+		{
+			name:      "klog error",
+			podName:   "ctrl-0",
+			line:      `2026-04-08T10:00:00.000Z E0408 10:00:00.000000       1 main.go:1] "fatal crash"`,
+			wantLevel: "Error",
+			wantMsg:   "fatal crash",
+		},
+		{
+			name:      "plain text no format",
+			podName:   "app-1",
+			line:      "2026-04-08T10:30:01.000Z just a plain log line",
+			wantLevel: "",
+			wantMsg:   "just a plain log line",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseLogLine(tc.podName, tc.line)
+			if got.Level != tc.wantLevel {
+				t.Errorf("Level = %q, want %q", got.Level, tc.wantLevel)
+			}
+			if got.Message != tc.wantMsg {
+				t.Errorf("Message = %q, want %q", got.Message, tc.wantMsg)
+			}
+		})
+	}
+}
+
 func TestParseResourceCounts(t *testing.T) {
 	input := []byte(`{"items":[
 		{"kind":"Pod","metadata":{"namespace":"default"}},

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -137,6 +138,7 @@ func (m Model) renderK8sPodList() string {
 		s += m.renderHintBar([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Detail"},
+			{"l", "Logs"},
 			{"/", "Filter"},
 			{"1-6", "Sort"},
 			{"r", "Refresh"},
@@ -187,33 +189,6 @@ func (m Model) renderK8sPodDetail() string {
 		return strings.Join(lines, "\n")
 	}
 
-	// Compute resource totals from containers
-	cpuReq, cpuLim, memReq, memLim := "\u2014", "\u2014", "\u2014", "\u2014"
-	if len(d.Containers) > 0 {
-		// Use first container values for single-container pods, show totals for multi
-		if len(d.Containers) == 1 {
-			c := d.Containers[0]
-			if c.CPUReq != "" {
-				cpuReq = c.CPUReq
-			}
-			if c.CPULim != "" {
-				cpuLim = c.CPULim
-			}
-			if c.MemReq != "" {
-				memReq = c.MemReq
-			}
-			if c.MemLim != "" {
-				memLim = c.MemLim
-			}
-		} else {
-			// For multi-container, show "see containers"
-			cpuReq = "see containers"
-			cpuLim = "see containers"
-			memReq = "see containers"
-			memLim = "see containers"
-		}
-	}
-
 	// Left column: Pod Info
 	left := renderSection("Pod Info", []kv{
 		{"Name", d.Name},
@@ -230,13 +205,12 @@ func (m Model) renderK8sPodDetail() string {
 		{"Age", d.Age},
 	})
 
-	// Right column: Resources
-	right := renderSection("Resources", []kv{
-		{"CPU Req", cpuReq},
-		{"CPU Lim", cpuLim},
-		{"Mem Req", memReq},
-		{"Mem Lim", memLim},
-	})
+	// Right column: Conditions
+	var condKVs []kv
+	for _, c := range d.Conditions {
+		condKVs = append(condKVs, kv{c.Type, c.Status})
+	}
+	right := renderSection("Conditions", condKVs)
 
 	// Three-column layout
 	colW := iw / 3
@@ -349,47 +323,146 @@ func (m Model) renderK8sPodDetail() string {
 		}
 	}
 
-	// Blank row before conditions
-	s += borderedRow("", iw, normalRowStyle) + "\n"
+	// Init/Sidecar Containers section (if any)
+	if len(d.InitContainers) > 0 {
+		s += borderedRow("", iw, normalRowStyle) + "\n"
+		s += borderedRow(fmt.Sprintf("  \u2500\u2500 Init/Sidecar Containers (%d) \u2500\u2500", len(d.InitContainers)), iw, groupHeaderStyle) + "\n"
 
-	// Conditions section
-	s += borderedRow("  \u2500\u2500 Conditions \u2500\u2500", iw, groupHeaderStyle) + "\n"
-
-	if len(d.Conditions) == 0 {
-		s += borderedRow("  No conditions.", iw, normalRowStyle) + "\n"
-	} else {
-		typeW := 0
-		for _, c := range d.Conditions {
-			if len(c.Type) > typeW {
-				typeW = len(c.Type)
+		initNameW := len("NAME")
+		initImageW := len("IMAGE")
+		initStateW := len("STATE")
+		for _, c := range d.InitContainers {
+			if len(c.Name) > initNameW {
+				initNameW = len(c.Name)
+			}
+			if len(c.Image) > initImageW {
+				initImageW = len(c.Image)
+			}
+			if len(c.State) > initStateW {
+				initStateW = len(c.State)
 			}
 		}
-		for i, c := range d.Conditions {
-			condLine := fmt.Sprintf("     %-*s  %s", typeW, c.Type, c.Status)
+		initNameW += 2
+		initImageW += 2
+		initStateW += 2
+
+		initHdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-7s  %-10s  %-10s  %-10s  %-10s  %s",
+			initNameW, "NAME", initImageW, "IMAGE", initStateW, "STATE",
+			"READY", "RESTARTS", "CPU REQ", "CPU LIM", "MEM REQ", "MEM LIM")
+		s += borderedRow(initHdr, iw, colHeaderStyle) + "\n"
+
+		for i, c := range d.InitContainers {
+			ready := fmt.Sprintf("%v", c.Ready)
+			cpuR := c.CPUReq
+			if cpuR == "" { cpuR = "\u2014" }
+			cpuL := c.CPULim
+			if cpuL == "" { cpuL = "\u2014" }
+			mR := c.MemReq
+			if mR == "" { mR = "\u2014" }
+			mL := c.MemLim
+			if mL == "" { mL = "\u2014" }
+
+			line := fmt.Sprintf("     %-*s  %-*s  %-*s  %-7s  %-10d  %-10s  %-10s  %-10s  %s",
+				initNameW, c.Name, initImageW, c.Image, initStateW, c.State,
+				ready, c.Restarts, cpuR, cpuL, mR, mL)
 			var style lipgloss.Style
 			if i%2 == 0 {
 				style = altRowStyle
 			} else {
 				style = normalRowStyle
 			}
-			s += borderedRow(condLine, iw, style) + "\n"
+			s += borderedRow(line, iw, style) + "\n"
 		}
 	}
+
+	// Labels section
+	if len(d.Labels) > 0 {
+		s += borderedRow("", iw, normalRowStyle) + "\n"
+		s += borderedRow(fmt.Sprintf("  \u2500\u2500 Labels (%d) \u2500\u2500", len(d.Labels)), iw, groupHeaderStyle) + "\n"
+		labelKeys := make([]string, 0, len(d.Labels))
+		for k := range d.Labels {
+			labelKeys = append(labelKeys, k)
+		}
+		sort.Strings(labelKeys)
+		keyW := 0
+		for _, k := range labelKeys {
+			if len(k) > keyW {
+				keyW = len(k)
+			}
+		}
+		for i, k := range labelKeys {
+			line := fmt.Sprintf("     %-*s  %s", keyW, k, d.Labels[k])
+			var style lipgloss.Style
+			if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	// Annotations section
+	if len(d.Annotations) > 0 {
+		s += borderedRow("", iw, normalRowStyle) + "\n"
+		s += borderedRow(fmt.Sprintf("  \u2500\u2500 Annotations (%d) \u2500\u2500", len(d.Annotations)), iw, groupHeaderStyle) + "\n"
+		annoKeys := make([]string, 0, len(d.Annotations))
+		for k := range d.Annotations {
+			annoKeys = append(annoKeys, k)
+		}
+		sort.Strings(annoKeys)
+		keyW := 0
+		for _, k := range annoKeys {
+			if len(k) > keyW {
+				keyW = len(k)
+			}
+		}
+		for i, k := range annoKeys {
+			line := fmt.Sprintf("     %-*s  %s", keyW, k, d.Annotations[k])
+			var style lipgloss.Style
+			if i%2 == 0 {
+				style = altRowStyle
+			} else {
+				style = normalRowStyle
+			}
+			s += borderedRow(line, iw, style) + "\n"
+		}
+	}
+
+	// Apply scrollable viewport
+	contentLines := strings.Split(s, "\n")
+	// headerLines = 2 (breadcrumb + top border), footerLines = 2 (bottom border + hint bar)
+	maxVisible := m.height - 4
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+
+	// Clamp scroll offset
+	totalLines := len(contentLines)
+	maxScroll := totalLines - maxVisible
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.k8sPodContainerCursor > maxScroll {
+		m.k8sPodContainerCursor = maxScroll
+	}
+
+	// Take visible window
+	startLine := m.k8sPodContainerCursor
+	endLine := startLine + maxVisible
+	if endLine > totalLines {
+		endLine = totalLines
+	}
+	s = strings.Join(contentLines[startLine:endLine], "\n") + "\n"
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	if m.filterActive {
-		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
-	} else {
-		s += m.renderHintBar([][]string{
-			{"\u2191\u2193", "Scroll"},
-			{"/", "Filter"},
-			{"1-9", "Sort"},
-			{"r", "Refresh"},
-			{"Esc", "Back"},
-			{"q", "Quit"},
-		})
-	}
+	s += m.renderHintBar([][]string{
+		{"\u2191\u2193", "Scroll"},
+		{"g", "Top"},
+		{"Esc", "Back"},
+		{"q", "Quit"},
+	})
 	return s
 }

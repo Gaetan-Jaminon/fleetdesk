@@ -77,8 +77,8 @@ func (m Model) renderAzureVMList() string {
 			}
 		}
 		// Account for transition overlay display strings
-		for _, t := range m.azureVMTransitions {
-			if len(t.Display) > statusCol {
+		for k, t := range m.azureTransitions {
+			if strings.HasPrefix(k, "vm/") && len(t.Display) > statusCol {
 				statusCol = len(t.Display)
 			}
 		}
@@ -124,7 +124,7 @@ func (m Model) renderAzureVMList() string {
 
 			// Overlay: check if VM has an in-flight transition
 			status := vm.PowerState
-			if t, ok := m.azureVMTransitions[vm.Name]; ok {
+			if t, ok := m.azureTransitions["vm/"+vm.Name]; ok {
 				status = t.Display
 			}
 

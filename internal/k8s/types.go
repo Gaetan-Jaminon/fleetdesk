@@ -151,8 +151,11 @@ type K8sPod struct {
 // K8sPodDetail holds extended pod properties.
 type K8sPodDetail struct {
 	K8sPod
-	Containers []K8sContainer
-	Conditions []K8sCondition // reuse existing type
+	Containers     []K8sContainer
+	InitContainers []K8sContainer
+	Conditions     []K8sCondition // reuse existing type
+	Labels         map[string]string
+	Annotations    map[string]string
 }
 
 // K8sContainer represents a container in a pod.
@@ -166,4 +169,14 @@ type K8sContainer struct {
 	CPULim   string
 	MemReq   string
 	MemLim   string
+}
+
+// K8sLogEntry represents a single parsed log line from kubectl logs.
+type K8sLogEntry struct {
+	Timestamp  string // "10:30:00" short display format
+	Pod        string // pod name
+	Level      string // "Debug", "Info", "Warning", "Error" (extracted from JSON)
+	Message    string // log message content (parsed/extracted)
+	RawMessage string // original unparsed message (for detail view)
+	RawTime    string // full RFC3339 for sorting
 }

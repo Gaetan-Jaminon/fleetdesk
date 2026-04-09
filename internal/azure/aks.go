@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -20,8 +21,11 @@ func FetchAKSClusters(m *Manager, subName, subID, tenantID string, logger *slog.
 		"| project name, resourceGroup, location, id, " +
 		"k8sVersion = properties.kubernetesVersion, " +
 		"powerState = properties.powerState.code, " +
+		"provisioningState = properties.provisioningState, " +
 		"networkPlugin = properties.networkProfile.networkPlugin, " +
-		"pools = properties.agentPoolProfiles"
+		"pools = properties.agentPoolProfiles, " +
+		"createdDate = tostring(tags.created_Date), tags " +
+		"| order by createdDate asc"
 
 	args := []string{"graph", "query", "-q", query, "--subscriptions", subID, "--first", "1000"}
 	data, err := m.RunCommand(args...)
@@ -47,9 +51,12 @@ func ParseGraphAKS(data []byte) ([]AKSDetail, error) {
 			Location      string `json:"location"`
 			ID            string `json:"id"`
 			K8sVersion    string `json:"k8sVersion"`
-			PowerState    string `json:"powerState"`
-			NetworkPlugin string `json:"networkPlugin"`
-			Pools         []struct {
+			PowerState        string `json:"powerState"`
+			ProvisioningState string `json:"provisioningState"`
+			NetworkPlugin     string `json:"networkPlugin"`
+			CreatedDate       string                 `json:"createdDate"`
+			Tags              map[string]interface{} `json:"tags"`
+			Pools             []struct {
 				Name                       string `json:"name"`
 				Mode                       string `json:"mode"`
 				VMSize                     string `json:"vmSize"`
@@ -82,6 +89,12 @@ func ParseGraphAKS(data []byte) ([]AKSDetail, error) {
 				AutoScale: p.EnableAutoScaling,
 			}
 		}
+		tags := make(map[string]string)
+		for k, v := range r.Tags {
+			if v != nil {
+				tags[k] = fmt.Sprintf("%v", v)
+			}
+		}
 		clusters[i] = AKSDetail{
 			AKSCluster: AKSCluster{
 				Name:              r.Name,
@@ -90,6 +103,9 @@ func ParseGraphAKS(data []byte) ([]AKSDetail, error) {
 				KubernetesVersion: r.K8sVersion,
 				NodeCount:         totalNodes,
 				PowerState:        r.PowerState,
+				ProvisioningState: r.ProvisioningState,
+				CreatedDate:       r.CreatedDate,
+				Tags:              tags,
 				ID:                r.ID,
 			},
 			NetworkPlugin: r.NetworkPlugin,
@@ -97,4 +113,74 @@ func ParseGraphAKS(data []byte) ([]AKSDetail, error) {
 		}
 	}
 	return clusters, nil
+}
+
+// AKSAction performs an AKS action (start, stop) asynchronously.
+func AKSAction(m *Manager, clusterName, rgName, subName, tenantID, action string, logger *slog.Logger) error {
+	start := time.Now()
+	logger.Debug("azure aks action start", "action", action, "cluster", clusterName, "rg", rgName)
+
+	args := []string{"aks", action, "--name", clusterName, "--resource-group", rgName, "--subscription", subName, "--no-wait"}
+	if tenantID != "" {
+		args = append(args, "--tenant", tenantID)
+	}
+	_, err := m.RunCommand(args...)
+	if err != nil {
+		logger.Error("azure aks action failed", "action", action, "cluster", clusterName, "elapsed", time.Since(start), "err", err)
+		return fmt.Errorf("aks %s: %w", action, err)
+	}
+
+	logger.Debug("azure aks action complete", "action", action, "cluster", clusterName, "elapsed", time.Since(start))
+	return nil
+}
+
+// FetchAKSPowerStates queries Resource Graph for power states of specific AKS clusters.
+// Returns a map of cluster name (lowercased) → power state.
+func FetchAKSPowerStates(m *Manager, subID string, clusterNames []string, logger *slog.Logger) (map[string]string, error) {
+	start := time.Now()
+	logger.Debug("azure poll aks states start", "count", len(clusterNames))
+
+	// Build name filter: name in~ ('c1','c2')
+	quoted := make([]string, len(clusterNames))
+	for i, n := range clusterNames {
+		quoted[i] = "'" + n + "'"
+	}
+	nameFilter := strings.Join(quoted, ",")
+
+	query := fmt.Sprintf("Resources | where type =~ 'microsoft.containerservice/managedclusters' "+
+		"| where name in~ (%s) "+
+		"| project name, provisioningState = properties.provisioningState", nameFilter)
+
+	args := []string{"graph", "query", "-q", query, "--subscriptions", subID, "--first", "1000"}
+	data, err := m.RunCommand(args...)
+	if err != nil {
+		return nil, fmt.Errorf("graph aks poll query: %w", err)
+	}
+
+	states, err := ParseAKSPowerStates(data)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Debug("azure poll aks states complete", "count", len(states), "elapsed", time.Since(start))
+	return states, nil
+}
+
+// ParseAKSPowerStates parses Resource Graph output into a cluster name → provisioning state map.
+func ParseAKSPowerStates(data []byte) (map[string]string, error) {
+	var result struct {
+		Data []struct {
+			Name              string `json:"name"`
+			ProvisioningState string `json:"provisioningState"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parsing aks power states: %w", err)
+	}
+
+	states := make(map[string]string, len(result.Data))
+	for _, r := range result.Data {
+		states[strings.ToLower(r.Name)] = strings.ToLower(r.ProvisioningState)
+	}
+	return states, nil
 }

@@ -1,101 +1,40 @@
 package azure
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
-func TestParseGraphAKS(t *testing.T) {
+func TestParseAKSPowerStates(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     []byte
-		wantCount int
-		wantErr   bool
-		check     func(t *testing.T, clusters []AKSDetail)
+		name    string
+		input   []byte
+		wantErr bool
+		want    map[string]string
 	}{
 		{
-			name:      "empty result",
-			input:     []byte(`{"count": 0, "data": []}`),
-			wantCount: 0,
-		},
-		{
-			name: "single cluster with multiple pools",
+			name: "multiple clusters with different states",
 			input: []byte(`{
-				"count": 1,
-				"data": [{
-					"name": "AKS-APP-DEV-GREEN",
-					"resourceGroup": "rg-app-dev",
-					"location": "westeurope",
-					"id": "/subscriptions/xxx/resourceGroups/rg-app-dev/providers/Microsoft.ContainerService/managedClusters/AKS-APP-DEV-GREEN",
-					"k8sVersion": "1.34",
-					"powerState": "Running",
-					"networkPlugin": "azure",
-					"pools": [
-						{"name": "system", "mode": "System", "vmSize": "Standard_D4s_v5", "count": 3, "minCount": 3, "maxCount": 20, "currentOrchestratorVersion": "1.34.2", "enableAutoScaling": true},
-						{"name": "default", "mode": "User", "vmSize": "Standard_E4s_v5", "count": 11, "minCount": 10, "maxCount": 20, "currentOrchestratorVersion": "1.34.2", "enableAutoScaling": true},
-						{"name": "connect", "mode": "User", "vmSize": "Standard_E4s_v5", "count": 5, "minCount": 5, "maxCount": 20, "currentOrchestratorVersion": "1.34.2", "enableAutoScaling": true}
-					]
-				}]
+				"count": 3,
+				"data": [
+					{"name": "aks-dev-01", "provisioningState": "Succeeded"},
+					{"name": "aks-qua-01", "provisioningState": "Starting"},
+					{"name": "AKS-PRD-01", "provisioningState": "Stopping"}
+				]
 			}`),
-			wantCount: 1,
-			check: func(t *testing.T, clusters []AKSDetail) {
-				c := clusters[0]
-				if c.Name != "AKS-APP-DEV-GREEN" {
-					t.Errorf("Name = %q", c.Name)
-				}
-				if c.KubernetesVersion != "1.34" {
-					t.Errorf("KubernetesVersion = %q", c.KubernetesVersion)
-				}
-				if c.NodeCount != 19 {
-					t.Errorf("NodeCount = %d, want 19 (3+11+5)", c.NodeCount)
-				}
-				if c.PowerState != "Running" {
-					t.Errorf("PowerState = %q", c.PowerState)
-				}
-				if c.NetworkPlugin != "azure" {
-					t.Errorf("NetworkPlugin = %q", c.NetworkPlugin)
-				}
-				if len(c.Pools) != 3 {
-					t.Fatalf("Pools = %d, want 3", len(c.Pools))
-				}
-				if c.Pools[0].Name != "system" {
-					t.Errorf("Pools[0].Name = %q", c.Pools[0].Name)
-				}
-				if c.Pools[0].Mode != "System" {
-					t.Errorf("Pools[0].Mode = %q", c.Pools[0].Mode)
-				}
-				if !c.Pools[0].AutoScale {
-					t.Error("Pools[0].AutoScale = false, want true")
-				}
-				if c.Pools[1].Count != 11 {
-					t.Errorf("Pools[1].Count = %d, want 11", c.Pools[1].Count)
-				}
+			want: map[string]string{
+				"aks-dev-01": "succeeded",
+				"aks-qua-01": "starting",
+				"aks-prd-01": "stopping",
 			},
 		},
 		{
-			name: "cluster with no pools",
-			input: []byte(`{
-				"count": 1,
-				"data": [{
-					"name": "aks-empty",
-					"resourceGroup": "rg",
-					"location": "westeurope",
-					"id": "/sub/xxx",
-					"k8sVersion": "1.30",
-					"powerState": "Stopped",
-					"networkPlugin": "kubenet",
-					"pools": []
-				}]
-			}`),
-			wantCount: 1,
-			check: func(t *testing.T, clusters []AKSDetail) {
-				if clusters[0].NodeCount != 0 {
-					t.Errorf("NodeCount = %d, want 0", clusters[0].NodeCount)
-				}
-				if len(clusters[0].Pools) != 0 {
-					t.Errorf("Pools = %d, want 0", len(clusters[0].Pools))
-				}
-			},
+			name:  "empty result",
+			input: []byte(`{"count": 0, "data": []}`),
+			want:  map[string]string{},
 		},
 		{
-			name:    "invalid JSON",
+			name:    "malformed JSON",
 			input:   []byte(`not json`),
 			wantErr: true,
 		},
@@ -103,7 +42,7 @@ func TestParseGraphAKS(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clusters, err := ParseGraphAKS(tt.input)
+			got, err := ParseAKSPowerStates(tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -113,11 +52,110 @@ func TestParseGraphAKS(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if len(clusters) != tt.wantCount {
-				t.Fatalf("got %d clusters, want %d", len(clusters), tt.wantCount)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d states, want %d", len(got), len(tt.want))
 			}
-			if tt.check != nil {
-				tt.check(t, clusters)
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("%s = %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestParseGraphAKSWithTags(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		wantTags map[string]string
+	}{
+		{
+			name: "tags parsed correctly",
+			input: []byte(`{
+				"data": [{
+					"name": "aks-dev-01",
+					"resourceGroup": "rg-dev",
+					"location": "westeurope",
+					"id": "/subscriptions/xxx/aks-dev-01",
+					"k8sVersion": "1.34",
+					"powerState": "Running",
+					"provisioningState": "Succeeded",
+					"networkPlugin": "azure",
+					"createdDate": "2026-03-17T14:59:29Z",
+					"pools": [],
+					"tags": {
+						"release": "release-2026-2-1",
+						"Team": "SYS",
+						"created_Date": "2026-03-17T14:59:29Z"
+					}
+				}]
+			}`),
+			wantTags: map[string]string{
+				"release":      "release-2026-2-1",
+				"Team":         "SYS",
+				"created_Date": "2026-03-17T14:59:29Z",
+			},
+		},
+		{
+			name: "null tag value is skipped",
+			input: []byte(`{
+				"data": [{
+					"name": "aks-dev-02",
+					"resourceGroup": "rg-dev",
+					"location": "westeurope",
+					"id": "/subscriptions/xxx/aks-dev-02",
+					"k8sVersion": "1.34",
+					"powerState": "Running",
+					"provisioningState": "Succeeded",
+					"networkPlugin": "azure",
+					"createdDate": "",
+					"pools": [],
+					"tags": {
+						"env": "dev",
+						"owner": null
+					}
+				}]
+			}`),
+			wantTags: map[string]string{
+				"env": "dev",
+			},
+		},
+		{
+			name: "missing tags field results in empty map",
+			input: []byte(`{
+				"data": [{
+					"name": "aks-dev-03",
+					"resourceGroup": "rg-dev",
+					"location": "westeurope",
+					"id": "/subscriptions/xxx/aks-dev-03",
+					"k8sVersion": "1.34",
+					"powerState": "Running",
+					"provisioningState": "Succeeded",
+					"networkPlugin": "azure",
+					"createdDate": "",
+					"pools": []
+				}]
+			}`),
+			wantTags: map[string]string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clusters, err := ParseGraphAKS(tt.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(clusters) != 1 {
+				t.Fatalf("got %d clusters, want 1", len(clusters))
+			}
+			got := clusters[0].Tags
+			if got == nil {
+				got = map[string]string{}
+			}
+			if !reflect.DeepEqual(got, tt.wantTags) {
+				t.Errorf("tags = %v, want %v", got, tt.wantTags)
 			}
 		})
 	}

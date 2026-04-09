@@ -162,37 +162,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// confirmed -- execute
 		m.showConfirm = false
 
-		// Azure VM action
-		if m.pendingAzureAction != "" {
-			action := m.pendingAzureAction
-			vm := m.pendingAzureVM
-			rg := m.pendingAzureRG
-			m.pendingAzureAction = ""
-			m.pendingAzureVM = ""
-			m.pendingAzureRG = ""
-			// Optimistic UI: set transition overlay immediately
-			if m.azureVMTransitions == nil {
-				m.azureVMTransitions = make(map[string]vmTransition)
+		// Azure resource action (VM or AKS)
+		if m.pendingAzureTransition != nil {
+			t := m.pendingAzureTransition
+			m.pendingAzureTransition = nil
+			key := t.ResourceType + "/" + t.ResourceName
+			if m.azureTransitions == nil {
+				m.azureTransitions = make(map[string]azureTransition)
 			}
-			display := action + "ing..."
-			if action == "deallocate" {
-				display = "deallocating..."
-			}
-			target := "running"
-			if action == "deallocate" {
-				target = "deallocated"
-			}
-			m.azureVMTransitions[vm] = vmTransition{
-				Action:      action,
-				Display:     display,
-				TargetState: target,
-			}
+			m.azureTransitions[key] = *t
 			m.flash = ""
-			if m.azureVMPolling {
-				return m, m.executeAzureVMAction(vm, rg, action)
+			var execCmd tea.Cmd
+			switch t.ResourceType {
+			case "vm":
+				execCmd = m.executeAzureVMAction(t.ResourceName, t.ResourceGroup, t.Action)
+			case "aks":
+				execCmd = m.executeAzureAKSAction(t.ResourceName, t.ResourceGroup, t.Action)
 			}
-			m.azureVMPolling = true
-			return m, tea.Batch(m.executeAzureVMAction(vm, rg, action), m.startVMPoll())
+			if m.azurePolling {
+				return m, execCmd
+			}
+			m.azurePolling = true
+			return m, tea.Batch(execCmd, m.startAzurePoll())
 		}
 
 		// K8s context delete
@@ -337,6 +328,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleK8sPodListKeys(msg)
 	case viewK8sPodDetail:
 		return m.handleK8sPodDetailKeys(msg)
+	case viewK8sPodLogs:
+		return m.handleK8sPodLogKeys(msg)
 	}
 	return m, nil
 }
@@ -1650,6 +1643,7 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.azureAKSClusters = nil
 			m.azureAKSCursor = 0
 			m.sortColumn = 0
+			m.sortAsc = true
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewAzureAKSList
@@ -1696,9 +1690,10 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			vm := filtered[m.azureVMCursor]
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", vm.Name)
-			m.pendingAzureAction = "start"
-			m.pendingAzureVM = vm.Name
-			m.pendingAzureRG = vm.ResourceGroup
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+				Action: "start", Display: "starting...", TargetState: "running",
+			}
 		}
 	case "o":
 		filtered := m.filteredAzureVMs()
@@ -1706,9 +1701,10 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			vm := filtered[m.azureVMCursor]
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("deallocate %s? [Y/n]", vm.Name)
-			m.pendingAzureAction = "deallocate"
-			m.pendingAzureVM = vm.Name
-			m.pendingAzureRG = vm.ResourceGroup
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+				Action: "deallocate", Display: "deallocating...", TargetState: "deallocated",
+			}
 		}
 	case "t":
 		filtered := m.filteredAzureVMs()
@@ -1716,9 +1712,10 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			vm := filtered[m.azureVMCursor]
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("restart %s? [Y/n]", vm.Name)
-			m.pendingAzureAction = "restart"
-			m.pendingAzureVM = vm.Name
-			m.pendingAzureRG = vm.ResourceGroup
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "vm", ResourceName: vm.Name, ResourceGroup: vm.ResourceGroup,
+				Action: "restart", Display: "restarting...", TargetState: "running",
+			}
 		}
 	case "/":
 		m.filterActive = true
@@ -1797,11 +1794,33 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.view = viewAzureAKSDetail
 			return m, m.fetchAzureActivityLog(c.ResourceGroup)
 		}
+	case "s":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", c.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
+				Action: "start", Display: "starting...", TargetState: "succeeded",
+			}
+		}
+	case "o":
+		filtered := m.filteredAzureAKS()
+		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
+			c := filtered[m.azureAKSCursor]
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("stop %s? [Y/n]", c.Name)
+			m.pendingAzureTransition = &azureTransition{
+				ResourceType: "aks", ResourceName: c.Name, ResourceGroup: c.ResourceGroup,
+				Action: "stop", Display: "stopping...", TargetState: "succeeded",
+			}
+		}
 	case "/":
 		m.filterActive = true
 		m.filterText = ""
 		m.azureAKSCursor = 0
-	case "1", "2", "3", "4", "5", "6":
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		col := int(msg.Runes[0] - '0')
 		if m.sortColumn == col {
 			m.sortAsc = !m.sortAsc
@@ -2172,7 +2191,7 @@ func (m Model) handleK8sWorkloadListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = true
 		m.filterText = ""
 		m.k8sWorkloadCursor = 0
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3":
 		col := int(msg.Runes[0] - '0')
 		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
 		m.sortView()
@@ -2216,6 +2235,27 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		col := int(msg.Runes[0] - '0')
 		if m.sortColumn == col { m.sortAsc = !m.sortAsc } else { m.sortColumn = col; m.sortAsc = true }
 		m.sortView()
+	case "l":
+		filtered := m.filteredK8sPodList()
+		if len(filtered) == 0 {
+			return m, nil
+		}
+		var podNames []string
+		for _, p := range filtered {
+			podNames = append(podNames, p.Name)
+		}
+		m.k8sPodLogs = nil
+		m.k8sPodLogCursor = 0
+		m.k8sPodLogStreaming = false
+		m.k8sPodLogAllContainers = false
+		m.k8sPodLogMinLevel = 0
+		m.filterText = ""
+		m.filterActive = false
+		m.sortColumn = 0
+		wl := m.k8sWorkloads[m.selectedK8sWorkload]
+		m.flash = fmt.Sprintf("Loading logs for %s...", wl.Name)
+		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+		return m, m.fetchK8sPodLogs(ns, podNames)
 	case "r":
 		m.k8sPodList = nil
 		m.k8sPodCursor = 0
@@ -2235,16 +2275,107 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up", "k":
-		if m.k8sPodContainerCursor > 0 { m.k8sPodContainerCursor-- }
+		if m.k8sPodContainerCursor > 0 {
+			m.k8sPodContainerCursor--
+		}
 	case "down", "j":
-		if m.k8sPodContainerCursor < len(m.k8sPodDetail.Containers)-1 { m.k8sPodContainerCursor++ }
-	case "r":
-		p := m.k8sPodDetail
+		m.k8sPodContainerCursor++
+	case "g":
 		m.k8sPodContainerCursor = 0
-		return m, m.fetchK8sPodDetail(p.Namespace, p.Name)
 	case "esc":
 		m.view = viewK8sPodList
 	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Detail view: any key closes it
+	if m.showK8sLogDetail {
+		m.showK8sLogDetail = false
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "enter":
+		filtered := m.filteredK8sPodLogs()
+		if len(filtered) > 0 && m.k8sPodLogCursor < len(filtered) {
+			m.showK8sLogDetail = true
+		}
+	case "up", "k":
+		if m.k8sPodLogCursor > 0 {
+			m.k8sPodLogCursor--
+		}
+	case "down", "j":
+		filtered := m.filteredK8sPodLogs()
+		if m.k8sPodLogCursor < len(filtered)-1 {
+			m.k8sPodLogCursor++
+		}
+	case "G":
+		filtered := m.filteredK8sPodLogs()
+		if len(filtered) > 0 {
+			m.k8sPodLogCursor = len(filtered) - 1
+		}
+	case "g":
+		m.k8sPodLogCursor = 0
+	case "s":
+		if m.k8sPodLogStreaming {
+			// Stop streaming
+			if m.k8sPodLogCancel != nil {
+				m.k8sPodLogCancel()
+			}
+			m.k8sPodLogChan = nil
+			m.k8sPodLogStreaming = false
+		} else {
+			// Resume streaming
+			var podNames []string
+			for _, p := range m.k8sPodList {
+				podNames = append(podNames, p.Name)
+			}
+			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+			return m, m.streamK8sPodLogs(ns, podNames)
+		}
+	case "d":
+		// Cycle level filter: All → Info+ → Warn+ → Error+ → All
+		m.k8sPodLogMinLevel = (m.k8sPodLogMinLevel + 1) % 4
+		m.k8sPodLogCursor = 0
+	case "c":
+		// Toggle sidecar container logs
+		if m.k8sPodLogCancel != nil {
+			m.k8sPodLogCancel()
+		}
+		m.k8sPodLogChan = nil
+		m.k8sPodLogs = nil
+		m.k8sPodLogCursor = 0
+		m.k8sPodLogStreaming = false
+		m.k8sPodLogAllContainers = !m.k8sPodLogAllContainers
+		var podNames []string
+		for _, p := range m.k8sPodList {
+			podNames = append(podNames, p.Name)
+		}
+		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
+		return m, m.fetchK8sPodLogs(ns, podNames)
+	case "esc":
+		if m.filterActive {
+			m.filterActive = false
+			m.filterText = ""
+			m.k8sPodLogCursor = 0
+		} else {
+			if m.k8sPodLogCancel != nil {
+				m.k8sPodLogCancel()
+			}
+			m.k8sPodLogChan = nil
+			m.k8sPodLogStreaming = false
+			m.view = viewK8sPodList
+			m.sortColumn = 0
+			m.filterText = ""
+			m.filterActive = false
+		}
+	case "q":
+		if m.k8sPodLogCancel != nil {
+			m.k8sPodLogCancel()
+		}
 		return m, tea.Quit
 	}
 	return m, nil

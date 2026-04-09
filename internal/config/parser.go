@@ -16,6 +16,7 @@ type fleetFile struct {
 	Type             string          `yaml:"type"`
 	TenantID         string          `yaml:"tenant_id"`
 	ActivityLogHours int             `yaml:"activity_log_hours"`
+	DisplayTags      []string        `yaml:"display_tags"`
 	Defaults         defaultsFile    `yaml:"defaults"`
 	Groups           []groupFile     `yaml:"groups"`
 	Hosts            []hostEntryFile `yaml:"hosts"`
@@ -136,6 +137,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 		Type:             raw.Type,
 		TenantID:         raw.TenantID,
 		ActivityLogHours: activityLogHours,
+		DisplayTags:      raw.DisplayTags,
 		Path:             path,
 		Defaults:         defaults,
 		Groups:           groups,

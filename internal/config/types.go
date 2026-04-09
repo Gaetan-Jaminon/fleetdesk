@@ -8,6 +8,7 @@ type Fleet struct {
 	Type             string       `yaml:"type"`
 	TenantID         string       `yaml:"tenant_id"`
 	ActivityLogHours int          `yaml:"activity_log_hours"`
+	DisplayTags      []string     `yaml:"display_tags"`
 	Path             string       `yaml:"-"`
 	Defaults         HostDefaults `yaml:"defaults"`
 	Groups           []HostGroup  `yaml:"groups"`

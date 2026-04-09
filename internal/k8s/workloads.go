@@ -312,9 +312,11 @@ func FetchPodDetail(m *Manager, contextName, namespace, podName string, logger *
 func ParsePodDetail(data []byte) (K8sPodDetail, error) {
 	var raw struct {
 		Metadata struct {
-			Name              string `json:"name"`
-			Namespace         string `json:"namespace"`
-			CreationTimestamp string `json:"creationTimestamp"`
+			Name              string            `json:"name"`
+			Namespace         string            `json:"namespace"`
+			CreationTimestamp string            `json:"creationTimestamp"`
+			Labels            map[string]string `json:"labels"`
+			Annotations       map[string]string `json:"annotations"`
 		} `json:"metadata"`
 		Spec struct {
 			NodeName   string `json:"nodeName"`
@@ -326,6 +328,14 @@ func ParsePodDetail(data []byte) (K8sPodDetail, error) {
 					Limits   map[string]string `json:"limits"`
 				} `json:"resources"`
 			} `json:"containers"`
+			InitContainers []struct {
+				Name      string `json:"name"`
+				Image     string `json:"image"`
+				Resources struct {
+					Requests map[string]string `json:"requests"`
+					Limits   map[string]string `json:"limits"`
+				} `json:"resources"`
+			} `json:"initContainers"`
 		} `json:"spec"`
 		Status struct {
 			Phase             string `json:"phase"`
@@ -336,6 +346,12 @@ func ParsePodDetail(data []byte) (K8sPodDetail, error) {
 				RestartCount int                    `json:"restartCount"`
 				State        map[string]interface{} `json:"state"`
 			} `json:"containerStatuses"`
+			InitContainerStatuses []struct {
+				Name         string                 `json:"name"`
+				Ready        bool                   `json:"ready"`
+				RestartCount int                    `json:"restartCount"`
+				State        map[string]interface{} `json:"state"`
+			} `json:"initContainerStatuses"`
 			Conditions []struct {
 				Type   string `json:"type"`
 				Status string `json:"status"`
@@ -403,6 +419,41 @@ func ParsePodDetail(data []byte) (K8sPodDetail, error) {
 		}
 	}
 
+	// Build init containers
+	initContainers := make([]K8sContainer, len(raw.Spec.InitContainers))
+	initStatusMap := make(map[string]struct {
+		ready    bool
+		restarts int
+		state    string
+	})
+	for _, cs := range raw.Status.InitContainerStatuses {
+		state := "unknown"
+		for k := range cs.State {
+			state = k
+			break
+		}
+		initStatusMap[cs.Name] = struct {
+			ready    bool
+			restarts int
+			state    string
+		}{cs.Ready, cs.RestartCount, state}
+	}
+	for i, c := range raw.Spec.InitContainers {
+		initContainers[i] = K8sContainer{
+			Name:   c.Name,
+			Image:  c.Image,
+			CPUReq: c.Resources.Requests["cpu"],
+			CPULim: c.Resources.Limits["cpu"],
+			MemReq: c.Resources.Requests["memory"],
+			MemLim: c.Resources.Limits["memory"],
+		}
+		if s, ok := initStatusMap[c.Name]; ok {
+			initContainers[i].Ready = s.ready
+			initContainers[i].Restarts = s.restarts
+			initContainers[i].State = s.state
+		}
+	}
+
 	// Build conditions
 	conditions := make([]K8sCondition, len(raw.Status.Conditions))
 	for i, c := range raw.Status.Conditions {
@@ -410,8 +461,253 @@ func ParsePodDetail(data []byte) (K8sPodDetail, error) {
 	}
 
 	return K8sPodDetail{
-		K8sPod:     pod,
-		Containers: containers,
-		Conditions: conditions,
+		K8sPod:         pod,
+		Containers:     containers,
+		InitContainers: initContainers,
+		Conditions:     conditions,
+		Labels:         raw.Metadata.Labels,
+		Annotations:    raw.Metadata.Annotations,
 	}, nil
+}
+
+// ParseLogLine parses a single kubectl logs --timestamps line.
+// Format: "2026-04-08T10:30:01.123456789Z log message here"
+// The podName is passed in since we run one kubectl per pod.
+func ParseLogLine(podName, line string) K8sLogEntry {
+	if line == "" {
+		return K8sLogEntry{Pod: podName}
+	}
+
+	// Try to extract RFC3339 timestamp from start of line
+	// Look for the first space after the timestamp
+	spaceIdx := strings.IndexByte(line, ' ')
+	if spaceIdx < 0 {
+		// No space — entire line is either timestamp or message
+		return K8sLogEntry{Pod: podName, Message: line}
+	}
+
+	candidate := line[:spaceIdx]
+	t, err := time.Parse(time.RFC3339Nano, candidate)
+	if err != nil {
+		// Not a timestamp — treat whole line as message
+		return K8sLogEntry{Pod: podName, Message: line}
+	}
+
+	msg := line[spaceIdx+1:]
+	// Replace newlines with spaces to keep each entry on a single row
+	msg = strings.ReplaceAll(msg, "\n", " ")
+	msg = strings.ReplaceAll(msg, "\r", "")
+	entry := K8sLogEntry{
+		Timestamp:  t.Format("15:04:05"),
+		Pod:        podName,
+		Message:    msg,
+		RawMessage: msg,
+		RawTime:    candidate,
+	}
+
+	parseStructuredLog(&entry)
+	// Strip newlines after structured parsing (JSON message values may contain \n)
+	entry.Message = strings.ReplaceAll(entry.Message, "\n", " ")
+	entry.Message = strings.ReplaceAll(entry.Message, "\r", "")
+	return entry
+}
+
+// parseStructuredLog detects the log format and extracts level + message.
+// Supported formats:
+//   - JSON: {"level":"Info","message":"..."}  or {"level":"Info","msg":"..."}
+//   - logfmt: ts=... level=info msg="opened log stream" key=value ...
+//   - klog: I0408 16:54:24.238156  1 file.go:110] "message text"
+func parseStructuredLog(entry *K8sLogEntry) {
+	msg := entry.Message
+	if len(msg) == 0 {
+		return
+	}
+
+	switch {
+	case msg[0] == '{':
+		parseJSONLog(entry)
+	case strings.HasPrefix(msg, "ts=") || strings.HasPrefix(msg, "time=") || strings.HasPrefix(msg, "level="):
+		parseLogfmt(entry)
+	case len(msg) >= 1 && (msg[0] == 'I' || msg[0] == 'W' || msg[0] == 'E' || msg[0] == 'F') && len(msg) > 5 && msg[1] >= '0' && msg[1] <= '9':
+		parseKlog(entry)
+	}
+}
+
+// jsonField looks up a key case-insensitively in a JSON map.
+func jsonField(j map[string]any, keys ...string) (string, bool) {
+	for k, v := range j {
+		lower := strings.ToLower(k)
+		for _, key := range keys {
+			if lower == key {
+				if s, ok := v.(string); ok {
+					return s, true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+func parseJSONLog(entry *K8sLogEntry) {
+	var j map[string]any
+	if err := json.Unmarshal([]byte(entry.Message), &j); err != nil {
+		return
+	}
+	if level, ok := jsonField(j, "level"); ok {
+		entry.Level = level
+	}
+	if message, ok := jsonField(j, "message", "msg"); ok {
+		entry.Message = message
+	}
+}
+
+func parseLogfmt(entry *K8sLogEntry) {
+	msg := entry.Message
+	// Extract level= and msg= from logfmt key=value pairs
+	entry.Level = extractLogfmtValue(msg, "level")
+	if m := extractLogfmtValue(msg, "msg"); m != "" {
+		// Include remaining context keys after msg="..." for visibility
+		// Find where msg value ends and append the rest
+		msgKey := "msg="
+		idx := strings.Index(msg, msgKey)
+		if idx >= 0 {
+			rest := msg[idx+len(msgKey):]
+			if len(rest) > 0 && rest[0] == '"' {
+				// Skip past closing quote
+				end := strings.IndexByte(rest[1:], '"')
+				if end >= 0 && end+2 < len(rest) {
+					trailing := strings.TrimSpace(rest[end+2:])
+					if trailing != "" {
+						entry.Message = m + " | " + trailing
+						return
+					}
+				}
+			}
+		}
+		entry.Message = m
+	}
+}
+
+// extractLogfmtValue extracts a value for a given key from logfmt text.
+func extractLogfmtValue(text, key string) string {
+	search := key + "="
+	idx := strings.Index(text, search)
+	if idx < 0 {
+		return ""
+	}
+	// Make sure it's a key boundary (start of string or preceded by space)
+	if idx > 0 && text[idx-1] != ' ' {
+		return ""
+	}
+	rest := text[idx+len(search):]
+	if len(rest) == 0 {
+		return ""
+	}
+	if rest[0] == '"' {
+		// Quoted value — find closing quote
+		end := strings.IndexByte(rest[1:], '"')
+		if end < 0 {
+			return rest[1:]
+		}
+		return rest[1 : end+1]
+	}
+	// Unquoted — until next space
+	end := strings.IndexByte(rest, ' ')
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
+}
+
+func parseKlog(entry *K8sLogEntry) {
+	msg := entry.Message
+	// klog format: I0408 16:54:24.238156  1 file.go:110] "message"
+	// First char is severity: I=Info, W=Warning, E=Error, F=Fatal
+	switch msg[0] {
+	case 'I':
+		entry.Level = "Info"
+	case 'W':
+		entry.Level = "Warning"
+	case 'E':
+		entry.Level = "Error"
+	case 'F':
+		entry.Level = "Fatal"
+	}
+	// Extract the message after the "] " marker
+	bracket := strings.Index(msg, "] ")
+	if bracket >= 0 {
+		extracted := msg[bracket+2:]
+		// Strip surrounding quotes if present
+		if len(extracted) >= 2 && extracted[0] == '"' && extracted[len(extracted)-1] == '"' {
+			extracted = extracted[1 : len(extracted)-1]
+		}
+		entry.Message = extracted
+	}
+}
+
+// FetchWorkloadLogs fetches the last N lines of logs from multiple pods.
+// It runs kubectl logs per pod and merges results sorted by timestamp.
+// When allContainers is false, only the main container logs are fetched (excludes sidecars).
+func FetchWorkloadLogs(m *Manager, contextName, namespace string, podNames []string, tail int, allContainers bool, logger *slog.Logger) ([]K8sLogEntry, error) {
+	logger.Debug("k8s fetch workload logs start", "context", contextName, "namespace", namespace, "pods", len(podNames))
+	start := time.Now()
+
+	type result struct {
+		entries []K8sLogEntry
+		err     error
+	}
+	ch := make(chan result, len(podNames))
+
+	for _, pod := range podNames {
+		go func(podName string) {
+			tailStr := fmt.Sprintf("%d", tail)
+			args := []string{"logs", "-n", namespace, podName,
+				"--context", contextName,
+				"--timestamps",
+				"--tail", tailStr}
+			if allContainers {
+				args = append(args, "--all-containers")
+			}
+			data, err := m.RunCommand(args...)
+			if err != nil {
+				ch <- result{err: fmt.Errorf("logs %s: %w", podName, err)}
+				return
+			}
+			var entries []K8sLogEntry
+			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+				if line == "" {
+					continue
+				}
+				e := ParseLogLine(podName, line)
+				// Skip continuation lines (no timestamp = multi-line log spillover)
+				if e.Timestamp == "" {
+					continue
+				}
+				entries = append(entries, e)
+			}
+			ch <- result{entries: entries}
+		}(pod)
+	}
+
+	var all []K8sLogEntry
+	var errs []string
+	for range podNames {
+		r := <-ch
+		if r.err != nil {
+			errs = append(errs, r.err.Error())
+			continue
+		}
+		all = append(all, r.entries...)
+	}
+
+	// Sort by raw timestamp, newest first
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].RawTime > all[j].RawTime
+	})
+
+	logger.Debug("k8s fetch workload logs complete", "entries", len(all), "errors", len(errs), "elapsed", time.Since(start))
+	if len(all) == 0 && len(errs) > 0 {
+		return nil, fmt.Errorf("all pods failed: %s", strings.Join(errs, "; "))
+	}
+	return all, nil
 }

@@ -37,8 +37,6 @@ func (m Model) renderK8sWorkloadList() string {
 	} else {
 		nameCol := len("NAME")
 		readyCol := 7
-		utdCol := len("UP-TO-DATE")
-		availCol := len("AVAILABLE")
 		for _, wl := range filtered {
 			if len(wl.Name) > nameCol {
 				nameCol = len(wl.Name)
@@ -50,12 +48,10 @@ func (m Model) renderK8sWorkloadList() string {
 		nameCol += 2
 		readyCol += 2
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %*s  %*s  %s",
+		hdr := fmt.Sprintf("     %-*s  %-*s  %s",
 			nameCol, "NAME"+m.sortIndicator(1),
 			readyCol, "READY"+m.sortIndicator(2),
-			utdCol, "UP-TO-DATE"+m.sortIndicator(3),
-			availCol, "AVAILABLE"+m.sortIndicator(4),
-			"AGE"+m.sortIndicator(5),
+			"AGE"+m.sortIndicator(3),
 		)
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
@@ -103,18 +99,9 @@ func (m Model) renderK8sWorkloadList() string {
 				cur = " \u25b8 "
 			}
 
-			utd := "\u2014"
-			avail := "\u2014"
-			if wl.Kind == "Deployment" {
-				utd = fmt.Sprintf("%d", wl.UpToDate)
-				avail = fmt.Sprintf("%d", wl.Available)
-			}
-
-			line := fmt.Sprintf("%s  %-*s  %-*s  %*s  %*s  %s",
+			line := fmt.Sprintf("%s  %-*s  %-*s  %s",
 				cur, nameCol, wl.Name,
 				readyCol, wl.Ready,
-				utdCol, utd,
-				availCol, avail,
 				wl.Age,
 			)
 
@@ -140,7 +127,7 @@ func (m Model) renderK8sWorkloadList() string {
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Pods"},
 			{"/", "Filter"},
-			{"1-5", "Sort"},
+			{"1-3", "Sort"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
