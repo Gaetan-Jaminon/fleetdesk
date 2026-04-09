@@ -804,7 +804,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						subID := m.azureSubs[m.selectedAzureSub].ID
 						logger := m.logger
 						clusterName := c.Name
-						rg := c.ResourceGroup
 						// Determine target based on the transitioning action
 						target := "running"
 						action := strings.ToLower(c.ProvisioningState)
@@ -813,7 +812,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						} else if action == "deleting" {
 							target = "gone"
 						}
-						_ = rg // captured for future use
 						m.transitions[key] = transition{
 							ResourceType: "aks",
 							ResourceName: clusterName,
