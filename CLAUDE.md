@@ -6,7 +6,7 @@ Go TUI application (Bubble Tea) managing fleets of Linux VMs (SSH), Azure resour
 
 ## Workflow
 
-Follow the AI Workflow: [docs/ai-workflow.md](docs/ai-workflow.md)
+Follow the AI Workflow: [AI Development Baseline in Linear](https://linear.app/fleetdesk/document/ai-development-baseline-9a83d5bd94ae)
 
 - Use `/release-plan` to plan releases
 - Use `/feature-dev` for feature development (7-phase workflow)
@@ -46,6 +46,12 @@ make test     # run unit tests
 - SSH auth: each method tried individually to avoid MaxAuthTries exhaustion
 - API keys: from `$LINEAR_API_KEY`, `$ANTHROPIC_API_KEY` — never in code
 - Proactively flag security implications during design review, even if the plan doesn't mention them
+
+## Knowledge
+
+- When corrected, update memory immediately — don't wait for end of session
+- When making an architectural decision, draft an ADR in docs/adr/
+- When a new convention or rule emerges, propose adding it to CLAUDE.md
 
 ## Git
 
