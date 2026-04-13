@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -28,5 +28,31 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
 
             /code-review --comment ${{ github.event.pull_request.number }}
+
+            Additional checks beyond standard code review:
+
+            1. **CLAUDE.md compliance** — enforce architecture rules:
+               - Engine must NOT switch on resource type (closures/interfaces only)
+               - Backend packages (internal/azure/, internal/k8s/, internal/ssh/) must NOT import Bubble Tea
+               - Bubble Tea stale model capture: closures must not mutate model state
+
+            2. **TDD discipline** — check the full commit history of this PR:
+               - Failing tests must be committed *before* the implementation that makes them pass
+               - If tests and implementation appear in the same commit, flag it
+
+            3. **Testing tiers** — verify appropriate test coverage:
+               - Unit tests: parsers, formatters, helpers, config (`go test`)
+               - UI tests: navigation, key bindings, state transitions, flash messages, overlays (`teatest`)
+               - Integration tests go in the Linear Test Plan, not in code
+
+            4. **Scope check** — extract the FLE number from the branch name, then fetch the
+               Linear issue and its most recent comment (the Step 2 architecture contract) using
+               the LINEAR_API_KEY env var. Flag any implementation that deviates from the
+               contract or adds out-of-scope changes.
+
+            5. **Security** — hardcoded secrets, unsanitized input before shell execution,
+               credentials in logs or error messages, command injection.
+          env:
+            LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           claude_args: |
-            --model claude-opus-4-6 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --model claude-opus-4-6 --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(curl *)"
