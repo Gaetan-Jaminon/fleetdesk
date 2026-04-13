@@ -38,21 +38,13 @@ func (m Model) renderHostList() string {
 
 		// compute dynamic column widths from actual data
 		upCol := len("UP SINCE")
-		updCol := len("LAST UPDATE")
-		secCol := len("LAST SECURITY")
 		for _, h := range m.hosts {
 			if len(h.UpSince) > upCol {
 				upCol = len(h.UpSince)
 			}
-			if len(h.LastUpdate) > updCol {
-				updCol = len(h.LastUpdate)
-			}
-			if len(h.LastSecurity) > secCol {
-				secCol = len(h.LastSecurity)
-			}
 		}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %5s  %5s  %-*s  %-*s", nameCol, "HOST", osCol, "OS", upCol, "UP SINCE", "SVC", "CTN", updCol, "LAST UPDATE", secCol, "LAST SECURITY")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s", nameCol, "HOST", osCol, "OS", upCol, "UP SINCE")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -103,8 +95,8 @@ func (m Model) renderHostList() string {
 				}
 				line = fmt.Sprintf("%s  %-*s  unreachable (%s)", cur, nameCol, h.Entry.Name, reason)
 			default:
-				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s  %5d  %5d  %-*s  %-*s",
-					cur, nameCol, h.Entry.Name, osCol, h.OS, upCol, h.UpSince, h.ServiceCount, h.ContainerCount, updCol, h.LastUpdate, secCol, h.LastSecurity)
+				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s",
+					cur, nameCol, h.Entry.Name, osCol, h.OS, upCol, h.UpSince)
 			}
 
 			var style lipgloss.Style

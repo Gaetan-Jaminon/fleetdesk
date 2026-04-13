@@ -174,10 +174,14 @@ func (sm *Manager) ConnectWithPassword(idx int, h config.Host, password string) 
 	}
 
 	addr := fmt.Sprintf("%s:%d", hostname, port)
+	start := time.Now()
+	sm.logger.Debug("password dial start", "addr", addr, "idx", idx)
 	client, err := gossh.Dial("tcp", addr, sshConfig)
 	if err != nil {
+		sm.logger.Error("password dial failed", "addr", addr, "idx", idx, "err", err, "elapsed", time.Since(start))
 		return PasswordRetryResult{Index: idx, Err: fmt.Errorf("password auth: %w", err)}
 	}
+	sm.logger.Debug("password dial success", "addr", addr, "idx", idx, "elapsed", time.Since(start))
 
 	sm.mu.Lock()
 	sm.conns[idx] = client
@@ -185,10 +189,19 @@ func (sm *Manager) ConnectWithPassword(idx int, h config.Host, password string) 
 
 	info, err := Probe(client, entry.SystemdMode, h.ErrorLogSince)
 	if err != nil {
+		sm.logger.Error("password probe failed", "addr", addr, "idx", idx, "err", err)
 		return PasswordRetryResult{Index: idx, Err: fmt.Errorf("probe: %w", err)}
 	}
 
+	sm.logger.Debug("password probe success", "addr", addr, "idx", idx)
 	return PasswordRetryResult{Index: idx, Info: info}
+}
+
+// HasConnection returns true if the manager has an active SSH client for the given host index.
+func (sm *Manager) HasConnection(idx int) bool {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.conns[idx] != nil
 }
 
 // Close shuts down all SSH connections.
@@ -212,38 +225,17 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 	}
 	defer session.Close()
 
-	sysctl := "systemctl"
-	if systemdMode == "user" {
-		sysctl = "systemctl --user"
-	}
-
-	cmd := fmt.Sprintf(
-		`hostname -f 2>/dev/null || hostname && `+
-			`uptime -s 2>/dev/null || echo unknown && `+
-			`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown && `+
-			`%s list-units --type=service --no-pager -q 2>/dev/null | wc -l && `+
-			`%s list-units --type=service --state=running --no-pager -q 2>/dev/null | wc -l && `+
-			`%s list-units --type=service --state=failed --no-pager -q 2>/dev/null | wc -l && `+
-			`podman ps -q 2>/dev/null | wc -l && `+
-			`podman ps -a -q 2>/dev/null | wc -l && `+
-			`(dnf history list 2>/dev/null | grep -E '\| update ' | grep -v mdatp | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown) && `+
-			`(dnf history list 2>/dev/null | grep -E '\| update --security' | head -1 | awk -F'|' '{gsub(/^ +| +$/,"",$3); print $3}' || echo unknown) && `+
-			`echo $(( $(crontab -l 2>/dev/null | grep -v '^#' | grep -v '^$' | wc -l) + $(ls /etc/cron.d/ 2>/dev/null | wc -l) )) && `+
-			`sudo journalctl -p err --since '%s' --no-pager -q 2>/dev/null | wc -l && `+
-			`dnf check-update --quiet 2>/dev/null | grep -E '^\S+\.\S+\s' | wc -l && `+
-			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && `+
-			`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l && `+
-			`(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | wc -l && `+
-			`((getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | while read u; do sudo passwd -S "$u" 2>/dev/null; done | { grep -c ' L ' || true; }) && `+
-			`(ip -br link | grep -c UP || echo 0) && `+
-			`ip -br link | wc -l && `+
-			`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0) && `+
-			`(sudo journalctl -u sshd --no-pager -q 2>/dev/null | grep -ciE 'failed|invalid user' || echo 0) && `+
-			`(sudo journalctl _COMM=sudo --no-pager -q 2>/dev/null | wc -l || echo 0) && `+
-			`(sudo journalctl _TRANSPORT=audit --no-pager -q 2>/dev/null | grep -c 'avc:' || echo 0) && `+
-			`(sudo aureport --auth 2>/dev/null | grep -cE '^\s*[0-9]+\.' || echo 0)`,
-		sysctl, sysctl, sysctl, errorLogSince,
-	)
+	cmd := `hostname -f 2>/dev/null || hostname && ` +
+		`uptime -s 2>/dev/null || echo unknown && ` +
+		`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown && ` +
+		`echo $(( $(crontab -l 2>/dev/null | grep -v '^#' | grep -v '^$' | wc -l) + $(ls /etc/cron.d/ 2>/dev/null | wc -l) )) && ` +
+		fmt.Sprintf(`sudo journalctl -p err --since '%s' --no-pager -q 2>/dev/null | wc -l && `, errorLogSince) +
+		`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | wc -l && ` +
+		`df -h --output=pcent -x tmpfs -x devtmpfs 2>/dev/null | tail -n+2 | awk '{gsub(/%%/,""); if ($1 >= 80) print}' | wc -l && ` +
+		`(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | wc -l && ` +
+		`(ip -br link | grep -c UP || echo 0) && ` +
+		`ip -br link | wc -l && ` +
+		`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0)`
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {
@@ -254,23 +246,14 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 		defer session2.Close()
 
 		if systemdMode == "user" {
-			sysctl = "systemctl"
 			systemdMode = "system"
 		} else {
-			sysctl = "systemctl --user"
 			systemdMode = "user"
 		}
 
-		cmd = fmt.Sprintf(
-			`hostname -f 2>/dev/null || hostname && `+
-				`uptime -s 2>/dev/null || echo unknown && `+
-				`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown && `+
-				`%s list-units --type=service --no-pager -q 2>/dev/null | wc -l && `+
-				`echo 0 && `+
-				`echo 0 && `+
-				`podman ps -q 2>/dev/null | wc -l`,
-			sysctl,
-		)
+		cmd = `hostname -f 2>/dev/null || hostname && ` +
+			`uptime -s 2>/dev/null || echo unknown && ` +
+			`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown`
 
 		out, err = session2.CombinedOutput(cmd)
 		if err != nil {

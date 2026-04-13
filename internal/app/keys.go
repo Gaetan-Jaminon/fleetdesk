@@ -189,19 +189,29 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, sshHandover(h, []string{cmd}, banner)
 	}
 
-	// password prompt mode -- capture input
-	if m.showPasswordPrompt {
+	// password prompt mode -- capture input (only on host list view)
+	if m.showPasswordPrompt && m.view == viewHostList {
 		switch msg.Type {
 		case tea.KeyEnter:
 			m.showPasswordPrompt = false
 			password := m.passwordInput
 			m.passwordInput = "" // clear input immediately
-			idx := m.passwordHostIdx
-			m.hosts[idx].Status = config.HostConnecting
 			m.flash = ""
-			// cache password temporarily in ssh manager for batch retries
 			m.ssh.SetCachedPassword(password)
-			return m, retryWithPassword(m.ssh, idx, m.hosts[idx], password)
+			// retry ALL password-needing hosts in one batch
+			var cmds []tea.Cmd
+			for i, h := range m.hosts {
+				if h.NeedsPassword && (h.Status == config.HostUnreachable || i == m.passwordHostIdx) {
+					m.hosts[i].Status = config.HostConnecting
+					ii := i
+					hh := h
+					sm := m.ssh
+					cmds = append(cmds, func() tea.Msg {
+						return sm.ConnectWithPassword(ii, hh, password)
+					})
+				}
+			}
+			return m, tea.Batch(cmds...)
 		case tea.KeyEsc:
 			m.showPasswordPrompt = false
 			m.hosts[m.passwordHostIdx].Status = config.HostUnreachable

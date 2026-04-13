@@ -52,31 +52,18 @@ type Host struct {
 	ErrorLogSince string
 
 	// probe results
-	FQDN             string
-	OS               string
-	UpSince          string
-	ServiceCount     int
-	ServiceRunning   int
-	ServiceFailed    int
-	ContainerCount   int
-	ContainerRunning int
-	CronCount        int
-	ErrorCount       int
-	UpdateCount      int
-	DiskCount        int
-	DiskHighCount    int
-	UserCount        int
-	LockedUsers      int
-	InterfacesUp     int
-	InterfacesTotal  int
-	ListeningPorts   int
-	FailedLoginCount int
-	SudoEventCount   int
-	SELinuxDenyCount int
-	AuditEventCount  int
-	LastUpdate       string
-	LastSecurity     string
-	Error            string
+	FQDN            string
+	OS              string
+	UpSince         string
+	CronCount       int
+	ErrorCount      int
+	DiskCount       int
+	DiskHighCount   int
+	UserCount       int
+	InterfacesUp    int
+	InterfacesTotal int
+	ListeningPorts  int
+	Error           string
 }
 
 // HostStatus represents the connection state of a host.
