@@ -1,10 +1,12 @@
 ---
 name: release-plan
-description: Groom a release file, propose sprints, and create Linear items. Use when the user wants to plan a new release version.
+description: Optional CC-side grooming for a release. Step 1 (Plan & spec) is now owned by Claude Web using the Release Plan Template in Linear. Use this skill only when the user wants CC to assist with grooming an existing release file or backlog.
 disable-model-invocation: true
 ---
 
-# Release Planning
+# Release Planning (CC-side grooming)
+
+> **Note:** Step 1 — Plan & spec is now handled by Claude Web using the [Release Plan Template](https://linear.app/fleetdesk/document/release-plan-template-f9f6bdf28e56) in Linear. This skill is optional — use it when the user wants CC to assist with grooming a release file or backlog after Claude Web has created the release plan.
 
 Groom a release file and create a release plan with sprints and Linear items.
 
