@@ -9,31 +9,18 @@ import (
 
 // ProbeInfo holds the results of a host probe.
 type ProbeInfo struct {
-	FQDN             string
-	OS               string
-	UpSince          string
-	ServiceCount     int
-	ServiceRunning   int
-	ServiceFailed    int
-	ContainerCount   int
-	ContainerRunning int
-	CronCount        int
-	ErrorCount       int
-	UpdateCount      int
-	DiskCount        int
-	DiskHighCount    int
-	LastUpdate       string
-	LastSecurity     string
-	UserCount        int
-	LockedUsers      int
-	InterfacesUp     int
-	InterfacesTotal  int
-	ListeningPorts   int
-	FailedLoginCount int
-	SudoEventCount   int
-	SELinuxDenyCount int
-	AuditEventCount  int
-	SystemdMode      string
+	FQDN            string
+	OS              string
+	UpSince         string
+	CronCount       int
+	ErrorCount      int
+	DiskCount       int
+	DiskHighCount   int
+	UserCount       int
+	InterfacesUp    int
+	InterfacesTotal int
+	ListeningPorts  int
+	SystemdMode     string
 }
 
 // FormatDateEU converts a date string to DD/MM/YYYY format.
@@ -55,9 +42,22 @@ func FormatDateEU(s string) string {
 }
 
 // ParseProbeOutput parses the probe command output.
+// Expected lines:
+//
+//	0: hostname
+//	1: uptime -s
+//	2: OS pretty name
+//	3: cron count
+//	4: error count (journalctl -p err)
+//	5: disk count
+//	6: disk high count
+//	7: user count
+//	8: interfaces up
+//	9: interfaces total
+//	10: listening ports
 func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) < 7 {
+	if len(lines) < 3 {
 		return ProbeInfo{}, fmt.Errorf("unexpected probe output (%d lines): %s", len(lines), output)
 	}
 
@@ -69,40 +69,18 @@ func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 		return 0
 	}
 
-	getDate := func(idx int) string {
-		if idx < len(lines) {
-			if v := strings.TrimSpace(lines[idx]); v != "" && v != "unknown" {
-				return FormatDateEU(v)
-			}
-		}
-		return "—"
-	}
-
 	return ProbeInfo{
-		FQDN:             strings.TrimSpace(lines[0]),
-		UpSince:          FormatDateEU(strings.TrimSpace(lines[1])),
-		OS:               strings.TrimSpace(lines[2]),
-		ServiceCount:     getInt(3),
-		ServiceRunning:   getInt(4),
-		ServiceFailed:    getInt(5),
-		ContainerRunning: getInt(6),
-		ContainerCount:   getInt(7),
-		LastUpdate:       getDate(8),
-		LastSecurity:     getDate(9),
-		CronCount:        getInt(10),
-		ErrorCount:       getInt(11),
-		UpdateCount:      getInt(12),
-		DiskCount:        getInt(13),
-		DiskHighCount:    getInt(14),
-		UserCount:        getInt(15),
-		LockedUsers:      getInt(16),
-		InterfacesUp:     getInt(17),
-		InterfacesTotal:  getInt(18),
-		ListeningPorts:   getInt(19),
-		FailedLoginCount: getInt(20),
-		SudoEventCount:   getInt(21),
-		SELinuxDenyCount: getInt(22),
-		AuditEventCount:  getInt(23),
-		SystemdMode:      systemdMode,
+		FQDN:            strings.TrimSpace(lines[0]),
+		UpSince:         FormatDateEU(strings.TrimSpace(lines[1])),
+		OS:              strings.TrimSpace(lines[2]),
+		CronCount:       getInt(3),
+		ErrorCount:      getInt(4),
+		DiskCount:       getInt(5),
+		DiskHighCount:   getInt(6),
+		UserCount:       getInt(7),
+		InterfacesUp:    getInt(8),
+		InterfacesTotal: getInt(9),
+		ListeningPorts:  getInt(10),
+		SystemdMode:     systemdMode,
 	}, nil
 }

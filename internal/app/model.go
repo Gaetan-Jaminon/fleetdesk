@@ -865,8 +865,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applyProbeInfo(msg.Index, msg.Info)
 			}
 		}
-		// check if more hosts need the same password
-		return m, m.retryRemainingPasswordHosts()
+		return m, nil
 
 	case fetchMetricsMsg:
 		if msg.err != nil {

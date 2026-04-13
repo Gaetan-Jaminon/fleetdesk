@@ -708,27 +708,14 @@ func (m *Model) applyProbeInfo(idx int, info ssh.ProbeInfo) {
 	m.hosts[idx].FQDN = info.FQDN
 	m.hosts[idx].OS = info.OS
 	m.hosts[idx].UpSince = info.UpSince
-	m.hosts[idx].ServiceCount = info.ServiceCount
-	m.hosts[idx].ServiceRunning = info.ServiceRunning
-	m.hosts[idx].ServiceFailed = info.ServiceFailed
-	m.hosts[idx].ContainerCount = info.ContainerCount
-	m.hosts[idx].ContainerRunning = info.ContainerRunning
 	m.hosts[idx].CronCount = info.CronCount
 	m.hosts[idx].ErrorCount = info.ErrorCount
-	m.hosts[idx].UpdateCount = info.UpdateCount
 	m.hosts[idx].DiskCount = info.DiskCount
 	m.hosts[idx].DiskHighCount = info.DiskHighCount
 	m.hosts[idx].UserCount = info.UserCount
-	m.hosts[idx].LockedUsers = info.LockedUsers
 	m.hosts[idx].InterfacesUp = info.InterfacesUp
 	m.hosts[idx].InterfacesTotal = info.InterfacesTotal
 	m.hosts[idx].ListeningPorts = info.ListeningPorts
-	m.hosts[idx].FailedLoginCount = info.FailedLoginCount
-	m.hosts[idx].SudoEventCount = info.SudoEventCount
-	m.hosts[idx].SELinuxDenyCount = info.SELinuxDenyCount
-	m.hosts[idx].AuditEventCount = info.AuditEventCount
-	m.hosts[idx].LastUpdate = info.LastUpdate
-	m.hosts[idx].LastSecurity = info.LastSecurity
 }
 
 // retryRemainingPasswordHosts retries connection for hosts that still need a password.
@@ -740,6 +727,10 @@ func (m Model) retryRemainingPasswordHosts() tea.Cmd {
 			idx := i
 			hh := h
 			sm := m.ssh
+			// Clear NeedsPassword before launching retry to prevent duplicate
+			// retries — each PasswordRetryResult triggers this function again,
+			// and without this guard the same hosts get retried exponentially.
+			m.hosts[i].NeedsPassword = false
 			m.logger.Debug("retryRemainingPasswordHosts", "host_idx", idx, "host", hh.Entry.Name)
 			cmds = append(cmds, func() tea.Msg {
 				return sm.RetryWithCachedPassword(idx, hh)
@@ -759,9 +750,12 @@ func (m Model) retryRemainingPasswordHosts() tea.Cmd {
 // startProbe launches parallel SSH connections and probes for all hosts.
 // Returns a batch of commands, one per host, that will send hostProbeResult messages.
 func (m Model) startProbe() tea.Cmd {
-	m.logger.Debug("startProbe", "host_count", len(m.hosts))
 	var cmds []tea.Cmd
 	for i, h := range m.hosts {
+		// skip hosts that already have an active connection or are awaiting password retry
+		if m.ssh.HasConnection(i) || h.NeedsPassword {
+			continue
+		}
 		idx := i
 		hh := h
 		sm := m.ssh
@@ -769,6 +763,7 @@ func (m Model) startProbe() tea.Cmd {
 			return sm.ConnectAndProbe(idx, hh)
 		})
 	}
+	m.logger.Debug("startProbe", "host_count", len(cmds))
 	return tea.Batch(cmds...)
 }
 

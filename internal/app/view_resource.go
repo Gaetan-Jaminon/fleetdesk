@@ -34,12 +34,9 @@ func (m Model) renderResourcePicker() string {
 	}
 
 	// use fetched (filtered) data if available, otherwise probe counts
-	svcTotal, svcRunning, svcFailed := h.ServiceCount, h.ServiceRunning, h.ServiceFailed
-	ctnTotal, ctnRunning := h.ContainerCount, h.ContainerRunning
+	svcTotal, svcRunning, svcFailed := 0, 0, 0
 	if len(m.services) > 0 {
 		svcTotal = len(m.services)
-		svcRunning = 0
-		svcFailed = 0
 		for _, s := range m.services {
 			switch s.State {
 			case "running":
@@ -49,10 +46,9 @@ func (m Model) renderResourcePicker() string {
 			}
 		}
 	}
-	ctnFailed := 0
+	ctnTotal, ctnRunning, ctnFailed := 0, 0, 0
 	if len(m.containers) > 0 {
 		ctnTotal = len(m.containers)
-		ctnRunning = 0
 		for _, c := range m.containers {
 			if strings.HasPrefix(c.Status, "Up") {
 				ctnRunning++
@@ -62,9 +58,8 @@ func (m Model) renderResourcePicker() string {
 		}
 	}
 
-	updTotal, updFailed := h.UpdateCount, 0
+	updTotal, updFailed := 0, 0
 	if len(m.updates) > 0 {
-		updTotal = 0
 		for _, u := range m.updates {
 			if u.Type == "error" {
 				updFailed++
@@ -82,12 +77,8 @@ func (m Model) renderResourcePicker() string {
 		{"Updates", updTotal, 0, updFailed},
 		{"Disk", h.DiskCount, 0, h.DiskHighCount},
 		{"Subscription", 0, 0, 0},
-		{"Accounts", h.UserCount, 0, h.LockedUsers},
+		{"Accounts", h.UserCount, 0, 0},
 		{"Network", h.InterfacesTotal, h.InterfacesUp, 0},
-		{"Failed Logins", h.FailedLoginCount, 0, 0},
-		{"Sudo Activity", h.SudoEventCount, 0, 0},
-		{"SELinux Denials", h.SELinuxDenyCount, 0, 0},
-		{"Audit Summary", h.AuditEventCount, 0, 0},
 	}
 	for i, r := range rows {
 		cur := "   "

@@ -366,9 +366,9 @@ func (m Model) fetchLogLevels() func() tea.Msg {
 	return func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "log_levels", "host_idx", idx)
-		// count entries per priority level
+		// count entries per priority level in a single journalctl pass
 		cmd := fmt.Sprintf(
-			`for p in 0 1 2 3 4 5 6; do echo $(sudo journalctl -p $p..$p --since '%s' --no-pager -q 2>/dev/null | wc -l); done`,
+			`sudo journalctl --since '%s' --no-pager -q -o json --output-fields=PRIORITY 2>/dev/null | awk -F'"' '/PRIORITY/{a[$4]++} END{for(i=0;i<=6;i++) print a[i]+0}'`,
 			since,
 		)
 		out, err := sm.RunCommand(idx, cmd)

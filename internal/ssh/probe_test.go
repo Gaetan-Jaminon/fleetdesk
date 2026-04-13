@@ -31,23 +31,15 @@ func TestFormatDateEU(t *testing.T) {
 }
 
 func TestParseProbeOutput_Full(t *testing.T) {
+	// 11 lines: hostname, uptime, OS, cron, errors, disk, disk_high, users, ifaces_up, ifaces_total, ports
 	output := `web-01.example.com
 2026-03-31 09:57
 Red Hat Enterprise Linux 9.5 (Plow)
-45
-38
-2
-5
-8
-2026-03-30 14:22
-2026-03-28 10:15
 12
 3
-7
 6
 1
 4
-1
 3
 5
 8`
@@ -66,35 +58,11 @@ Red Hat Enterprise Linux 9.5 (Plow)
 	if info.OS != "Red Hat Enterprise Linux 9.5 (Plow)" {
 		t.Errorf("OS = %q", info.OS)
 	}
-	if info.ServiceCount != 45 {
-		t.Errorf("ServiceCount = %d, want 45", info.ServiceCount)
-	}
-	if info.ServiceRunning != 38 {
-		t.Errorf("ServiceRunning = %d, want 38", info.ServiceRunning)
-	}
-	if info.ServiceFailed != 2 {
-		t.Errorf("ServiceFailed = %d, want 2", info.ServiceFailed)
-	}
-	if info.ContainerRunning != 5 {
-		t.Errorf("ContainerRunning = %d, want 5", info.ContainerRunning)
-	}
-	if info.ContainerCount != 8 {
-		t.Errorf("ContainerCount = %d, want 8", info.ContainerCount)
-	}
-	if info.LastUpdate != "30/03/2026" {
-		t.Errorf("LastUpdate = %q, want %q", info.LastUpdate, "30/03/2026")
-	}
-	if info.LastSecurity != "28/03/2026" {
-		t.Errorf("LastSecurity = %q, want %q", info.LastSecurity, "28/03/2026")
-	}
 	if info.CronCount != 12 {
 		t.Errorf("CronCount = %d, want 12", info.CronCount)
 	}
 	if info.ErrorCount != 3 {
 		t.Errorf("ErrorCount = %d, want 3", info.ErrorCount)
-	}
-	if info.UpdateCount != 7 {
-		t.Errorf("UpdateCount = %d, want 7", info.UpdateCount)
 	}
 	if info.DiskCount != 6 {
 		t.Errorf("DiskCount = %d, want 6", info.DiskCount)
@@ -104,9 +72,6 @@ Red Hat Enterprise Linux 9.5 (Plow)
 	}
 	if info.UserCount != 4 {
 		t.Errorf("UserCount = %d, want 4", info.UserCount)
-	}
-	if info.LockedUsers != 1 {
-		t.Errorf("LockedUsers = %d, want 1", info.LockedUsers)
 	}
 	if info.InterfacesUp != 3 {
 		t.Errorf("InterfacesUp = %d, want 3", info.InterfacesUp)
@@ -123,14 +88,10 @@ Red Hat Enterprise Linux 9.5 (Plow)
 }
 
 func TestParseProbeOutput_MinimalLines(t *testing.T) {
-	// 7 lines is the minimum required
+	// 3 lines is the minimum required
 	output := `host1
 2026-01-01 00:00
-RHEL 9
-10
-8
-0
-2`
+RHEL 9`
 
 	info, err := ParseProbeOutput(output, "user")
 	if err != nil {
@@ -144,50 +105,8 @@ RHEL 9
 	}
 }
 
-func TestParseProbeOutput_OldFormat(t *testing.T) {
-	// 15 lines (pre-v0.5.0 format without accounts/network) — new fields default to 0
-	output := `host1
-2026-01-01 00:00
-RHEL 9
-10
-8
-0
-2
-4
-unknown
-unknown
-5
-1
-3
-2
-0`
-
-	info, err := ParseProbeOutput(output, "system")
-	if err != nil {
-		t.Fatalf("ParseProbeOutput() error = %v", err)
-	}
-	if info.ServiceCount != 10 {
-		t.Errorf("ServiceCount = %d, want 10", info.ServiceCount)
-	}
-	if info.UserCount != 0 {
-		t.Errorf("UserCount = %d, want 0 (missing in old format)", info.UserCount)
-	}
-	if info.LockedUsers != 0 {
-		t.Errorf("LockedUsers = %d, want 0 (missing in old format)", info.LockedUsers)
-	}
-	if info.InterfacesUp != 0 {
-		t.Errorf("InterfacesUp = %d, want 0 (missing in old format)", info.InterfacesUp)
-	}
-	if info.InterfacesTotal != 0 {
-		t.Errorf("InterfacesTotal = %d, want 0 (missing in old format)", info.InterfacesTotal)
-	}
-	if info.ListeningPorts != 0 {
-		t.Errorf("ListeningPorts = %d, want 0 (missing in old format)", info.ListeningPorts)
-	}
-}
-
 func TestParseProbeOutput_TooFewLines(t *testing.T) {
-	_, err := ParseProbeOutput("only\nthree\nlines", "system")
+	_, err := ParseProbeOutput("only\ntwo", "system")
 	if err == nil {
 		t.Fatal("expected error for too few lines, got nil")
 	}
