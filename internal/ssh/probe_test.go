@@ -118,3 +118,37 @@ func TestParseProbeOutput_EmptyOutput(t *testing.T) {
 		t.Fatal("expected error for empty output, got nil")
 	}
 }
+
+func TestParseProbeOutput_WithSentinel(t *testing.T) {
+	output := "---PROBE---\nweb-01.example.com\n2026-03-31 09:57\nRHEL 9\n1\n0\n4\n0\n2\n3\n3\n5"
+	info, err := ParseProbeOutput(output, "system")
+	if err != nil {
+		t.Fatalf("ParseProbeOutput() error = %v", err)
+	}
+	if info.FQDN != "web-01.example.com" {
+		t.Errorf("FQDN = %q, want %q", info.FQDN, "web-01.example.com")
+	}
+	if info.OS != "RHEL 9" {
+		t.Errorf("OS = %q, want %q", info.OS, "RHEL 9")
+	}
+}
+
+func TestParseProbeOutput_ShellWarningBeforeSentinel(t *testing.T) {
+	output := "Could not chdir to home directory /home/user: No such file or directory\n---PROBE---\nidm-01.example.com\n2026-01-21 14:16:41\nRed Hat Enterprise Linux 9.7 (Plow)\n1\n10491\n8\n0\n3\n3\n3\n26"
+	info, err := ParseProbeOutput(output, "system")
+	if err != nil {
+		t.Fatalf("ParseProbeOutput() error = %v", err)
+	}
+	if info.FQDN != "idm-01.example.com" {
+		t.Errorf("FQDN = %q, want %q", info.FQDN, "idm-01.example.com")
+	}
+	if info.UpSince != "21/01/2026" {
+		t.Errorf("UpSince = %q, want %q", info.UpSince, "21/01/2026")
+	}
+	if info.OS != "Red Hat Enterprise Linux 9.7 (Plow)" {
+		t.Errorf("OS = %q, want %q", info.OS, "Red Hat Enterprise Linux 9.7 (Plow)")
+	}
+	if info.ErrorCount != 10491 {
+		t.Errorf("ErrorCount = %d, want 10491", info.ErrorCount)
+	}
+}

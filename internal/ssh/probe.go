@@ -56,6 +56,11 @@ func FormatDateEU(s string) string {
 //	9: interfaces total
 //	10: listening ports
 func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
+	// Strip any shell warnings (e.g., "Could not chdir to home directory")
+	// that appear before the probe sentinel marker.
+	if idx := strings.Index(output, "---PROBE---\n"); idx >= 0 {
+		output = output[idx+len("---PROBE---\n"):]
+	}
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) < 3 {
 		return ProbeInfo{}, fmt.Errorf("unexpected probe output (%d lines): %s", len(lines), output)

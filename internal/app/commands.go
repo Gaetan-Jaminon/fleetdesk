@@ -127,8 +127,9 @@ func (m Model) fetchContainers() func() tea.Msg {
 		cmd := `podman ps -a --format "{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.ID}}" 2>/dev/null`
 		out, err := sm.RunCommand(idx, cmd)
 		if err != nil {
-			logger.Error("fetch failed", "view", "containers", "host_idx", idx, "err", err)
-			return fetchContainersMsg{err: fmt.Errorf("list containers: %w", err)}
+			// podman not installed or not accessible — return empty list, not an error
+			logger.Debug("fetch skipped", "view", "containers", "host_idx", idx, "reason", "podman not available")
+			return fetchContainersMsg{containers: []config.Container{}}
 		}
 
 		var containers []config.Container
@@ -373,7 +374,7 @@ func (m Model) fetchLogLevels() func() tea.Msg {
 		logger.Debug("fetch start", "view", "log_levels", "host_idx", idx)
 		// count entries per priority level in a single journalctl pass
 		cmd := fmt.Sprintf(
-			`sudo journalctl --since '%s' --no-pager -q -o json --output-fields=PRIORITY 2>/dev/null | awk -F'"' '/PRIORITY/{a[$4]++} END{for(i=0;i<=6;i++) print a[i]+0}'`,
+			`sudo journalctl --since '%s' --no-pager -q -o json --output-fields=PRIORITY 2>/dev/null | awk -F'"' '{for(i=2;i<=NF;i+=2) if($i=="PRIORITY") c[$(i+2)]++} END{for(i=0;i<=6;i++) print c[i]+0}'`,
 			since,
 		)
 		out, err := sm.RunSudoCommand(idx, cmd)
