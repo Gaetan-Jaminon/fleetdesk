@@ -128,6 +128,7 @@ func (m Model) renderHostList() string {
 			{"↑↓", "Navigate"},
 			{"Enter", "Drill In"},
 			{"x", "Shell"},
+			{"K", "Deploy Key"},
 			{"d", "Metrics"},
 			{"R", "Reboot"},
 			{"r", "Refresh"},

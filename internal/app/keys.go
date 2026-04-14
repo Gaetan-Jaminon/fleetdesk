@@ -452,6 +452,18 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, sshHandover(h, []string{}, fmt.Sprintf("shell %s@%s", h.Entry.User, h.Entry.Name))
 		}
+	case "K":
+		if len(m.hosts) > 0 {
+			h := m.hosts[m.hostCursor]
+			if h.Status != config.HostOnline {
+				m.flash = "Host is not reachable"
+				m.flashError = true
+				return m, nil
+			}
+			return m, cmdHandover("ssh-copy-id",
+				[]string{"-o", "StrictHostKeyChecking=no", "-p", fmt.Sprintf("%d", h.Entry.Port), fmt.Sprintf("%s@%s", h.Entry.User, h.Entry.Hostname)},
+				fmt.Sprintf("deploy key to %s@%s", h.Entry.User, h.Entry.Name))
+		}
 	case "R":
 		if len(m.hosts) > 0 {
 			h := m.hosts[m.hostCursor]
