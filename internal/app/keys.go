@@ -1105,6 +1105,34 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.subscriptionCursor < len(m.subscriptions)-1 {
 			m.subscriptionCursor++
 		}
+	case "u":
+		regType := ""
+		for _, s := range m.subscriptions {
+			if s.Field == "Registration" {
+				regType = s.Value
+				break
+			}
+		}
+		if regType == "" || regType == "Unknown" {
+			m.flash = "Host is not registered"
+			m.flashError = true
+			return m, nil
+		}
+		h := m.hosts[m.selectedHost]
+		cmd := "sudo subscription-manager unregister && sudo subscription-manager clean"
+		if regType == "Satellite" {
+			cmd += " && sudo dnf remove -y katello-ca-consumer-*"
+		}
+		m.showConfirm = true
+		m.confirmMessage = fmt.Sprintf("Unregister from %s? [Y/n]", regType)
+		m.confirmCmd = cmd
+		m.confirmBanner = fmt.Sprintf("unregister from %s on %s", regType, h.Entry.Name)
+	case "g":
+		h := m.hosts[m.selectedHost]
+		m.showConfirm = true
+		m.confirmMessage = "Register to Red Hat CDN? [Y/n]"
+		m.pendingHandover = sshHandover(h, []string{"sudo subscription-manager register"},
+			fmt.Sprintf("register to Red Hat CDN on %s", h.Entry.Name))
 	case "d":
 		if len(m.subscriptions) > 0 {
 			sub := m.subscriptions[m.subscriptionCursor]
