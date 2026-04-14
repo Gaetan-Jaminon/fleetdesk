@@ -629,23 +629,7 @@ func (m Model) fetchSubscription() func() tea.Msg {
 		}
 
 		// detect registration type from server hostname
-		regType := "Unknown"
-		serverHost := ""
-		for _, line := range strings.Split(serverSection, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.Contains(line, "hostname") {
-				if idx := strings.Index(line, "["); idx > 0 {
-					serverHost = strings.Trim(line[idx:], "[]")
-				}
-			}
-		}
-		if strings.Contains(serverHost, "rhsm.redhat.com") {
-			regType = "Red Hat CDN"
-		} else if strings.Contains(serverHost, "satellite") || strings.Contains(serverHost, "katello") {
-			regType = "Satellite"
-		} else if serverHost != "" {
-			regType = "Custom (" + serverHost + ")"
-		}
+		regType, serverHost := detectRegistrationType(serverSection)
 		subs = append(subs, config.Subscription{Field: "Registration", Value: regType})
 		if serverHost != "" {
 			subs = append(subs, config.Subscription{Field: "Server", Value: serverHost})
@@ -727,6 +711,31 @@ func (m Model) fetchSubscription() func() tea.Msg {
 		logger.Debug("fetch complete", "view", "subscription", "host_idx", idx, "count", len(subs), "elapsed", time.Since(start))
 		return fetchSubscriptionMsg{subs: subs}
 	}
+}
+
+// detectRegistrationType parses the [server] section of subscription-manager config
+// and returns the registration type ("Red Hat CDN", "Satellite", or "Unknown") and the server hostname.
+func detectRegistrationType(serverSection string) (regType, serverHost string) {
+	for _, line := range strings.Split(serverSection, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "hostname") {
+			if idx := strings.Index(line, "="); idx > 0 {
+				val := strings.TrimSpace(line[idx+1:])
+				val = strings.Trim(val, "[]")
+				if val != "" {
+					serverHost = val
+				}
+			}
+		}
+	}
+	if strings.HasSuffix(serverHost, "rhsm.redhat.com") {
+		regType = "Red Hat CDN"
+	} else if serverHost != "" {
+		regType = "Satellite"
+	} else {
+		regType = "Unknown"
+	}
+	return
 }
 
 // --- Accounts ---

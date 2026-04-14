@@ -1129,10 +1129,28 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirmBanner = fmt.Sprintf("unregister from %s on %s", regType, h.Entry.Name)
 	case "g":
 		h := m.hosts[m.selectedHost]
+		orgID := h.Entry.RHOrgID
+		actKey := h.Entry.RHActivationKey
+		satURL := h.Entry.SatelliteURL
+		if orgID == "" || actKey == "" {
+			m.flash = "rh_org_id and rh_activation_key required in config"
+			m.flashError = true
+			return m, nil
+		}
+		var cmd, target string
+		if satURL != "" {
+			target = "Satellite"
+			cmd = fmt.Sprintf("sudo dnf install -y http://%s/pub/katello-ca-consumer-latest.noarch.rpm --disablerepo='*' && sudo subscription-manager register --org=%s --activationkey=%s --force",
+				shellQuote(satURL), shellQuote(orgID), shellQuote(actKey))
+		} else {
+			target = "Red Hat CDN"
+			cmd = fmt.Sprintf("sudo subscription-manager register --org=%s --activationkey=%s",
+				shellQuote(orgID), shellQuote(actKey))
+		}
 		m.showConfirm = true
-		m.confirmMessage = "Register to Red Hat CDN? [Y/n]"
-		m.pendingHandover = sshHandover(h, []string{"sudo subscription-manager register"},
-			fmt.Sprintf("register to Red Hat CDN on %s", h.Entry.Name))
+		m.confirmMessage = fmt.Sprintf("Register to %s? [Y/n]", target)
+		m.confirmCmd = cmd
+		m.confirmBanner = fmt.Sprintf("register to %s on %s", target, h.Entry.Name)
 	case "d":
 		if len(m.subscriptions) > 0 {
 			sub := m.subscriptions[m.subscriptionCursor]

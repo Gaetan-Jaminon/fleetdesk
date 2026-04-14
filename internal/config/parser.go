@@ -30,6 +30,9 @@ type defaultsFile struct {
 	ServiceFilter   []string `yaml:"service_filter"`
 	ErrorLogSince   string   `yaml:"error_log_since"`
 	RefreshInterval string   `yaml:"refresh_interval"`
+	RHOrgID         string   `yaml:"rh_org_id"`
+	RHActivationKey string   `yaml:"rh_activation_key"`
+	SatelliteURL    string   `yaml:"satellite_url"`
 }
 
 type groupFile struct {
@@ -39,13 +42,16 @@ type groupFile struct {
 }
 
 type hostEntryFile struct {
-	Name          string   `yaml:"name"`
-	Hostname      string   `yaml:"hostname"`
-	User          string   `yaml:"user"`
-	Port          int      `yaml:"port"`
-	Timeout       string   `yaml:"timeout"`
-	SystemdMode   string   `yaml:"systemd_mode"`
-	ServiceFilter []string `yaml:"service_filter"`
+	Name            string   `yaml:"name"`
+	Hostname        string   `yaml:"hostname"`
+	User            string   `yaml:"user"`
+	Port            int      `yaml:"port"`
+	Timeout         string   `yaml:"timeout"`
+	SystemdMode     string   `yaml:"systemd_mode"`
+	ServiceFilter   []string `yaml:"service_filter"`
+	RHOrgID         string   `yaml:"rh_org_id"`
+	RHActivationKey string   `yaml:"rh_activation_key"`
+	SatelliteURL    string   `yaml:"satellite_url"`
 }
 
 // ParseFleetFile reads and parses a single fleet YAML file.
@@ -85,6 +91,9 @@ func ParseFleetFile(path string) (Fleet, error) {
 		ServiceFilter:   raw.Defaults.ServiceFilter,
 		ErrorLogSince:   raw.Defaults.ErrorLogSince,
 		RefreshInterval: raw.Defaults.RefreshInterval,
+		RHOrgID:         raw.Defaults.RHOrgID,
+		RHActivationKey: raw.Defaults.RHActivationKey,
+		SatelliteURL:    raw.Defaults.SatelliteURL,
 	}
 	if defaults.Port == 0 {
 		defaults.Port = 22
@@ -158,11 +167,14 @@ func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string
 		}
 
 		h := HostEntry{
-			Name:        r.Name,
-			Hostname:    r.Hostname,
-			User:        r.User,
-			Port:        r.Port,
-			SystemdMode: r.SystemdMode,
+			Name:            r.Name,
+			Hostname:        r.Hostname,
+			User:            r.User,
+			Port:            r.Port,
+			SystemdMode:     r.SystemdMode,
+			RHOrgID:         r.RHOrgID,
+			RHActivationKey: r.RHActivationKey,
+			SatelliteURL:    r.SatelliteURL,
 		}
 
 		// service filter: host → group → defaults
@@ -184,6 +196,16 @@ func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string
 		}
 		if h.SystemdMode == "" {
 			h.SystemdMode = defaults.SystemdMode
+		}
+		// RH subscription: if host defines its own org, it's a complete override — don't inherit satellite_url
+		if h.RHOrgID != "" {
+			if h.RHActivationKey == "" {
+				h.RHActivationKey = defaults.RHActivationKey
+			}
+		} else {
+			h.RHOrgID = defaults.RHOrgID
+			h.RHActivationKey = defaults.RHActivationKey
+			h.SatelliteURL = defaults.SatelliteURL
 		}
 
 		if r.Timeout != "" {

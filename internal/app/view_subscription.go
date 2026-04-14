@@ -76,10 +76,14 @@ func (m Model) renderSubscription() string {
 	if m.showConfirm {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
+		regTarget := "Register CDN"
+		if h.Entry.SatelliteURL != "" {
+			regTarget = "Register Satellite"
+		}
 		s += m.renderSudoPromptOrHintBar([][]string{
 			{"↑↓", "Navigate"},
 			{"u", "Unregister"},
-			{"g", "Register CDN"},
+			{"g", regTarget},
 			{"d", "Disable Repo"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
