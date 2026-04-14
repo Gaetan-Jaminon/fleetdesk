@@ -32,24 +32,20 @@ jobs:
             Follow these steps precisely:
 
             1. Use a Haiku agent to check if the PR is (a) closed, (b) a draft, (c) an automated PR that does not need review, or (d) already reviewed by you. If so, stop.
-            2. Use a Haiku agent to list relevant CLAUDE.md file paths (root + directories touched by the PR).
-            3. Use a Haiku agent to view the PR and return a summary of the change.
-            4. Launch 5 parallel Sonnet agents to independently review the change:
-               a. Agent 1: Audit compliance with CLAUDE.md (only instructions applicable to written code, not to Claude workflow).
+            2. Use a Haiku agent to list relevant CLAUDE.md file paths (root + directories touched by the PR) and return a summary of the change.
+            3. Launch 3 parallel Sonnet agents to independently review the change:
+               a. Agent 1: Audit compliance with CLAUDE.md (only instructions applicable to written code, not to Claude workflow). Also read code comments in modified files and verify changes comply with any guidance in those comments.
                b. Agent 2: Scan the diff for obvious bugs. Focus on large bugs; ignore nitpicks and false positives.
-               c. Agent 3: Read git blame and history of modified code; identify bugs in that historical context.
-               d. Agent 4: Read previous PRs that touched these files; check if prior review comments apply here too.
-               e. Agent 5: Read code comments in modified files; verify changes comply with any guidance in those comments.
+               c. Agent 3: Read the full context of modified files and review for security issues, architectural problems, and edge cases.
                Each agent returns a list of issues with the reason each was flagged.
-            5. For each issue from step 4, launch a parallel Haiku agent to score confidence (0-100):
+            4. For each issue from step 3, launch a parallel Haiku agent to score confidence (0-100):
                - 0: False positive, does not survive light scrutiny, or pre-existing issue.
                - 25: Might be real but unverified; or stylistic and not called out in CLAUDE.md.
                - 50: Real but minor; unlikely to matter in practice.
                - 75: Verified, will be hit in practice, important — or directly mentioned in CLAUDE.md.
                - 100: Certain, frequent, directly evidenced.
-            6. Discard issues with score below 80. If none remain, post "No issues found." and stop.
-            7. Re-run the eligibility check from step 1.
-            8. Post ONE consolidated comment on the PR using "gh pr comment". Use exactly this format:
+            5. Discard issues with score below 80. If none remain, post "No issues found." and stop.
+            6. Post ONE consolidated comment on the PR using "gh pr comment". Use exactly this format:
 
             ---
             ## Code Review: <PR title>

@@ -165,11 +165,28 @@ func (sm *Manager) RunCommand(idx int, cmd string) (string, error) {
 	defer session.Close()
 
 	out, err := session.CombinedOutput(cmd)
+	result := stripShellWarnings(string(out))
 	if err != nil {
 		sm.logger.Error("runCommand failed", "idx", idx, "err", err)
-		return string(out), err
+		return result, err
 	}
-	return string(out), nil
+	return result, nil
+}
+
+// stripShellWarnings removes common shell login warnings that appear before
+// command output (e.g., when the user's home directory doesn't exist on the host).
+func stripShellWarnings(s string) string {
+	for {
+		if strings.HasPrefix(s, "Could not chdir to home directory") ||
+			strings.HasPrefix(s, "-bash: warning:") {
+			if idx := strings.Index(s, "\n"); idx >= 0 {
+				s = s[idx+1:]
+				continue
+			}
+		}
+		break
+	}
+	return s
 }
 
 // SetCachedPassword stores a password temporarily for batch retries.
@@ -277,7 +294,8 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 	}
 	defer session.Close()
 
-	cmd := `hostname -f 2>/dev/null || hostname && ` +
+	cmd := `echo '---PROBE---' && ` +
+		`(hostname -f 2>/dev/null || hostname) | head -1 && ` +
 		`uptime -s 2>/dev/null || echo unknown && ` +
 		`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown && ` +
 		`echo $(( $(crontab -l 2>/dev/null | grep -v '^#' | grep -v '^$' | wc -l) + $(ls /etc/cron.d/ 2>/dev/null | wc -l) )) && ` +
@@ -303,7 +321,8 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 			systemdMode = "user"
 		}
 
-		cmd = `hostname -f 2>/dev/null || hostname && ` +
+		cmd = `echo '---PROBE---' && ` +
+			`(hostname -f 2>/dev/null || hostname) | head -1 && ` +
 			`uptime -s 2>/dev/null || echo unknown && ` +
 			`(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"') || echo unknown`
 
