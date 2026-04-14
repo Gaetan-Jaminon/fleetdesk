@@ -78,6 +78,8 @@ func (m Model) renderSubscription() string {
 	} else {
 		s += m.renderSudoPromptOrHintBar([][]string{
 			{"↑↓", "Navigate"},
+			{"u", "Unregister"},
+			{"g", "Register CDN"},
 			{"d", "Disable Repo"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
