@@ -471,8 +471,15 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedHost = m.hostCursor
 			m.showConfirm = true
 			m.confirmMessage = fmt.Sprintf("Deploy SSH key to %s@%s? [Y/n]", h.Entry.User, h.Entry.Name)
-			m.pendingHandover = cmdHandover("ssh-copy-id",
-				[]string{"-o", "StrictHostKeyChecking=no", "-p", fmt.Sprintf("%d", h.Entry.Port), fmt.Sprintf("%s@%s", h.Entry.User, h.Entry.Hostname)},
+			sshTarget := shellQuote(h.Entry.User) + "@" + shellQuote(h.Entry.Hostname)
+			portStr := fmt.Sprintf("%d", h.Entry.Port)
+			// Ensure home dir exists (IPA/IDM hosts may not have it until first login)
+			// then deploy key. Both commands prompt for password via terminal handover.
+			script := fmt.Sprintf(
+				"ssh -t -o StrictHostKeyChecking=no -p %s '%s' 'sudo mkdir -p $HOME/.ssh && sudo chown -R $(id -u):$(id -g) $HOME && chmod 700 $HOME/.ssh' && ssh-copy-id -o StrictHostKeyChecking=no -p %s '%s'",
+				portStr, sshTarget, portStr, sshTarget)
+			m.pendingHandover = cmdHandover("bash",
+				[]string{"-c", script},
 				fmt.Sprintf("deploy key to %s@%s", h.Entry.User, h.Entry.Name))
 		}
 	case "R":
