@@ -476,9 +476,10 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 	sshPw := m.ssh.GetCachedPassword()
 	if sshPw != "" {
 		sm := m.ssh
-		escaped := strings.ReplaceAll(sshPw, "'", `'\''`)
 		testCmd := func() tea.Msg {
-			out, runErr := sm.RunCommand(idx, "echo '"+escaped+"' | sudo -S true 2>&1")
+			sm.SetSudoPassword(idx, sshPw)
+			out, runErr := sm.RunSudoCommand(idx, "sudo true")
+			sm.SetSudoPassword(idx, "") // always clear — model Update sets it on success
 			success := runErr == nil && !ssh.IsSudoOutput(out)
 			return sudoTestMsg{Password: sshPw, Success: success}
 		}

@@ -234,6 +234,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showSudoPrompt {
 		switch msg.Type {
 		case tea.KeyEnter:
+			if m.sudoInput == "" {
+				return m, nil
+			}
 			m.showSudoPrompt = false
 			password := m.sudoInput
 			m.sudoInput = ""
@@ -250,7 +253,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyBackspace:
 			if len(m.sudoInput) > 0 {
-				m.sudoInput = m.sudoInput[:len(m.sudoInput)-1]
+				runes := []rune(m.sudoInput)
+				m.sudoInput = string(runes[:len(runes)-1])
 			}
 		default:
 			if msg.Type == tea.KeyRunes {

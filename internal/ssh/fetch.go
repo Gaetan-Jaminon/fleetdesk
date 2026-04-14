@@ -28,6 +28,11 @@ func IsSudoError(err error) bool {
 	return errors.Is(err, ErrSudoRequired)
 }
 
+// EscapeSingleQuotes escapes single quotes in s for safe embedding in a single-quoted shell string.
+func EscapeSingleQuotes(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
+}
+
 // ServiceStateOrder returns a sort priority for service states.
 // Lower = shown first.
 func ServiceStateOrder(state string) int {

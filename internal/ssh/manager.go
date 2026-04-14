@@ -137,7 +137,7 @@ func (sm *Manager) RunSudoCommand(idx int, cmd string) (string, error) {
 // rewriteSudoCmd rewrites every "sudo " occurrence in cmd to pipe the password
 // via stdin. Single quotes in the password are escaped to prevent shell injection.
 func rewriteSudoCmd(cmd string, password string) string {
-	escaped := strings.ReplaceAll(password, "'", `'\''`)
+	escaped := EscapeSingleQuotes(password)
 	return strings.ReplaceAll(cmd, "sudo ", "echo '"+escaped+"' | sudo -S 2>/dev/null ")
 }
 
