@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,14 +22,16 @@ type Manager struct {
 	mu             sync.Mutex
 	conns          map[int]*gossh.Client
 	cachedPassword string
+	sudoPasswords  map[int]string // per-host sudo password cache, cleared on Close
 	logger         *slog.Logger
 }
 
 // NewManager creates a new SSH manager.
 func NewManager(logger *slog.Logger) *Manager {
 	return &Manager{
-		conns:  make(map[int]*gossh.Client),
-		logger: logger,
+		conns:         make(map[int]*gossh.Client),
+		sudoPasswords: make(map[int]string),
+		logger:        logger,
 	}
 }
 
@@ -92,6 +95,50 @@ func (sm *Manager) ConnectAndProbe(idx int, h config.Host) HostProbeResult {
 
 	sm.logger.Debug("probe complete", "host", h.Entry.Name, "reused", false, "elapsed", time.Since(start))
 	return HostProbeResult{Index: idx, Info: info}
+}
+
+// GetCachedPassword returns the SSH connection password, if the user authenticated via password.
+func (sm *Manager) GetCachedPassword() string {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.cachedPassword
+}
+
+// SetSudoPassword caches a sudo password for a specific host index.
+// Pass an empty string to clear the cached password for that host.
+func (sm *Manager) SetSudoPassword(idx int, password string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if password == "" {
+		delete(sm.sudoPasswords, idx)
+	} else {
+		sm.sudoPasswords[idx] = password
+	}
+}
+
+// GetSudoPassword returns the cached sudo password for a host (empty if none).
+func (sm *Manager) GetSudoPassword(idx int) string {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.sudoPasswords[idx]
+}
+
+// RunSudoCommand executes a command on the given host, wrapping sudo invocations
+// with password piping if a sudo password is cached for this host.
+// If no sudo password is cached, delegates to RunCommand unchanged.
+func (sm *Manager) RunSudoCommand(idx int, cmd string) (string, error) {
+	pw := sm.GetSudoPassword(idx)
+	if pw != "" {
+		cmd = rewriteSudoCmd(cmd, pw)
+	}
+	return sm.RunCommand(idx, cmd)
+}
+
+// rewriteSudoCmd rewrites every "sudo " occurrence in cmd to pipe the password
+// via stdin. Single quotes in the password are escaped to prevent shell injection.
+func rewriteSudoCmd(cmd string, password string) string {
+	escaped := strings.ReplaceAll(password, "'", `'\''`)
+	return strings.ReplaceAll(cmd, "sudo ", "echo '"+escaped+"' | sudo -S 2>/dev/null ")
 }
 
 // RunCommand executes a command on the given host index and returns stdout.
@@ -204,7 +251,7 @@ func (sm *Manager) HasConnection(idx int) bool {
 	return sm.conns[idx] != nil
 }
 
-// Close shuts down all SSH connections.
+// Close shuts down all SSH connections and clears all cached credentials.
 func (sm *Manager) Close() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -215,6 +262,7 @@ func (sm *Manager) Close() {
 	}
 	sm.conns = make(map[int]*gossh.Client)
 	sm.cachedPassword = ""
+	sm.sudoPasswords = make(map[int]string)
 }
 
 // Probe runs a single SSH command to gather all host info in one roundtrip.

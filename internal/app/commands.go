@@ -241,10 +241,15 @@ func (m Model) fetchServiceDetail(unit string) func() tea.Msg {
 			"(%s show '%s' --property=Id,Description,LoadState,ActiveState,SubState,MainPID,MemoryCurrent,TasksCurrent,ActiveEnterTimestamp,UnitFileState --no-pager; echo '---LOGS---'; %s '%s' --no-pager -n 50 -q --reverse 2>/dev/null) | cat",
 			sysctl, shellQuote(unit), journal, shellQuote(unit),
 		)
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "service_detail", "host_idx", idx, "unit", unit, "err", err)
-			return fetchServiceDetailMsg{err: fmt.Errorf("service detail: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchServiceDetailMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "service_detail", "host_idx", idx, "unit", unit, "err", err)
+				return fetchServiceDetailMsg{err: fmt.Errorf("service detail: %w", err)}
+			}
 		}
 
 		parts := strings.SplitN(out, "---LOGS---", 2)
@@ -371,8 +376,11 @@ func (m Model) fetchLogLevels() func() tea.Msg {
 			`sudo journalctl --since '%s' --no-pager -q -o json --output-fields=PRIORITY 2>/dev/null | awk -F'"' '/PRIORITY/{a[$4]++} END{for(i=0;i<=6;i++) print a[i]+0}'`,
 			since,
 		)
-		out, err := sm.RunCommand(idx, cmd)
+		out, err := sm.RunSudoCommand(idx, cmd)
 		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchLogLevelsMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
 			logger.Error("fetch failed", "view", "log_levels", "host_idx", idx, "err", err)
 			return fetchLogLevelsMsg{err: fmt.Errorf("log levels: %w", err)}
 		}
@@ -428,8 +436,11 @@ func (m Model) fetchErrorLogs() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "error_logs", "host_idx", idx, "level", level)
 		cmd := fmt.Sprintf("(sudo journalctl -p %s --since '%s' --no-pager -q -o short --no-hostname --reverse 2>/dev/null | head -500) | cat", level, since)
-		out, err := sm.RunCommand(idx, cmd)
+		out, err := sm.RunSudoCommand(idx, cmd)
 		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchErrorLogsMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
 			logger.Error("fetch failed", "view", "error_logs", "host_idx", idx, "err", err)
 			return fetchErrorLogsMsg{err: fmt.Errorf("error logs: %w", err)}
 		}
@@ -586,10 +597,15 @@ func (m Model) fetchSubscription() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "subscription", "host_idx", idx)
 		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && echo '===STATUS===' && sudo subscription-manager status 2>&1 && echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && echo '===REPOS===' && dnf repolist --enabled 2>&1 && echo '===REPOCHECK===' && for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do (echo "REPO:$repo:$(dnf repoinfo --disablerepo='*' --enablerepo=$repo 2>&1 | grep -c 'Error:')") & done; wait`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && !strings.Contains(out, "===IDENTITY===") {
-			logger.Error("fetch failed", "view", "subscription", "host_idx", idx, "err", err)
-			return fetchSubscriptionMsg{err: fmt.Errorf("subscription: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchSubscriptionMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if !strings.Contains(out, "===IDENTITY===") {
+				logger.Error("fetch failed", "view", "subscription", "host_idx", idx, "err", err)
+				return fetchSubscriptionMsg{err: fmt.Errorf("subscription: %w", err)}
+			}
 		}
 
 		var subs []config.Subscription
@@ -788,10 +804,15 @@ func (m Model) fetchAccountDetail(user string) func() tea.Msg {
 			`echo '===IDENTITY===' && id '%s' 2>&1 && echo '===PASSWORD===' && (sudo chage -l '%s' 2>/dev/null || echo 'Managed by IPA') && echo '===LOGIN===' && (lastlog -u '%s' 2>/dev/null | tail -1 || echo 'N/A') && echo '===SUDO===' && sudo -l -U '%s' 2>/dev/null`,
 			u, u, u, u,
 		)
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "account_detail", "host_idx", idx, "user", user, "err", err)
-			return fetchAccountDetailMsg{err: fmt.Errorf("account detail: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchAccountDetailMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "account_detail", "host_idx", idx, "user", user, "err", err)
+				return fetchAccountDetailMsg{err: fmt.Errorf("account detail: %w", err)}
+			}
 		}
 
 		var sections []accountDetailSection
@@ -902,10 +923,15 @@ func (m Model) fetchNetworkInfo() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "network_info", "host_idx", idx)
 		cmd := `ip route 2>/dev/null | wc -l && if systemctl is-active firewalld >/dev/null 2>&1; then echo "firewalld"; (firewall-cmd --list-all-zones 2>/dev/null | grep -cE 'services:|ports:' || echo 0); elif command -v nft >/dev/null 2>&1 && nft list ruleset 2>/dev/null | grep -q 'chain'; then echo "nftables"; (nft list ruleset 2>/dev/null | grep -c 'rule' || echo 0); else echo "iptables"; (sudo iptables -L -n 2>/dev/null | tail -n+3 | grep -cv '^$' || echo 0); fi`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "network_info", "host_idx", idx, "err", err)
-			return fetchNetworkInfoMsg{err: fmt.Errorf("network info: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchNetworkInfoMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "network_info", "host_idx", idx, "err", err)
+				return fetchNetworkInfoMsg{err: fmt.Errorf("network info: %w", err)}
+			}
 		}
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -1121,10 +1147,15 @@ func (m Model) fetchFirewall() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "firewall", "host_idx", idx)
 		cmd := `if systemctl is-active firewalld >/dev/null 2>&1; then echo '---FIREWALLD---'; sudo firewall-cmd --list-all-zones 2>/dev/null; elif command -v nft >/dev/null 2>&1; then _nft=$(sudo nft list ruleset 2>/dev/null); if echo "$_nft" | grep -q 'chain'; then echo '---NFTABLES---'; echo "$_nft"; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi; else echo '---IPTABLES---'; sudo iptables -L -n --line-numbers 2>/dev/null; fi`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "firewall", "host_idx", idx, "err", err)
-			return fetchFirewallMsg{err: fmt.Errorf("firewall: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchFirewallMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "firewall", "host_idx", idx, "err", err)
+				return fetchFirewallMsg{err: fmt.Errorf("firewall: %w", err)}
+			}
 		}
 
 		backend := ssh.DetectFirewallBackend(out)
@@ -1217,10 +1248,15 @@ func (m Model) fetchFailedLogins() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "failed_logins", "host_idx", idx)
 		cmd := `sudo journalctl -u sshd --no-pager -q --no-hostname -o short -n 500 2>/dev/null | grep -iE 'Failed|Invalid user' | tac; true`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "failed_logins", "host_idx", idx, "err", err)
-			return fetchFailedLoginsMsg{err: fmt.Errorf("failed logins: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchFailedLoginsMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "failed_logins", "host_idx", idx, "err", err)
+				return fetchFailedLoginsMsg{err: fmt.Errorf("failed logins: %w", err)}
+			}
 		}
 
 		var logins []config.FailedLogin
@@ -1254,10 +1290,15 @@ func (m Model) fetchSudoActivity() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "sudo_activity", "host_idx", idx)
 		cmd := `sudo journalctl _COMM=sudo --no-pager -q --no-hostname -o short -n 500 2>/dev/null | tac; true`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "sudo_activity", "host_idx", idx, "err", err)
-			return fetchSudoActivityMsg{err: fmt.Errorf("sudo activity: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchSudoActivityMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "sudo_activity", "host_idx", idx, "err", err)
+				return fetchSudoActivityMsg{err: fmt.Errorf("sudo activity: %w", err)}
+			}
 		}
 
 		var entries []config.SudoEntry
@@ -1291,10 +1332,15 @@ func (m Model) fetchSELinuxDenials() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "selinux_denials", "host_idx", idx)
 		cmd := `sudo journalctl _TRANSPORT=audit --no-pager -q --no-hostname -o short -n 500 2>/dev/null | grep 'avc:' | tac; true`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "selinux_denials", "host_idx", idx, "err", err)
-			return fetchSELinuxMsg{err: fmt.Errorf("selinux: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchSELinuxMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "selinux_denials", "host_idx", idx, "err", err)
+				return fetchSELinuxMsg{err: fmt.Errorf("selinux: %w", err)}
+			}
 		}
 
 		var denials []config.SELinuxDenial
@@ -1328,10 +1374,15 @@ func (m Model) fetchAuditSummary() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "audit_summary", "host_idx", idx)
 		cmd := `sudo aureport --auth -i 2>/dev/null | grep -E '^\s*[0-9]+\.' | tac; true`
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "audit_summary", "host_idx", idx, "err", err)
-			return fetchAuditSummaryMsg{err: fmt.Errorf("audit: %w", err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchAuditSummaryMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "audit_summary", "host_idx", idx, "err", err)
+				return fetchAuditSummaryMsg{err: fmt.Errorf("audit: %w", err)}
+			}
 		}
 
 		var events []config.AuditEvent
@@ -1395,10 +1446,15 @@ func (m Model) fetchDiskDetail(mount string) func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "disk_detail", "host_idx", idx, "mount", mount)
 		cmd := fmt.Sprintf("df -h '%s' 2>/dev/null && echo '---' && (sudo tune2fs -l $(findmnt -n -o SOURCE '%s') 2>/dev/null || lsblk -f $(findmnt -n -o SOURCE '%s') 2>/dev/null || echo 'No additional details available')", shellQuote(mount), shellQuote(mount), shellQuote(mount))
-		out, err := sm.RunCommand(idx, cmd)
-		if err != nil && out == "" {
-			logger.Error("fetch failed", "view", "disk_detail", "host_idx", idx, "mount", mount, "err", err)
-			return fetchDiskDetailMsg{err: fmt.Errorf("disk detail %s: %w", mount, err)}
+		out, err := sm.RunSudoCommand(idx, cmd)
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchDiskDetailMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if out == "" {
+				logger.Error("fetch failed", "view", "disk_detail", "host_idx", idx, "mount", mount, "err", err)
+				return fetchDiskDetailMsg{err: fmt.Errorf("disk detail %s: %w", mount, err)}
+			}
 		}
 		var lines []string
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {

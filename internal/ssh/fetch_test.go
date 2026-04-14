@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -1034,3 +1035,45 @@ func TestParseMetricsOutput(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestIsSudoOutput(t *testing.T) {
+	tests := []struct {
+		output string
+		want   bool
+	}{
+		{"sudo: a password is required", true},
+		{"sudo: no tty present and no askpass program specified", true},
+		{"[sudo] password for gaetan:", true},
+		{"sudo: no password supplied", true},
+		{"", false},
+		{"permission denied", false},
+		{"exit status 1", false},
+		// partial match
+		{"some output\nsudo: a password is required\nmore output", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.output, func(t *testing.T) {
+			got := IsSudoOutput(tt.output)
+			if got != tt.want {
+				t.Errorf("IsSudoOutput(%q) = %v, want %v", tt.output, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSudoError(t *testing.T) {
+	if IsSudoError(nil) {
+		t.Error("IsSudoError(nil) = true, want false")
+	}
+	if IsSudoError(errString("some other error")) {
+		t.Error("IsSudoError(non-sudo error) = true, want false")
+	}
+	if !IsSudoError(ErrSudoRequired) {
+		t.Error("IsSudoError(ErrSudoRequired) = false, want true")
+	}
+	// wrapped
+	wrapped := fmt.Errorf("fetch failed: %w", ErrSudoRequired)
+	if !IsSudoError(wrapped) {
+		t.Error("IsSudoError(wrapped ErrSudoRequired) = false, want true")
+	}
+}

@@ -76,7 +76,7 @@ func (m Model) renderSubscription() string {
 	if m.showConfirm {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderSudoPromptOrHintBar([][]string{
 			{"↑↓", "Navigate"},
 			{"d", "Disable Repo"},
 			{"r", "Refresh"},
