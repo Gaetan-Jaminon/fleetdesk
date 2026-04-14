@@ -143,7 +143,11 @@ func rewriteSudoCmd(cmd string, password string) string {
 
 // RunCommand executes a command on the given host index and returns stdout.
 func (sm *Manager) RunCommand(idx int, cmd string) (string, error) {
-	sm.logger.Debug("runCommand", "idx", idx, "cmd_prefix", cmd[:min(len(cmd), 60)])
+	logPrefix := cmd[:min(len(cmd), 60)]
+	if strings.Contains(cmd, "| sudo -S") {
+		logPrefix = "[sudo-rewritten]"
+	}
+	sm.logger.Debug("runCommand", "idx", idx, "cmd_prefix", logPrefix)
 
 	sm.mu.Lock()
 	client, ok := sm.conns[idx]

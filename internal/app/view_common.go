@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
@@ -36,7 +37,7 @@ func (m Model) renderSudoPromptOrHintBar(hints [][]string) string {
 		if m.selectedHost < len(m.hosts) {
 			user = m.hosts[m.selectedHost].Entry.User
 		}
-		masked := strings.Repeat("*", len(m.sudoInput))
+		masked := strings.Repeat("*", utf8.RuneCountInString(m.sudoInput))
 		prompt := fmt.Sprintf("  Sudo password for %s: %s\u2588", user, masked)
 		return hintBarStyle.Width(m.width).Render(prompt)
 	}
