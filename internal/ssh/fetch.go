@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,27 @@ import (
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
+
+// ErrSudoRequired is returned when a command fails because sudo requires a password.
+var ErrSudoRequired = errors.New("sudo password required")
+
+// IsSudoOutput returns true if the command output indicates sudo needs a password.
+func IsSudoOutput(output string) bool {
+	return strings.Contains(output, "sudo: a password is required") ||
+		strings.Contains(output, "sudo: no tty present") ||
+		strings.Contains(output, "[sudo] password for") ||
+		strings.Contains(output, "sudo: no password supplied")
+}
+
+// IsSudoError returns true if err wraps ErrSudoRequired.
+func IsSudoError(err error) bool {
+	return errors.Is(err, ErrSudoRequired)
+}
+
+// EscapeSingleQuotes escapes single quotes in s for safe embedding in a single-quoted shell string.
+func EscapeSingleQuotes(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
+}
 
 // ServiceStateOrder returns a sort priority for service states.
 // Lower = shown first.

@@ -141,7 +141,7 @@ func (m Model) renderServiceList() string {
 		if m.showConfirm {
 			s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 		} else {
-			s += m.renderHintBar([][]string{
+			s += m.renderSudoPromptOrHintBar([][]string{
 				{"\u2191\u2193", "Scroll"},
 				{"/", "Search"},
 				{"s", "Start"},
@@ -238,7 +238,7 @@ func (m Model) renderServiceList() string {
 	} else if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderSudoPromptOrHintBar([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"1-4", "Sort"},
 			{"Enter", "Detail"},

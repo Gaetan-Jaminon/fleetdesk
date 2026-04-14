@@ -230,6 +230,40 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// sudo password prompt mode -- capture input on any SSH view
+	if m.showSudoPrompt {
+		switch msg.Type {
+		case tea.KeyEnter:
+			if m.sudoInput == "" {
+				return m, nil
+			}
+			m.showSudoPrompt = false
+			password := m.sudoInput
+			m.sudoInput = ""
+			m.ssh.SetSudoPassword(m.selectedHost, password)
+			retry := m.pendingSudoRetry
+			m.pendingSudoRetry = nil
+			return m, retry
+		case tea.KeyEsc:
+			m.showSudoPrompt = false
+			m.sudoInput = ""
+			m.pendingSudoRetry = nil
+			m.flash = "Sudo password prompt cancelled"
+			m.flashError = true
+			return m, nil
+		case tea.KeyBackspace:
+			if len(m.sudoInput) > 0 {
+				runes := []rune(m.sudoInput)
+				m.sudoInput = string(runes[:len(runes)-1])
+			}
+		default:
+			if msg.Type == tea.KeyRunes {
+				m.sudoInput += string(msg.Runes)
+			}
+		}
+		return m, nil
+	}
+
 	m.flash = ""
 	m.flashError = false
 

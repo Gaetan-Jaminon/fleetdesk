@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
@@ -26,6 +27,21 @@ func (m Model) renderHeader(breadcrumb string, current, total int) string {
 		gap = 0
 	}
 	return left + strings.Repeat(" ", gap) + right
+}
+
+// renderSudoPromptOrHintBar renders the sudo password prompt if active,
+// otherwise delegates to renderHintBar. Use in all SSH-based VM views.
+func (m Model) renderSudoPromptOrHintBar(hints [][]string) string {
+	if m.showSudoPrompt {
+		user := ""
+		if m.selectedHost < len(m.hosts) {
+			user = m.hosts[m.selectedHost].Entry.User
+		}
+		masked := strings.Repeat("*", utf8.RuneCountInString(m.sudoInput))
+		prompt := fmt.Sprintf("  Sudo password for %s: %s\u2588", user, masked)
+		return hintBarStyle.Width(m.width).Render(prompt)
+	}
+	return m.renderHintBar(hints)
 }
 
 func (m Model) renderHintBar(hints [][]string) string {

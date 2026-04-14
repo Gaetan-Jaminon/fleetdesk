@@ -119,6 +119,8 @@ func (m Model) renderHostList() string {
 		masked := strings.Repeat("*", len(m.passwordInput))
 		prompt := fmt.Sprintf("  Password for %s: %s\u2588", user, masked)
 		s += hintBarStyle.Width(m.width).Render(prompt)
+	} else if m.showSudoPrompt {
+		s += m.renderSudoPromptOrHintBar(nil)
 	} else if m.showConfirm {
 		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
 	} else {
