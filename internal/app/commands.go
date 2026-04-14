@@ -599,6 +599,13 @@ func (m Model) fetchSubscription() func() tea.Msg {
 		logger.Debug("fetch start", "view", "subscription", "host_idx", idx)
 		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && echo '===STATUS===' && sudo subscription-manager status 2>&1 && echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && echo '===REPOS===' && dnf repolist --enabled 2>&1 && echo '===REPOCHECK===' && for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do (echo "REPO:$repo:$(dnf repoinfo --disablerepo='*' --enablerepo=$repo 2>&1 | grep -c 'Error:')") & done; wait`
 		out, err := sm.RunSudoCommand(idx, cmd)
+		// Check for sudo password prompt only when no sudo password is cached.
+		// When cached, the rewritten command's "echo pw | sudo -S" still outputs
+		// "[sudo] password for" to stdout (2>&1 overrides 2>/dev/null), so
+		// IsSudoOutput would false-positive on a successful run.
+		if sm.GetSudoPassword(idx) == "" && ssh.IsSudoOutput(out) {
+			return fetchSubscriptionMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+		}
 		if err != nil {
 			if ssh.IsSudoOutput(out) {
 				return fetchSubscriptionMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
