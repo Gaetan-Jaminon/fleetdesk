@@ -28,6 +28,17 @@ Key rules:
 - Use `/test-plan` to create Test Plan and Test Run documents in Linear (Step 2).
 - Pre-flight hook runs automatically before every `git push` (Step 5).
 
+### Post-implementation workflow
+
+After implementation is complete, NEVER suggest manual testing directly. Follow the steps in order:
+
+1. Push branch and create PR (`git push` + `gh pr create`)
+2. Step 4 (pre-flight) runs automatically on push
+3. Wait for Claude GitHub review (Step 5) — fix findings, loop until clean
+4. Only THEN does the human do integration testing (Step 6)
+
+Do not skip or reorder these steps. The human tests on reviewed code, not raw implementation.
+
 ## Architecture
 
 - Package structure: `internal/config/`, `internal/ssh/`, `internal/azure/`, `internal/k8s/`, `internal/app/`
@@ -82,7 +93,6 @@ TDD: Opus (Step 2) designs *what to test* across all tiers. Sonnet (Step 3) tran
 - One PR per FLE (squash merge)
 - Branch: `feature/fle-xx-description`
 - Conventional commits: feat/fix/chore/refactor
-- Never push before user validates on real infra
 
 ## Linear
 
