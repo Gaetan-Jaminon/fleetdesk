@@ -1140,7 +1140,7 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd, target string
 		if satURL != "" {
 			target = "Satellite"
-			cmd = fmt.Sprintf("sudo dnf install -y http://%s/pub/katello-ca-consumer-latest.noarch.rpm --disablerepo='*' && sudo subscription-manager register --org=%s --activationkey=%s --force",
+			cmd = fmt.Sprintf("sudo subscription-manager clean && sudo dnf install -y http://%s/pub/katello-ca-consumer-latest.noarch.rpm --disablerepo='*' && sudo subscription-manager register --org=%s --activationkey=%s --force",
 				shellQuote(satURL), shellQuote(orgID), shellQuote(actKey))
 		} else {
 			target = "Red Hat CDN"
