@@ -24,6 +24,9 @@ type HostDefaults struct {
 	ServiceFilter   []string      `yaml:"service_filter"`
 	ErrorLogSince   string
 	RefreshInterval string
+	RHOrgID         string `yaml:"rh_org_id"`
+	RHActivationKey string `yaml:"rh_activation_key"`
+	SatelliteURL    string `yaml:"satellite_url"`
 }
 
 // HostGroup provides visual grouping of hosts.
@@ -34,13 +37,16 @@ type HostGroup struct {
 
 // HostEntry represents a single host definition in a fleet file.
 type HostEntry struct {
-	Name          string        `yaml:"name"`
-	Hostname      string        `yaml:"hostname"`
-	User          string        `yaml:"user"`
-	Port          int           `yaml:"port"`
-	Timeout       time.Duration `yaml:"timeout"`
-	SystemdMode   string        `yaml:"systemd_mode"`
-	ServiceFilter []string
+	Name            string        `yaml:"name"`
+	Hostname        string        `yaml:"hostname"`
+	User            string        `yaml:"user"`
+	Port            int           `yaml:"port"`
+	Timeout         time.Duration `yaml:"timeout"`
+	SystemdMode     string        `yaml:"systemd_mode"`
+	ServiceFilter   []string
+	RHOrgID         string `yaml:"rh_org_id"`
+	RHActivationKey string `yaml:"rh_activation_key"`
+	SatelliteURL    string `yaml:"satellite_url"`
 }
 
 // Host is the runtime representation of a host with connection state.
