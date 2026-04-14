@@ -13,7 +13,7 @@ import (
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
 
-// sshHandoverFinishedMsg is sent when a terminal handover SSH command completes.
+// sshHandoverFinishedMsg is sent when a terminal handover command completes.
 type sshHandoverFinishedMsg struct {
 	Err error
 }
@@ -99,6 +99,47 @@ func (m Model) editFleetFile() tea.Cmd {
 	e := &editorExec{path: f.Path}
 	return tea.Exec(e, func(err error) tea.Msg {
 		return editFinishedMsg{Err: e.err}
+	})
+}
+
+// cmdExec wraps an arbitrary command with terminal handover.
+type cmdExec struct {
+	name   string
+	args   []string
+	banner string
+	err    error
+}
+
+func (c *cmdExec) Run() error {
+	sep := strings.Repeat("\u2501", 50)
+	fmt.Printf("\n%s\n\u25b6 %s\n%s\n\n", sep, c.banner, sep)
+
+	cmd := exec.Command(c.name, c.args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	c.err = cmd.Run()
+
+	status := "\u2713 done"
+	if c.err != nil {
+		status = fmt.Sprintf("\u2717 %v", c.err)
+	}
+	fmt.Printf("\n%s\n%s\nPress Enter to return to fleetdesk...", sep, status)
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
+
+	return nil
+}
+
+func (c *cmdExec) SetStdin(_ io.Reader)  {}
+func (c *cmdExec) SetStdout(_ io.Writer) {}
+func (c *cmdExec) SetStderr(_ io.Writer) {}
+
+// cmdHandover creates a tea.Cmd for terminal handover to an arbitrary command.
+func cmdHandover(name string, args []string, banner string) tea.Cmd {
+	e := &cmdExec{name: name, args: args, banner: banner}
+	return tea.Exec(e, func(err error) tea.Msg {
+		return sshHandoverFinishedMsg{Err: e.err}
 	})
 }
 

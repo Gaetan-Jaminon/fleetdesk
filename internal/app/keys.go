@@ -150,6 +150,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showConfirm = false
 			m.confirmCmd = ""
 			m.confirmBanner = ""
+			m.pendingHandover = nil
 			m.flash = "Cancelled"
 			return m, nil
 		default:
@@ -178,6 +179,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(execCmd, m.startPoll())
 			}
 			return m, execCmd
+		}
+
+		if m.pendingHandover != nil {
+			c := m.pendingHandover
+			m.pendingHandover = nil
+			m.flash = ""
+			return m, c
 		}
 
 		h := m.hosts[m.selectedHost]
@@ -451,6 +459,21 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, sshHandover(h, []string{}, fmt.Sprintf("shell %s@%s", h.Entry.User, h.Entry.Name))
+		}
+	case "K":
+		if len(m.hosts) > 0 {
+			h := m.hosts[m.hostCursor]
+			if h.Status != config.HostOnline {
+				m.flash = "Host is not reachable"
+				m.flashError = true
+				return m, nil
+			}
+			m.selectedHost = m.hostCursor
+			m.showConfirm = true
+			m.confirmMessage = fmt.Sprintf("Deploy SSH key to %s@%s? [Y/n]", h.Entry.User, h.Entry.Name)
+			m.pendingHandover = cmdHandover("ssh-copy-id",
+				[]string{"-o", "StrictHostKeyChecking=no", "-p", fmt.Sprintf("%d", h.Entry.Port), fmt.Sprintf("%s@%s", h.Entry.User, h.Entry.Hostname)},
+				fmt.Sprintf("deploy key to %s@%s", h.Entry.User, h.Entry.Name))
 		}
 	case "R":
 		if len(m.hosts) > 0 {

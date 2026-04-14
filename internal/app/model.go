@@ -407,8 +407,9 @@ type Model struct {
 	// confirmation prompt
 	showConfirm    bool
 	confirmMessage string
-	confirmCmd     string
-	confirmBanner  string
+	confirmCmd      string
+	confirmBanner   string
+	pendingHandover tea.Cmd
 
 	// SSH
 	ssh   *ssh.Manager
