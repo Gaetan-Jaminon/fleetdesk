@@ -413,6 +413,11 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.flashError = true
 				return m, nil
 			}
+			if !h.SudoReady {
+				// Test sudo on this host — prompt if needed, then navigate
+				m.selectedHost = m.hostCursor
+				return m, m.testSudo(m.hostCursor)
+			}
 			m.selectedHost = m.hostCursor
 			m.resourceCursor = 0
 			// Clear stale data from previous host
