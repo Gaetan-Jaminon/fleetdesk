@@ -553,8 +553,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.hosts[msg.Index].Status = config.HostUnreachable
 					m.hosts[msg.Index].Error = "password required"
 					m.hosts[msg.Index].NeedsPassword = true
-					// show prompt if not already showing one
-					if m.modal == nil || m.modal.Done() {
+					// show prompt — SSH password takes priority over other modals
+					// (sudo, loading, etc.) but don't replace another password modal
+					if m.modal == nil || m.modal.Done() || !isPasswordModal(m.modal) {
 						h := m.hosts[msg.Index]
 						m.modal = NewPasswordModal(h.Entry.User, h.Entry.Name, msg.Index)
 					}
