@@ -1150,15 +1150,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchUpdatesMsg:
 		dismissLoading(&m)
 		if msg.err != nil {
-			// Only prompt for sudo when the user is on the Updates view —
-			// pre-fetch from resource picker should silently return partial data.
-			if m.view == viewUpdateList {
-				if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
-					return m2, cmd
-				}
+			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
+				return m2, cmd
 			}
-			m.flash = fmt.Sprintf("Failed: %v", msg.err)
-			m.flashError = true
+			// Only flash non-sudo errors when on the Updates view —
+			// pre-fetch errors are silently ignored.
+			if m.view == viewUpdateList {
+				m.flash = fmt.Sprintf("Failed: %v", msg.err)
+				m.flashError = true
+			}
 		} else {
 			if msg.updates == nil {
 				m.updates = []config.Update{}
