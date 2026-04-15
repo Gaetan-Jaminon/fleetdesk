@@ -1125,15 +1125,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sudoEnteredMsg:
 		m.modal = nil
-		// Cache sudo password and mark all online hosts as sudo-ready
-		m.logger.Debug("sudo password entered", "host_idx", msg.hostIdx, "host_count", len(m.hosts))
-		for i := range m.hosts {
-			m.ssh.SetSudoPassword(i, msg.password)
-			if m.hosts[i].Status == config.HostOnline {
-				m.hosts[i].SudoReady = true
-			}
+		// Test the password before caching
+		m.logger.Debug("sudo password entered, testing", "host_idx", msg.hostIdx)
+		idx := msg.hostIdx
+		pw := msg.password
+		retry := msg.retry
+		sm := m.ssh
+		sm.SetSudoPassword(idx, pw)
+		return m, func() tea.Msg {
+			out, runErr := sm.RunSudoCommand(idx, "sudo true")
+			sm.SetSudoPassword(idx, "") // clear — sudoTestMsg sets it on success
+			success := runErr == nil && !ssh.IsSudoOutput(out)
+			return sudoTestMsg{Password: pw, Success: success, Retry: retry, HostIdx: idx}
 		}
-		return m, msg.retry
 
 	case sudoCancelledMsg:
 		m.modal = nil
