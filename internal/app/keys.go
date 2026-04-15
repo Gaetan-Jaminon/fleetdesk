@@ -415,8 +415,6 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.selectedHost = m.hostCursor
 			m.resourceCursor = 0
-			m.services = nil
-			m.containers = nil
 			m.view = viewResourcePicker
 			// pre-fetch for accurate counts
 			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
@@ -442,49 +440,41 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.resourceCursor {
 		case 0: // Services
 			m.serviceCursor = 0
-			m.services = nil
 			m.sortColumn = 0
 			m.view = viewServiceList
 			return m, m.fetchServices()
 		case 1: // Containers
 			m.containerCursor = 0
-			m.containers = nil
 			m.sortColumn = 0
 			m.view = viewContainerList
 			return m, m.fetchContainers()
 		case 2: // Cron Jobs
 			m.cronCursor = 0
-			m.cronJobs = nil
 			m.sortColumn = 0
 			m.view = viewCronList
 			return m, m.fetchCronJobs()
 		case 3: // Error Logs -> Log Level Picker
 			m.logLevelCursor = 0
-			m.logLevels = nil
 			m.sortColumn = 0
 			m.view = viewLogLevelPicker
 			return m, m.fetchLogLevels()
 		case 4: // Updates
 			m.updateCursor = 0
-			m.updates = nil
 			m.sortColumn = 0
 			m.view = viewUpdateList
 			return m, m.fetchUpdates()
 		case 5: // Disk
 			m.diskCursor = 0
-			m.disks = nil
 			m.sortColumn = 0
 			m.view = viewDiskList
 			return m, m.fetchDisk()
 		case 6: // Subscription
 			m.subscriptionCursor = 0
-			m.subscriptions = nil
 			m.sortColumn = 0
 			m.view = viewSubscription
 			return m, m.fetchSubscription()
 		case 7: // Accounts
 			m.accountCursor = 0
-			m.accounts = nil
 			m.sortColumn = 0
 			m.view = viewAccountList
 			return m, m.fetchAccounts()
@@ -495,28 +485,24 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetchNetworkInfo()
 		case 9: // Failed Logins
 			m.failedLoginCursor = 0
-			m.failedLogins = nil
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecurityFailedLogins
 			return m, m.fetchFailedLogins()
 		case 10: // Sudo Activity
 			m.sudoCursor = 0
-			m.sudoEntries = nil
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecuritySudo
 			return m, m.fetchSudoActivity()
 		case 11: // SELinux Denials
 			m.selinuxCursor = 0
-			m.selinuxDenials = nil
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecuritySELinux
 			return m, m.fetchSELinuxDenials()
 		case 12: // Audit Summary
 			m.auditCursor = 0
-			m.auditEvents = nil
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecurityAudit
@@ -782,7 +768,6 @@ func (m Model) handleLogLevelPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			selected := m.logLevels[m.logLevelCursor]
 			m.selectedLogLevel = selected.Code
 			m.errorCursor = 0
-			m.errorLogs = nil
 			m.view = viewErrorLogList
 			return m, m.fetchErrorLogs()
 		}
@@ -1142,26 +1127,22 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.networkCursor {
 		case 0: // Interfaces
 			m.interfaceCursor = 0
-			m.interfaces = nil
 			m.sortColumn = 0
 			m.view = viewNetworkInterfaces
 			return m, m.fetchInterfaces()
 		case 1: // Ports
 			m.portCursor = 0
-			m.ports = nil
 			m.sortColumn = 0
 			m.filterText = ""
 			m.view = viewNetworkPorts
 			return m, m.fetchPorts()
 		case 2: // Routes & DNS
 			m.routeCursor = 0
-			m.routes = nil
 			m.sortColumn = 0
 			m.view = viewNetworkRoutes
 			return m, m.fetchRoutes()
 		case 3: // Firewall
 			m.firewallCursor = 0
-			m.firewallRules = nil
 			m.sortColumn = 0
 			m.firewallBackend = ""
 			m.filterText = ""
