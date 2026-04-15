@@ -50,12 +50,12 @@ func (m Model) renderLogLevelPicker() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "View Logs"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
-	})
+	}))
 	return s
 }
 
@@ -214,7 +214,7 @@ func (m Model) renderErrorLogList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"1-3", "Sort"},
 			{"Enter", "Detail"},
@@ -222,7 +222,7 @@ func (m Model) renderErrorLogList() string {
 			{"l", "Full Log"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
-		})
+		}))
 	}
 	return s
 }

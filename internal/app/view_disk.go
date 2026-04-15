@@ -59,10 +59,10 @@ func (m Model) renderDiskList() string {
 
 		s = m.padToBottom(s, iw)
 		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Scroll"},
 			{"Esc", "Back"},
-		})
+		}))
 		return s
 	}
 
@@ -148,13 +148,13 @@ func (m Model) renderDiskList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Detail"},
 		{"1-6", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
-	})
+	}))
 	return s
 }

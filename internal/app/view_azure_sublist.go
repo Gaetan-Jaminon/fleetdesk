@@ -106,7 +106,7 @@ func (m Model) renderAzureSubList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Drill In"},
 			{"r", "Refresh"},
@@ -114,7 +114,7 @@ func (m Model) renderAzureSubList() string {
 			{"1-3", "Sort"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }

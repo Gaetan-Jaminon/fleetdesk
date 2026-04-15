@@ -173,7 +173,7 @@ func (m Model) renderK8sPodLogs() string {
 			containerLabel = "App Only"
 		}
 		levelLabel := "Log Level"
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Detail"},
 			{streamHint, streamLabel},
@@ -182,7 +182,7 @@ func (m Model) renderK8sPodLogs() string {
 			{"g/G", "Top/Bottom"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }
@@ -290,11 +290,11 @@ func (m Model) renderK8sLogDetail(e k8s.K8sLogEntry, fleetName, clusterName, nsN
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"\u2191\u2193", "Scroll"},
 		{"g", "Top"},
 		{"Esc", "Back"},
-	})
+	}))
 	return s
 }
 

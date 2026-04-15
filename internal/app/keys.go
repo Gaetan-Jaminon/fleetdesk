@@ -154,6 +154,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		m.azure.Close()
 		return m, tea.Quit
+	case "?":
+		text := helpForView(m.view)
+		m.modal = NewModalOverlay("Keybindings", []ModalStep{
+			{Title: "", Content: NewStaticContent(text)},
+		}, func(_ []any) tea.Cmd { return nil },
+			func() tea.Cmd { return nil })
+		m.modal.FooterFn = func() string {
+			return modalKeyStyle.Render("?/Esc") + " " + modalDimStyle.Render("close") +
+				"  " + modalKeyStyle.Render("↑↓") + " " + modalDimStyle.Render("scroll")
+		}
+		return m, nil
 	}
 
 	switch m.view {
@@ -252,6 +263,10 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		m.view = viewConfig
 		return m, nil
+	case "a":
+		modal, cmd := NewAboutModal(m.version, m.commit)
+		m.modal = modal
+		return m, cmd
 	case "e":
 		if len(m.fleets) > 0 {
 			return m, m.editFleetFile()
@@ -404,6 +419,7 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.containers = nil
 			m.view = viewResourcePicker
 			// pre-fetch for accurate counts
+			showLoading(&m, "Loading resource counts...")
 			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
 		}
 	case "esc":
@@ -430,53 +446,62 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.services = nil
 			m.sortColumn = 0
 			m.view = viewServiceList
+			showLoading(&m, "Loading services...")
 			return m, m.fetchServices()
 		case 1: // Containers
 			m.containerCursor = 0
 			m.containers = nil
 			m.sortColumn = 0
 			m.view = viewContainerList
+			showLoading(&m, "Loading containers...")
 			return m, m.fetchContainers()
 		case 2: // Cron Jobs
 			m.cronCursor = 0
 			m.cronJobs = nil
 			m.sortColumn = 0
 			m.view = viewCronList
+			showLoading(&m, "Loading cron jobs...")
 			return m, m.fetchCronJobs()
 		case 3: // Error Logs -> Log Level Picker
 			m.logLevelCursor = 0
 			m.logLevels = nil
 			m.sortColumn = 0
 			m.view = viewLogLevelPicker
+			showLoading(&m, "Loading log levels...")
 			return m, m.fetchLogLevels()
 		case 4: // Updates
 			m.updateCursor = 0
 			m.updates = nil
 			m.sortColumn = 0
 			m.view = viewUpdateList
+			showLoading(&m, "Loading updates...")
 			return m, m.fetchUpdates()
 		case 5: // Disk
 			m.diskCursor = 0
 			m.disks = nil
 			m.sortColumn = 0
 			m.view = viewDiskList
+			showLoading(&m, "Loading disk info...")
 			return m, m.fetchDisk()
 		case 6: // Subscription
 			m.subscriptionCursor = 0
 			m.subscriptions = nil
 			m.sortColumn = 0
 			m.view = viewSubscription
+			showLoading(&m, "Loading subscription...")
 			return m, m.fetchSubscription()
 		case 7: // Accounts
 			m.accountCursor = 0
 			m.accounts = nil
 			m.sortColumn = 0
 			m.view = viewAccountList
+			showLoading(&m, "Loading accounts...")
 			return m, m.fetchAccounts()
 		case 8: // Network
 			m.networkCursor = 0
 			m.sortColumn = 0
 			m.view = viewNetworkPicker
+			showLoading(&m, "Loading network info...")
 			return m, m.fetchNetworkInfo()
 		case 9: // Failed Logins
 			m.failedLoginCursor = 0
@@ -484,6 +509,7 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecurityFailedLogins
+			showLoading(&m, "Loading failed logins...")
 			return m, m.fetchFailedLogins()
 		case 10: // Sudo Activity
 			m.sudoCursor = 0
@@ -491,6 +517,7 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecuritySudo
+			showLoading(&m, "Loading sudo activity...")
 			return m, m.fetchSudoActivity()
 		case 11: // SELinux Denials
 			m.selinuxCursor = 0
@@ -498,6 +525,7 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecuritySELinux
+			showLoading(&m, "Loading SELinux denials...")
 			return m, m.fetchSELinuxDenials()
 		case 12: // Audit Summary
 			m.auditCursor = 0
@@ -505,13 +533,14 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecurityAudit
+			showLoading(&m, "Loading audit summary...")
 			return m, m.fetchAuditSummary()
 		}
 	case "r":
 		m.services = nil
 		m.containers = nil
 		m.updates = nil
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading resource counts...")
 		return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
 	case "esc":
 		m.view = viewHostList
@@ -606,6 +635,7 @@ func (m Model) handleServiceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.services = nil
 		m.sortColumn = 0
 		m.filterText = ""
+		showLoading(&m, "Loading services...")
 		return m, m.fetchServices()
 	case "esc":
 		if m.filterText != "" {
@@ -696,7 +726,7 @@ func (m Model) handleContainerListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.containers = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading containers...")
 		return m, m.fetchContainers()
 	case "esc":
 		if m.filterText != "" {
@@ -738,7 +768,7 @@ func (m Model) handleCronListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.cronJobs = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading cron jobs...")
 		return m, m.fetchCronJobs()
 	case "esc":
 		if m.filterText != "" {
@@ -772,7 +802,7 @@ func (m Model) handleLogLevelPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.logLevels = nil
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading log levels...")
 		return m, m.fetchLogLevels()
 	case "esc":
 		m.view = viewResourcePicker
@@ -822,7 +852,7 @@ func (m Model) handleErrorLogListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errorLogs = nil
 		m.sortColumn = 0
 		m.filterText = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading error logs...")
 		return m, m.fetchErrorLogs()
 	case "esc":
 		if m.filterText != "" {
@@ -899,7 +929,7 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.updates = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading updates...")
 		return m, m.fetchUpdates()
 	case "esc":
 		if m.filterText != "" {
@@ -966,7 +996,7 @@ func (m Model) handleDiskListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.disks = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading disk info...")
 		return m, m.fetchDisk()
 	case "esc":
 		if m.filterText != "" {
@@ -1050,7 +1080,7 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.subscriptions = nil
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading subscription...")
 		return m, m.fetchSubscription()
 	case "esc":
 		m.view = viewResourcePicker
@@ -1099,7 +1129,7 @@ func (m Model) handleAccountListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.accounts = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading accounts...")
 		return m, m.fetchAccounts()
 	case "esc":
 		if m.filterText != "" {
@@ -1153,7 +1183,7 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetchFirewall()
 		}
 	case "r":
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading network info...")
 		return m, m.fetchNetworkInfo()
 	case "esc":
 		m.view = viewResourcePicker
@@ -1190,7 +1220,7 @@ func (m Model) handleInterfaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.interfaces = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading interfaces...")
 		return m, m.fetchInterfaces()
 	case "esc":
 		if m.filterText != "" {
@@ -1234,7 +1264,7 @@ func (m Model) handlePortListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ports = nil
 		m.sortColumn = 0
 		m.filterText = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading ports...")
 		return m, m.fetchPorts()
 	case "esc":
 		if m.filterText != "" {
@@ -1277,7 +1307,7 @@ func (m Model) handleFirewallListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.firewallRules = nil
 		m.sortColumn = 0
 		m.firewallBackend = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading firewall...")
 		return m, m.fetchFirewall()
 	case "esc":
 		if m.filterText != "" {
@@ -1319,7 +1349,7 @@ func (m Model) handleRouteListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.routes = nil
 		m.sortColumn = 0
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading routes...")
 		return m, m.fetchRoutes()
 	case "esc":
 		if m.filterText != "" {
@@ -1363,7 +1393,7 @@ func (m Model) handleFailedLoginKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.failedLogins = nil
 		m.sortColumn = 0
 		m.filterText = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading failed logins...")
 		return m, m.fetchFailedLogins()
 	case "esc":
 		if m.filterText != "" {
@@ -1407,7 +1437,7 @@ func (m Model) handleSudoKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sudoEntries = nil
 		m.sortColumn = 0
 		m.filterText = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading sudo activity...")
 		return m, m.fetchSudoActivity()
 	case "esc":
 		if m.filterText != "" {
@@ -1451,7 +1481,7 @@ func (m Model) handleSELinuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.selinuxDenials = nil
 		m.sortColumn = 0
 		m.filterText = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading SELinux denials...")
 		return m, m.fetchSELinuxDenials()
 	case "esc":
 		if m.filterText != "" {
@@ -1495,7 +1525,7 @@ func (m Model) handleAuditKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.auditEvents = nil
 		m.sortColumn = 0
 		m.filterText = ""
-		m.flash = "Refreshing..."
+		showLoading(&m, "Loading audit summary...")
 		return m, m.fetchAuditSummary()
 	case "esc":
 		if m.filterText != "" {
@@ -1558,6 +1588,7 @@ func (m Model) handleAzureSubListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.azureResourceErr = nil
 			m.azureCountsLoaded = false
 			m.view = viewAzureResourcePicker
+			showLoading(&m, "Loading resource counts...")
 			return m, m.fetchAzureResourceCounts()
 		}
 	case "r":
@@ -1612,6 +1643,7 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewAzureVMList
+			showLoading(&m, "Loading VMs...")
 			return m, m.fetchAzureVMs()
 		case 1: // AKS Clusters
 			m.azureAKSClusters = nil
@@ -1621,12 +1653,14 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewAzureAKSList
+			showLoading(&m, "Loading AKS clusters...")
 			return m, m.fetchAzureAKSClusters()
 		}
 	case "r":
 		m.azureResourceCounts = azure.AzureResourceCounts{}
 		m.azureResourceErr = nil
 		m.azureCountsLoaded = false
+		showLoading(&m, "Loading resource counts...")
 		return m, m.fetchAzureResourceCounts()
 	case "esc":
 		m.view = viewAzureSubList
@@ -1755,6 +1789,7 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.azureVMs = nil
 		m.azureVMCursor = 0
+		showLoading(&m, "Loading VMs...")
 		return m, m.fetchAzureVMs()
 	case "esc":
 		m.view = viewAzureResourcePicker
@@ -1907,6 +1942,7 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.azureAKSClusters = nil
 		m.azureAKSCursor = 0
+		showLoading(&m, "Loading AKS clusters...")
 		return m, m.fetchAzureAKSClusters()
 	case "esc":
 		m.view = viewAzureResourcePicker
@@ -1968,6 +2004,7 @@ func (m Model) handleK8sClusterListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.k8sContexts = nil
 			m.k8sContextCursor = 0
 			m.view = viewK8sContextList
+			showLoading(&m, "Loading contexts...")
 			return m, m.fetchK8sContexts(c.Name)
 		}
 	case "r":
@@ -2017,6 +2054,7 @@ func (m Model) handleK8sContextListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.k8sResourceErrors = nil
 			m.k8sCountsLoaded = false
 			m.view = viewK8sResourcePicker
+			showLoading(&m, "Loading resource counts...")
 			return m, m.fetchK8sResourceCounts()
 		}
 	case "d":
@@ -2039,6 +2077,7 @@ func (m Model) handleK8sContextListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.k8sContexts = nil
 		m.k8sContextCursor = 0
+		showLoading(&m, "Loading contexts...")
 		return m, m.fetchK8sContexts(m.k8sClusters[m.selectedK8sCluster].Name)
 	case "/":
 		m.filterActive = true
@@ -2073,6 +2112,7 @@ func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewK8sNamespaceList
+			showLoading(&m, "Loading namespaces...")
 			return m, m.fetchK8sNamespaces()
 		case 1:
 			m.k8sNodes = nil
@@ -2081,6 +2121,7 @@ func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewK8sNodeList
+			showLoading(&m, "Loading nodes...")
 			return m, m.fetchK8sNodes()
 		case 2:
 			m.flash = "ArgoCD Apps view coming in next PR"
@@ -2090,6 +2131,7 @@ func (m Model) handleK8sResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		m.k8sResourceCounts = k8s.K8sResourceCounts{}
 		m.k8sResourceErrors = nil
 		m.k8sCountsLoaded = false
+		showLoading(&m, "Loading resource counts...")
 		return m, m.fetchK8sResourceCounts()
 	case "esc":
 		m.view = viewK8sContextList
@@ -2142,6 +2184,7 @@ func (m Model) handleK8sNodeListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.k8sNodes = nil
 		m.k8sNodeCursor = 0
+		showLoading(&m, "Loading nodes...")
 		return m, m.fetchK8sNodes()
 	case "esc":
 		m.view = viewK8sResourcePicker
@@ -2225,6 +2268,7 @@ func (m Model) handleK8sNamespaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewK8sWorkloadList
+			showLoading(&m, "Loading workloads...")
 			return m, m.fetchK8sWorkloads(filtered[m.k8sNamespaceCursor].Name)
 		}
 	case "/":
@@ -2238,6 +2282,7 @@ func (m Model) handleK8sNamespaceListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.k8sNamespaces = nil
 		m.k8sNamespaceCursor = 0
+		showLoading(&m, "Loading namespaces...")
 		return m, m.fetchK8sNamespaces()
 	case "esc":
 		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sNamespaceCursor = 0 } else {
@@ -2270,6 +2315,7 @@ func (m Model) handleK8sWorkloadListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filterActive = false
 			ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
 			m.view = viewK8sPodList
+			showLoading(&m, "Loading pods...")
 			return m, m.fetchK8sPods(ns, w.Name)
 		}
 	case "/":
@@ -2284,6 +2330,7 @@ func (m Model) handleK8sWorkloadListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.k8sWorkloads = nil
 		m.k8sWorkloadCursor = 0
 		ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
+		showLoading(&m, "Loading workloads...")
 		return m, m.fetchK8sWorkloads(ns)
 	case "esc":
 		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sWorkloadCursor = 0 } else {
@@ -2339,7 +2386,7 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterActive = false
 		m.sortColumn = 0
 		wl := m.k8sWorkloads[m.selectedK8sWorkload]
-		m.flash = fmt.Sprintf("Loading logs for %s...", wl.Name)
+		showLoading(&m, fmt.Sprintf("Loading logs for %s...", wl.Name))
 		ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
 		return m, m.fetchK8sPodLogs(ns, podNames)
 	case "d":
@@ -2376,6 +2423,7 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.k8sPodCursor = 0
 		ns := m.filteredK8sNamespaces()[m.selectedK8sNamespace].Name
 		w := m.filteredK8sWorkloads()[m.selectedK8sWorkload]
+		showLoading(&m, "Loading pods...")
 		return m, m.fetchK8sPods(ns, w.Name)
 	case "esc":
 		if m.filterActive { m.filterActive = false; m.filterText = ""; m.k8sPodCursor = 0 } else {
@@ -2411,7 +2459,7 @@ func (m Model) handleK8sPodDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.filterText = ""
 				m.filterActive = false
 				m.sortColumn = 0
-				m.flash = fmt.Sprintf("Loading logs for %s...", m.k8sPodDetail.Name)
+				showLoading(&m, fmt.Sprintf("Loading logs for %s...", m.k8sPodDetail.Name))
 				ns := m.k8sPodDetail.Namespace
 				return m, m.fetchK8sPodLogs(ns, []string{m.k8sPodDetail.Name})
 			}

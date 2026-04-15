@@ -77,13 +77,13 @@ func (m Model) renderSubscription() string {
 	if h.Entry.SatelliteURL != "" {
 		regTarget = "Register Satellite"
 	}
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Navigate"},
 		{"u", "Unregister"},
 		{"g", regTarget},
 		{"d", "Disable Repo"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
-	})
+	}))
 	return s
 }

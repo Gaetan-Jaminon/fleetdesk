@@ -88,7 +88,7 @@ func (m Model) renderK8sClusterList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Contexts"},
 			{"r", "Refresh"},
@@ -96,7 +96,7 @@ func (m Model) renderK8sClusterList() string {
 			{"1-2", "Sort"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }

@@ -138,7 +138,7 @@ func (m Model) renderServiceList() string {
 		s = m.padToBottom(s, iw)
 		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Scroll"},
 			{"/", "Search"},
 			{"s", "Start"},
@@ -146,7 +146,7 @@ func (m Model) renderServiceList() string {
 			{"t", "Restart"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
-		})
+		}))
 		return s
 	}
 
@@ -232,14 +232,14 @@ func (m Model) renderServiceList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"1-4", "Sort"},
 			{"Enter", "Detail"},
 			{"/", "Search"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
-		})
+		}))
 	}
 	return s
 }

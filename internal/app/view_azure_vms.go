@@ -151,7 +151,7 @@ func (m Model) renderAzureVMList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
 			{"s", "Start"},
@@ -161,7 +161,7 @@ func (m Model) renderAzureVMList() string {
 			{"1-7", "Sort"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
-		})
+		}))
 	}
 	return s
 }
@@ -275,12 +275,12 @@ func (m Model) renderAzureVMDetail() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
 
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Scroll"},
 		{"a", "Activity Log"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
-	})
+	}))
 	return s
 }

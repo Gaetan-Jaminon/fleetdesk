@@ -96,7 +96,7 @@ func (m Model) renderK8sContextList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Resources"},
 			{"d", "Delete Context"},
@@ -104,7 +104,7 @@ func (m Model) renderK8sContextList() string {
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }

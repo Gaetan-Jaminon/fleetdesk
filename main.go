@@ -63,7 +63,7 @@ func main() {
 	defer logging.CloseAll()
 	logger.Info("fleetdesk starting", "version", version, "debug", debug, "fleets", len(fleets))
 
-	m := app.NewModel(fleets, appCfg, logger, version)
+	m := app.NewModel(fleets, appCfg, logger, version, commit)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()
 	if err != nil {

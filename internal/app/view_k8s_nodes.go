@@ -173,7 +173,7 @@ func (m Model) renderK8sNodeList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
 			{"/", "Filter"},
@@ -181,7 +181,7 @@ func (m Model) renderK8sNodeList() string {
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }
@@ -400,14 +400,14 @@ func (m Model) renderK8sNodeDetail() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Scroll Pods"},
 			{"/", "Filter"},
 			{"1-9", "Sort"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }

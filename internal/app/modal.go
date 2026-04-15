@@ -298,7 +298,7 @@ func (s *StaticContent) HandleKey(msg tea.KeyMsg) (StepContent, tea.Cmd, bool) {
 		}
 	case "down", "j":
 		s.scroll++
-	case "enter":
+	case "enter", "?":
 		return s, nil, true
 	}
 	return s, nil, false

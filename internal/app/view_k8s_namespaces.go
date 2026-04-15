@@ -111,7 +111,7 @@ func (m Model) renderK8sNamespaceList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Workloads"},
 			{"/", "Filter"},
@@ -119,7 +119,7 @@ func (m Model) renderK8sNamespaceList() string {
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }

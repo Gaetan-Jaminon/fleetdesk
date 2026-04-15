@@ -28,6 +28,11 @@ func (m Model) renderHeader(breadcrumb string, current, total int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// hintWithHelp appends the "? Help" hint to any hint bar.
+func hintWithHelp(hints [][]string) [][]string {
+	return append(hints, []string{"?", "Help"})
+}
+
 func (m Model) renderHintBar(hints [][]string) string {
 	var parts []string
 	for _, h := range hints {
