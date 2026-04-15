@@ -593,8 +593,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case sudoProbeMsg:
-		navigateAfter := func() (Model, tea.Cmd) {
-			// After sudo is ready, navigate to resource picker
+		if !msg.needsPw || m.ssh.GetSudoPassword(msg.hostIdx) != "" {
+			// Sudo ready — navigate to resource picker
+			m.logger.Debug("sudo ready, navigating", "host_idx", msg.hostIdx)
+			if msg.hostIdx < len(m.hosts) {
+				m.hosts[msg.hostIdx].SudoReady = true
+			}
 			m.selectedHost = msg.hostIdx
 			m.resourceCursor = 0
 			m.services = nil
@@ -618,22 +622,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
 		}
 
-		if !msg.needsPw {
-			m.logger.Debug("sudo ready (no password needed)", "host_idx", msg.hostIdx)
-			if msg.hostIdx < len(m.hosts) {
-				m.hosts[msg.hostIdx].SudoReady = true
+		// Try SSH password silently first
+		idx := msg.hostIdx
+		sshPw := m.ssh.GetCachedPassword()
+		if sshPw != "" {
+			m.logger.Debug("sudo trying SSH password silently", "host_idx", idx)
+			sm := m.ssh
+			return m, func() tea.Msg {
+				sm.SetSudoPassword(idx, sshPw)
+				out, runErr := sm.RunSudoCommand(idx, "sudo true")
+				if runErr == nil && !ssh.IsSudoOutput(out) {
+					// Leave password cached — sudoWizardResultMsg handler will propagate
+					return sudoWizardResultMsg{hostIdx: idx, success: true}
+				}
+				sm.SetSudoPassword(idx, "") // wrong — clear
+				return sudoWizardResultMsg{hostIdx: idx, success: false}
 			}
-			m2, cmd := navigateAfter()
-			return m2, cmd
 		}
-		if m.ssh.GetSudoPassword(msg.hostIdx) != "" {
-			if msg.hostIdx < len(m.hosts) {
-				m.hosts[msg.hostIdx].SudoReady = true
+
+		// No SSH password — show sudo wizard
+		user := ""
+		host := ""
+		if idx < len(m.hosts) {
+			user = m.hosts[idx].Entry.User
+			host = m.hosts[idx].Entry.Name
+		}
+		m.logger.Debug("sudo wizard opening", "host_idx", idx)
+		m.modal = NewSudoWizard(user, host, idx, m.ssh)
+		return m, nil
+
+	case sudoWizardResultMsg:
+		m.modal = nil
+		if msg.success {
+			m.logger.Debug("sudo wizard success", "host_idx", msg.hostIdx)
+			// Password was tested and works — cache for all hosts
+			pw := m.ssh.GetSudoPassword(msg.hostIdx)
+			if pw == "" {
+				// Came from silent SSH password test — cache it
+				sshPw := m.ssh.GetCachedPassword()
+				if sshPw != "" {
+					pw = sshPw
+				}
 			}
-			m2, cmd := navigateAfter()
-			return m2, cmd
+			for i := range m.hosts {
+				m.ssh.SetSudoPassword(i, pw)
+				if m.hosts[i].Status == config.HostOnline {
+					m.hosts[i].SudoReady = true
+				}
+			}
+			// Navigate
+			return m, func() tea.Msg {
+				return sudoProbeMsg{hostIdx: msg.hostIdx, needsPw: false}
+			}
 		}
-		// Try SSH password silently first, then prompt if needed
+		// Failed — show wizard again
+		m.logger.Debug("sudo wizard failed, re-prompting", "host_idx", msg.hostIdx)
 		idx := msg.hostIdx
 		user := ""
 		host := ""
@@ -641,26 +684,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			user = m.hosts[idx].Entry.User
 			host = m.hosts[idx].Entry.Name
 		}
-		m.logger.Debug("sudo probe needs password", "host_idx", idx, "host", host)
-
-		sshPw := m.ssh.GetCachedPassword()
-		if sshPw != "" {
-			m.logger.Debug("sudo probe trying SSH password", "host_idx", idx)
-			sm := m.ssh
-			testCmd := func() tea.Msg {
-				sm.SetSudoPassword(idx, sshPw)
-				out, runErr := sm.RunSudoCommand(idx, "sudo true")
-				sm.SetSudoPassword(idx, "")
-				success := runErr == nil && !ssh.IsSudoOutput(out)
-				return sudoTestMsg{Password: sshPw, Success: success, Retry: nil, HostIdx: idx}
-			}
-			return m, testCmd
-		}
-
-		// No SSH password — show sudo modal, retry navigates after
-		m.logger.Debug("sudo probe showing prompt", "host_idx", idx)
-		retryNavigate := func() tea.Msg { return sudoProbeMsg{hostIdx: idx, needsPw: false} }
-		m.modal = NewSudoModal(user, host, idx, retryNavigate)
+		m.flash = "Wrong sudo password"
+		m.flashError = true
+		m.modal = NewSudoWizard(user, host, idx, m.ssh)
 		return m, nil
 
 	case azure.SubscriptionProbeResult:
