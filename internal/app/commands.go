@@ -463,9 +463,12 @@ func (m Model) fetchUpdates() func() tea.Msg {
 		logger.Debug("fetch start", "view", "updates", "host_idx", idx)
 		// get pending updates and security updates in one command
 		cmd := `sudo dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; sudo dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
-		out, err := sm.RunCommand(idx, cmd)
+		out, err := sm.RunSudoCommand(idx, cmd)
 		// dnf check-update returns exit 100 when updates are available
 		if err != nil && !strings.Contains(out, "===SECURITY===") {
+			if ssh.IsSudoOutput(out) {
+				return fetchUpdatesMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
 			logger.Error("fetch failed", "view", "updates", "host_idx", idx, "err", err)
 			return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
 		}
