@@ -512,12 +512,21 @@ func (m Model) fetchUpdates() func() tea.Msg {
 			}
 		}
 
+		inObsoleting := false
 		for _, line := range strings.Split(strings.TrimSpace(updatesSection), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "Last metadata") || strings.HasPrefix(line, "Obsoleting") || strings.HasPrefix(line, "Is this ok") || strings.HasPrefix(line, "Not root") || strings.HasPrefix(line, "Microsoft") || strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") || strings.HasPrefix(line, "Importing") || strings.HasPrefix(line, "Userid") || strings.HasPrefix(line, "Fingerprint") || strings.HasPrefix(line, "From") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "Last metadata") || strings.HasPrefix(trimmed, "Is this ok") || strings.HasPrefix(trimmed, "Not root") || strings.HasPrefix(trimmed, "Microsoft") || strings.HasPrefix(trimmed, "Error:") || strings.HasPrefix(trimmed, "Warning:") || strings.HasPrefix(trimmed, "Importing") || strings.HasPrefix(trimmed, "Userid") || strings.HasPrefix(trimmed, "Fingerprint") || strings.HasPrefix(trimmed, "From") {
 				continue
 			}
-			fields := strings.Fields(line)
+			// Skip entire Obsoleting Packages section — duplicates of updates listed above
+			if strings.HasPrefix(trimmed, "Obsoleting") {
+				inObsoleting = true
+				continue
+			}
+			if inObsoleting {
+				continue
+			}
+			fields := strings.Fields(trimmed)
 			// package lines have format: name.arch  version  repo
 			if len(fields) < 2 || !strings.Contains(fields[0], ".") {
 				continue
