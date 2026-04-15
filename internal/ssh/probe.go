@@ -20,6 +20,7 @@ type ProbeInfo struct {
 	InterfacesUp    int
 	InterfacesTotal int
 	ListeningPorts  int
+	UpdateCount     int
 	SystemdMode     string
 }
 
@@ -55,6 +56,7 @@ func FormatDateEU(s string) string {
 //	8: interfaces up
 //	9: interfaces total
 //	10: listening ports
+//	11: update count (dnf check-update)
 func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 	// Strip any shell warnings (e.g., "Could not chdir to home directory")
 	// that appear before the probe sentinel marker.
@@ -86,6 +88,7 @@ func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 		InterfacesUp:    getInt(8),
 		InterfacesTotal: getInt(9),
 		ListeningPorts:  getInt(10),
+		UpdateCount:     getInt(11),
 		SystemdMode:     systemdMode,
 	}, nil
 }

@@ -69,6 +69,7 @@ type Host struct {
 	InterfacesUp    int
 	InterfacesTotal int
 	ListeningPorts  int
+	UpdateCount     int
 	Error           string
 }
 

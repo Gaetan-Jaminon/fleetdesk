@@ -479,9 +479,11 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 		user = m.hosts[idx].Entry.User
 		host = m.hosts[idx].Entry.Name
 	}
+	m.logger.Debug("sudo required", "host_idx", idx, "host", host, "user", user)
 
 	// Wrong cached password: it was tried and failed — clear and re-prompt.
 	if m.ssh.GetSudoPassword(idx) != "" {
+		m.logger.Debug("sudo cached password failed, re-prompting", "host_idx", idx)
 		m.ssh.SetSudoPassword(idx, "")
 		m.modal = NewSudoModal(user, host, idx, retry)
 		return m, nil, true
@@ -490,6 +492,7 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 	// Try the SSH connection password silently if available.
 	sshPw := m.ssh.GetCachedPassword()
 	if sshPw != "" {
+		m.logger.Debug("sudo trying SSH password silently", "host_idx", idx)
 		sm := m.ssh
 		r := retry
 		testCmd := func() tea.Msg {
@@ -503,6 +506,7 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 	}
 
 	// No SSH password cached (key auth): show prompt directly.
+	m.logger.Debug("sudo no SSH password cached, showing prompt", "host_idx", idx)
 	m.modal = NewSudoModal(user, host, idx, retry)
 	return m, nil, true
 }
@@ -974,8 +978,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case sudoTestMsg:
+		m.logger.Debug("sudo test result", "success", msg.Success, "host_idx", m.selectedHost)
 		if msg.Success {
 			// Cache sudo password for all hosts — same password across the fleet
+			m.logger.Debug("sudo password cached for all hosts", "host_count", len(m.hosts))
 			for i := range m.hosts {
 				m.ssh.SetSudoPassword(i, msg.Password)
 			}
@@ -1021,6 +1027,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sudoEnteredMsg:
 		m.modal = nil
 		// Cache sudo password for all hosts — same password across the fleet
+		m.logger.Debug("sudo password entered, caching for all hosts", "host_idx", msg.hostIdx, "host_count", len(m.hosts))
 		for i := range m.hosts {
 			m.ssh.SetSudoPassword(i, msg.password)
 		}
@@ -1157,6 +1164,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchUpdatesMsg:
 		dismissLoading(&m)
 		if msg.err != nil {
+			m.logger.Debug("fetchUpdates error", "err", msg.err, "view", m.view, "host_idx", m.selectedHost)
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
 				return m2, cmd
 			}
