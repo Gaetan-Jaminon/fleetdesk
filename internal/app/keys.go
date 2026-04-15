@@ -465,70 +465,83 @@ func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.serviceCursor = 0
 			m.sortColumn = 0
 			m.view = viewServiceList
+			showLoading(&m, "Loading services...")
 			return m, m.fetchServices()
 		case 1: // Containers
 			m.containerCursor = 0
 			m.sortColumn = 0
 			m.view = viewContainerList
+			showLoading(&m, "Loading containers...")
 			return m, m.fetchContainers()
 		case 2: // Cron Jobs
 			m.cronCursor = 0
 			m.sortColumn = 0
 			m.view = viewCronList
+			showLoading(&m, "Loading cron jobs...")
 			return m, m.fetchCronJobs()
 		case 3: // Error Logs -> Log Level Picker
 			m.logLevelCursor = 0
 			m.sortColumn = 0
 			m.view = viewLogLevelPicker
+			showLoading(&m, "Loading log levels...")
 			return m, m.fetchLogLevels()
 		case 4: // Updates
 			m.updateCursor = 0
 			m.sortColumn = 0
 			m.view = viewUpdateList
+			showLoading(&m, "Loading updates...")
 			return m, m.fetchUpdates()
 		case 5: // Disk
 			m.diskCursor = 0
 			m.sortColumn = 0
 			m.view = viewDiskList
+			showLoading(&m, "Loading disk info...")
 			return m, m.fetchDisk()
 		case 6: // Subscription
 			m.subscriptionCursor = 0
 			m.sortColumn = 0
 			m.view = viewSubscription
+			showLoading(&m, "Loading subscription...")
 			return m, m.fetchSubscription()
 		case 7: // Accounts
 			m.accountCursor = 0
 			m.sortColumn = 0
 			m.view = viewAccountList
+			showLoading(&m, "Loading accounts...")
 			return m, m.fetchAccounts()
 		case 8: // Network
 			m.networkCursor = 0
 			m.sortColumn = 0
 			m.view = viewNetworkPicker
+			showLoading(&m, "Loading network info...")
 			return m, m.fetchNetworkInfo()
 		case 9: // Failed Logins
 			m.failedLoginCursor = 0
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecurityFailedLogins
+			showLoading(&m, "Loading failed logins...")
 			return m, m.fetchFailedLogins()
 		case 10: // Sudo Activity
 			m.sudoCursor = 0
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecuritySudo
+			showLoading(&m, "Loading sudo activity...")
 			return m, m.fetchSudoActivity()
 		case 11: // SELinux Denials
 			m.selinuxCursor = 0
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecuritySELinux
+			showLoading(&m, "Loading SELinux denials...")
 			return m, m.fetchSELinuxDenials()
 		case 12: // Audit Summary
 			m.auditCursor = 0
 			m.filterText = ""
 			m.sortColumn = 0
 			m.view = viewSecurityAudit
+			showLoading(&m, "Loading audit summary...")
 			return m, m.fetchAuditSummary()
 		}
 	case "r":
