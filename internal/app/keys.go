@@ -434,8 +434,9 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selinuxDenials = nil
 			m.auditEvents = nil
 			m.view = viewResourcePicker
-			// pre-fetch for accurate counts
-			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
+			// pre-fetch for accurate counts (updates excluded — needs sudo,
+			// which may not be cached yet; fetched on view entry instead)
+			return m, tea.Batch(m.fetchServices(), m.fetchContainers())
 		}
 	case "esc":
 		m.ssh.Close()

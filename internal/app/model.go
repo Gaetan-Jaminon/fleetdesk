@@ -1154,12 +1154,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
 				return m2, cmd
 			}
-			// Only flash non-sudo errors when on the Updates view —
-			// pre-fetch errors are silently ignored.
-			if m.view == viewUpdateList {
-				m.flash = fmt.Sprintf("Failed: %v", msg.err)
-				m.flashError = true
-			}
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
 		} else {
 			if msg.updates == nil {
 				m.updates = []config.Update{}
