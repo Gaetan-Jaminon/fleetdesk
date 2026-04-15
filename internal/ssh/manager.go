@@ -131,7 +131,25 @@ func (sm *Manager) RunSudoCommand(idx int, cmd string) (string, error) {
 	if pw != "" {
 		cmd = rewriteSudoCmd(cmd, pw)
 	}
-	return sm.RunCommand(idx, cmd)
+	out, err := sm.RunCommand(idx, cmd)
+	if pw != "" {
+		out = stripSudoPrompt(out)
+	}
+	return out, err
+}
+
+// stripSudoPrompt removes "[sudo] password for ..." lines from output.
+// These leak into stdout when commands use 2>&1 with sudo -S.
+func stripSudoPrompt(s string) string {
+	var clean []string
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[sudo] password for") {
+			continue
+		}
+		clean = append(clean, line)
+	}
+	return strings.Join(clean, "\n")
 }
 
 // rewriteSudoCmd rewrites every "sudo " occurrence in cmd to pipe the password
