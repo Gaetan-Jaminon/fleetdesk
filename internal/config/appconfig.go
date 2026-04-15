@@ -95,16 +95,24 @@ func WriteDefaultAppConfig(configDir, fleetDir, editor string) error {
 	return nil
 }
 
-// expandTilde replaces a leading ~ with the user's home directory.
+// expandTilde replaces a leading ~/ (or bare ~) with the user's home directory.
+// Does not expand ~user paths.
 func expandTilde(path string) string {
-	if !strings.HasPrefix(path, "~") {
+	if path == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return home
+	}
+	if !strings.HasPrefix(path, "~/") {
 		return path
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return path
 	}
-	return filepath.Join(home, path[1:])
+	return filepath.Join(home, path[2:])
 }
 
 // validateFleetDir checks that the directory exists and is readable+writable.

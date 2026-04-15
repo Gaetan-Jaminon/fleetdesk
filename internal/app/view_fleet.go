@@ -18,7 +18,11 @@ func (m Model) renderFleetPicker() string {
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
 	if len(m.fleets) == 0 {
-		s += borderedRow("  No fleet files found in ~/.config/fleetdesk/", iw, normalRowStyle) + "\n"
+		noFleetMsg := "  No fleet files found"
+		if m.appCfg.FleetDir != "" {
+			noFleetMsg += " in " + m.appCfg.FleetDir
+		}
+		s += borderedRow(noFleetMsg, iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("FLEET")
 		for _, f := range m.fleets {

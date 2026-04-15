@@ -87,7 +87,10 @@ func (e *editorExec) Run() error {
 		editor = "vi"
 	}
 
-	c := exec.Command(editor, e.path)
+	// Split editor string to support "code --wait" style commands
+	parts := strings.Fields(editor)
+	args := append(parts[1:], e.path)
+	c := exec.Command(parts[0], args...)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr

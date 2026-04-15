@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
@@ -14,6 +16,11 @@ type wizardCompleteMsg struct {
 
 // wizardCancelMsg is sent when the user cancels the wizard.
 type wizardCancelMsg struct{}
+
+// wizardErrorMsg is sent when the wizard encounters an error during finalization.
+type wizardErrorMsg struct {
+	err error
+}
 
 // wizardNeedCustomEditorMsg triggers a follow-up modal for custom editor input.
 type wizardNeedCustomEditorMsg struct {
@@ -86,17 +93,17 @@ func finalizeWizard(fleetDir, editor string) tea.Cmd {
 	return func() tea.Msg {
 		configDir := config.ConfigPath()
 		if err := config.WriteDefaultAppConfig(configDir, fleetDir, editor); err != nil {
-			return wizardCancelMsg{}
+			return wizardErrorMsg{err: fmt.Errorf("writing config: %w", err)}
 		}
 
 		appCfg, err := config.LoadAppConfig(configDir)
 		if err != nil {
-			return wizardCancelMsg{}
+			return wizardErrorMsg{err: fmt.Errorf("loading config: %w", err)}
 		}
 
 		fleets, err := config.ScanFleets(appCfg.FleetDir)
 		if err != nil {
-			return wizardCancelMsg{}
+			return wizardErrorMsg{err: fmt.Errorf("scanning fleets: %w", err)}
 		}
 
 		return wizardCompleteMsg{appCfg: appCfg, fleets: fleets}

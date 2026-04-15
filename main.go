@@ -71,8 +71,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// If wizard was cancelled (no config after exit), show message
+	// If wizard was cancelled or failed, show message
 	if fm, ok := finalModel.(app.Model); ok && fm.WizardCancelled() {
-		fmt.Println("FleetDesk requires a configuration file. Run fleetdesk again to complete setup.")
+		if wizErr := fm.WizardError(); wizErr != nil {
+			fmt.Fprintf(os.Stderr, "Setup failed: %v\n", wizErr)
+		} else {
+			fmt.Println("FleetDesk requires a configuration file. Run fleetdesk again to complete setup.")
+		}
 	}
 }

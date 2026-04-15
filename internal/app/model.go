@@ -442,8 +442,9 @@ type Model struct {
 	appCfg config.AppConfig
 
 	// modal overlay
-	modal          *ModalOverlay
+	modal           *ModalOverlay
 	wizardCancelled bool
+	wizardExitError error
 }
 
 func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logger, version string) Model {
@@ -470,6 +471,11 @@ func (m Model) Init() tea.Cmd {
 // WizardCancelled returns true if the first-run wizard was cancelled.
 func (m Model) WizardCancelled() bool {
 	return m.wizardCancelled
+}
+
+// WizardError returns the error that caused the wizard to fail, or nil.
+func (m Model) WizardError() error {
+	return m.wizardExitError
 }
 
 // handleSudoOrFlash checks if err is a sudo password error.
@@ -529,6 +535,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case wizardCancelMsg:
 		m.modal = nil
 		m.wizardCancelled = true
+		return m, tea.Quit
+
+	case wizardErrorMsg:
+		m.modal = nil
+		m.wizardCancelled = true
+		m.wizardExitError = msg.err
 		return m, tea.Quit
 
 	case wizardNeedCustomEditorMsg:
