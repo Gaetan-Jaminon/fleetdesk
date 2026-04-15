@@ -33,20 +33,46 @@ func main() {
 		os.Exit(0)
 	}
 
-	fleets, err := config.ScanFleets()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error scanning fleets: %v\n", err)
+	// Ensure config directory exists
+	configDir := config.ConfigPath()
+	if configDir != "" {
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "error creating config dir: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Load app config
+	appCfg, err := config.LoadAppConfig(configDir)
+	if err != nil && err != config.ErrNoConfig {
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Scan fleets (only if config exists and has a fleet dir)
+	var fleets []config.Fleet
+	if appCfg.FleetDir != "" {
+		fleets, err = config.ScanFleets(appCfg.FleetDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error scanning fleets: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	logger := logging.InitLogger(debug, logging.LogDir())
 	defer logging.CloseAll()
 	logger.Info("fleetdesk starting", "version", version, "debug", debug, "fleets", len(fleets))
 
-	m := app.NewModel(fleets, logger, version)
+	m := app.NewModel(fleets, appCfg, logger, version)
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// If wizard was cancelled (no config after exit), show message
+	if fm, ok := finalModel.(app.Model); ok && fm.WizardCancelled() {
+		fmt.Println("FleetDesk requires a configuration file. Run fleetdesk again to complete setup.")
 	}
 }

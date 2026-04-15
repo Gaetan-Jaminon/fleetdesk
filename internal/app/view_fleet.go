@@ -105,6 +105,7 @@ func (m Model) renderFleetPicker() string {
 	s += m.renderSudoPromptOrHintBar([][]string{
 		{"Enter", "Select"},
 		{"e", "Edit"},
+		{"c", "Config"},
 		{"r", "Reload"},
 		{"q", "Quit"},
 	})

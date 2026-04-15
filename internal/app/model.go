@@ -211,6 +211,7 @@ const (
 	viewK8sPodList
 	viewK8sPodDetail
 	viewK8sPodLogs
+	viewConfig
 )
 
 // resourceCount is the number of items in the resource picker (0-indexed).
@@ -436,22 +437,39 @@ type Model struct {
 
 	// app info
 	version string
+
+	// config
+	appCfg config.AppConfig
+
+	// modal overlay
+	modal          *ModalOverlay
+	wizardCancelled bool
 }
 
-func NewModel(fleets []config.Fleet, logger *slog.Logger, version string) Model {
-	return Model{
+func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logger, version string) Model {
+	m := Model{
 		view:    viewFleetPicker,
 		fleets:  fleets,
-		ssh:   ssh.NewManager(logger),
-		azure: azure.NewManager(logger),
-		k8s:   k8s.NewManager(logger),
+		appCfg:  appCfg,
+		ssh:     ssh.NewManager(logger),
+		azure:   azure.NewManager(logger),
+		k8s:     k8s.NewManager(logger),
 		logger:  logger,
 		version: version,
 	}
+	if appCfg.FleetDir == "" {
+		m.modal = NewFirstRunWizard()
+	}
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
 	return nil
+}
+
+// WizardCancelled returns true if the first-run wizard was cancelled.
+func (m Model) WizardCancelled() bool {
+	return m.wizardCancelled
 }
 
 // handleSudoOrFlash checks if err is a sudo password error.
@@ -498,6 +516,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+
+	case wizardCompleteMsg:
+		m.modal = nil
+		m.appCfg = msg.appCfg
+		m.fleets = msg.fleets
+		m.view = viewFleetPicker
+		m.flash = "Setup complete"
+		return m, nil
+
+	case wizardCancelMsg:
+		m.modal = nil
+		m.wizardCancelled = true
+		return m, tea.Quit
+
+	case wizardNeedCustomEditorMsg:
+		m.modal = newCustomEditorWizard(msg.fleetDir)
 		return m, nil
 
 	case ssh.HostProbeResult:
@@ -1262,8 +1297,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fetchServices()
 
 	case editFinishedMsg:
-		// reload fleets after editor returns
-		fleets, err := config.ScanFleets()
+		// reload config + fleets after editor returns
+		if msg.configEdit {
+			newCfg, cfgErr := config.LoadAppConfig(config.ConfigPath())
+			if cfgErr != nil {
+				m.flash = fmt.Sprintf("Config reload failed: %v", cfgErr)
+				m.flashError = true
+				return m, tea.EnterAltScreen
+			}
+			m.appCfg = newCfg
+		}
+		fleets, err := config.ScanFleets(m.appCfg.FleetDir)
 		if err != nil {
 			m.flash = fmt.Sprintf("Reload failed: %v", err)
 			m.flashError = true
@@ -1328,7 +1372,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 
 func (m Model) View() string {
+	// If modal is active, render it on top of the current view
+	if m.modal != nil && !m.modal.Done() {
+		bgView := m.renderCurrentView()
+		return m.modal.View(bgView, m.width, m.height)
+	}
+	return m.renderCurrentView()
+}
+
+func (m Model) renderCurrentView() string {
 	switch m.view {
+	case viewConfig:
+		return m.renderConfig()
 	case viewFleetPicker:
 		return m.renderFleetPicker()
 	case viewHostList:

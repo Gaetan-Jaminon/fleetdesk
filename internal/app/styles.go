@@ -71,4 +71,26 @@ var (
 	groupHeaderStyle = lipgloss.NewStyle().
 				Foreground(colorBlue).
 				Bold(true)
+
+	// modal overlay
+	modalTitleStyle = lipgloss.NewStyle().
+			Foreground(colorBlue).
+			Bold(true)
+
+	modalDimStyle = lipgloss.NewStyle().
+			Foreground(colorDimmed)
+
+	modalKeyStyle = lipgloss.NewStyle().
+			Foreground(colorBlue).
+			Bold(true)
+
+	modalInputStyle = lipgloss.NewStyle().
+			Foreground(colorWhite).
+			Background(lipgloss.Color("236")).
+			Padding(0, 1)
+
+	modalErrorStyle = lipgloss.NewStyle().
+			Foreground(colorRed).
+			Bold(true)
+
 )
