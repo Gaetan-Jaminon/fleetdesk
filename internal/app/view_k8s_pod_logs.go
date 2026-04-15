@@ -66,9 +66,7 @@ func (m Model) renderK8sPodLogs() string {
 	s += borderedRow(statusLine, iw+2, colHeaderStyle) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if m.k8sPodLogs == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {

@@ -21,7 +21,7 @@ func (m Model) renderSubscription() string {
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
 	if len(m.subscriptions) == 0 {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+		s += borderedRow("  No subscription info.", iw, normalRowStyle) + "\n"
 	} else {
 		fieldCol := len("FIELD")
 		for _, sub := range m.subscriptions {

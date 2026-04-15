@@ -20,9 +20,7 @@ func (m Model) renderK8sContextList() string {
 	breadcrumb := f.Name + " › " + cluster.Name
 	s := m.renderHeader(breadcrumb, m.k8sContextCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
-	if m.k8sContexts == nil {
-		s += borderedRow("  Loading contexts...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		s += borderedRow("  No contexts found.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("CONTEXT")

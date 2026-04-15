@@ -28,9 +28,7 @@ func (m Model) renderCronList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 	}
 
-	if m.cronJobs == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		s += borderedRow("  No cron jobs found.", iw, normalRowStyle) + "\n"
 	} else {
 		schedCol := len("SCHEDULE")

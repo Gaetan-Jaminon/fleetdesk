@@ -69,9 +69,7 @@ func (m Model) renderAzureAKSList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.azureAKSCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if m.azureAKSClusters == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {

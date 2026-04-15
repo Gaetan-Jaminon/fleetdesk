@@ -21,7 +21,7 @@ func (m Model) renderLogLevelPicker() string {
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
 	if len(m.logLevels) == 0 {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+		s += borderedRow("  No log levels.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("LEVEL") + 6
 
@@ -142,9 +142,7 @@ func (m Model) renderErrorLogList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.errorCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if m.errorLogs == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {

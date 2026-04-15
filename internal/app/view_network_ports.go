@@ -28,9 +28,7 @@ func (m Model) renderNetworkPorts() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 	}
 
-	if m.ports == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		s += borderedRow("  No listening ports found.", iw, normalRowStyle) + "\n"
 	} else {
 		// compute column widths

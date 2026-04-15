@@ -72,9 +72,7 @@ func (m Model) renderAccountList() string {
 		s += borderedRow(fmt.Sprintf("  / %s\u2588", m.filterText), iw, normalRowStyle) + "\n"
 	}
 
-	if accts == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(accts) == 0 {
+	if len(accts) == 0 {
 		s += borderedRow("  No accounts found.", iw, normalRowStyle) + "\n"
 	} else {
 		// compute dynamic column widths

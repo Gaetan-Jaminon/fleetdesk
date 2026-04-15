@@ -76,9 +76,7 @@ func (m Model) renderUpdateList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 	}
 
-	if m.updates == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		s += borderedRow("  No pending updates.", iw, normalRowStyle) + "\n"
 	} else {
 		pkgCol := len("PACKAGE")

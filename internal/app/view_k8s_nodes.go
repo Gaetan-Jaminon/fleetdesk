@@ -36,9 +36,7 @@ func (m Model) renderK8sNodeList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sNodeCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if m.k8sNodes == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {
@@ -330,8 +328,8 @@ func (m Model) renderK8sNodeDetail() string {
 	}
 	s += borderedRow(fmt.Sprintf("  ── Non-terminated Pods (%d in total) ──", podCount), iw, groupHeaderStyle) + "\n"
 
-	if m.k8sNodePods == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
+	if len(m.k8sNodePods) == 0 {
+		s += borderedRow("  No pods.", iw, normalRowStyle) + "\n"
 	} else {
 		filteredPods := m.filteredK8sNodePods()
 		if len(filteredPods) == 0 {

@@ -47,9 +47,7 @@ func (m Model) renderNetworkFirewall() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 	}
 
-	if m.firewallRules == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 && m.firewallBackend == "" {
+	if len(filtered) == 0 && m.firewallBackend == "" {
 		s += borderedRow("  No firewall detected", iw, normalRowStyle) + "\n"
 	} else if len(filtered) == 0 {
 		s += borderedRow("  No rules found", iw, normalRowStyle) + "\n"

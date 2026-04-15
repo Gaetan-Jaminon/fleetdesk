@@ -81,9 +81,7 @@ func (m Model) renderActivityLog(iw int) string {
 	s += borderedRow(fmt.Sprintf("  ── Recent Activity (Resource Group, last %dh) ──", hours), iw, colHeaderStyle) + "\n"
 	s += borderedRow("", iw, normalRowStyle) + "\n"
 
-	if m.azureActivityLog == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(m.azureActivityLog) == 0 {
+	if len(m.azureActivityLog) == 0 {
 		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
 	} else {
 		s += m.renderActivityLogTable(iw, m.azureActivityLog, m.azureActivityCursor)

@@ -83,9 +83,7 @@ func (m Model) renderContainerList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 	}
 
-	if m.containers == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		s += borderedRow("  No containers found.", iw, normalRowStyle) + "\n"
 	} else {
 		nameCol := len("CONTAINER")

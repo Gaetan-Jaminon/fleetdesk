@@ -25,9 +25,7 @@ func (m Model) renderK8sNamespaceList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sNamespaceCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if m.k8sNamespaces == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {

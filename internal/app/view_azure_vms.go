@@ -37,9 +37,7 @@ func (m Model) renderAzureVMList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.azureVMCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if m.azureVMs == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {
