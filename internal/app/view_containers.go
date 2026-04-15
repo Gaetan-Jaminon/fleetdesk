@@ -64,7 +64,7 @@ func (m Model) renderContainerList() string {
 
 		s = m.padToBottom(s, iw)
 		s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-		s += m.renderSudoPromptOrHintBar([][]string{
+		s += m.renderHintBar([][]string{
 			{"\u2191\u2193", "Scroll"},
 			{"Esc", "Back"},
 		})
@@ -147,7 +147,7 @@ func (m Model) renderContainerList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += m.renderSudoPromptOrHintBar([][]string{
+	s += m.renderHintBar([][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Detail"},
 		{"1-3", "Sort"},

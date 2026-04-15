@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"log/slog"
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,84 +21,74 @@ func newTestModel() Model {
 	}
 }
 
-// TestSudoPromptKeyCapture verifies keyboard handling when showSudoPrompt is active.
-func TestSudoPromptKeyCapture(t *testing.T) {
-	t.Run("rune appended", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
-		result, _ := m.handleKey(msg)
-		m2 := result.(Model)
-		if m2.sudoInput != "a" {
-			t.Errorf("sudoInput = %q, want %q", m2.sudoInput, "a")
+// TestSudoModalKeyCapture verifies keyboard handling when sudo modal is active.
+func TestSudoModalKeyCapture(t *testing.T) {
+	t.Run("rune accumulates in masked input", func(t *testing.T) {
+		modal := NewSudoModal("alice", "host1", 0, nil)
+		modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		ti := modal.steps[0].Content.(*TextInputContent)
+		if ti.Value() != "a" {
+			t.Errorf("value = %q, want %q", ti.Value(), "a")
 		}
 	})
 
-	t.Run("backspace single byte", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		m.sudoInput = "abc"
-		msg := tea.KeyMsg{Type: tea.KeyBackspace}
-		result, _ := m.handleKey(msg)
-		m2 := result.(Model)
-		if m2.sudoInput != "ab" {
-			t.Errorf("sudoInput = %q, want %q", m2.sudoInput, "ab")
+	t.Run("backspace removes last rune", func(t *testing.T) {
+		modal := NewSudoModal("alice", "host1", 0, nil)
+		for _, r := range "abc" {
+			modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		modal.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+		ti := modal.steps[0].Content.(*TextInputContent)
+		if ti.Value() != "ab" {
+			t.Errorf("value = %q, want %q", ti.Value(), "ab")
 		}
 	})
 
 	t.Run("backspace multi-byte rune", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		m.sudoInput = "pàss" // à is 2 bytes in UTF-8
-		msg := tea.KeyMsg{Type: tea.KeyBackspace}
-		result, _ := m.handleKey(msg)
-		m2 := result.(Model)
-		if m2.sudoInput != "pàs" {
-			t.Errorf("sudoInput = %q, want %q", m2.sudoInput, "pàs")
+		modal := NewSudoModal("alice", "host1", 0, nil)
+		for _, r := range "pàss" {
+			modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		modal.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+		ti := modal.steps[0].Content.(*TextInputContent)
+		if ti.Value() != "pàs" {
+			t.Errorf("value = %q, want %q", ti.Value(), "pàs")
 		}
 	})
 
-	t.Run("enter with empty input is no-op", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		m.sudoInput = ""
-		msg := tea.KeyMsg{Type: tea.KeyEnter}
-		result, _ := m.handleKey(msg)
-		m2 := result.(Model)
-		if !m2.showSudoPrompt {
-			t.Error("showSudoPrompt should remain true on empty enter")
+	t.Run("enter with empty input is rejected", func(t *testing.T) {
+		modal := NewSudoModal("alice", "host1", 0, nil)
+		modal.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if modal.Done() {
+			t.Error("modal should not be done on empty enter")
 		}
 	})
 
-	t.Run("enter with password clears prompt", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		m.sudoInput = "mypassword"
-		m.hosts = []config.Host{{Entry: config.HostEntry{Name: "host1"}}}
-		m.selectedHost = 0
-		msg := tea.KeyMsg{Type: tea.KeyEnter}
-		result, _ := m.handleKey(msg)
-		m2 := result.(Model)
-		if m2.showSudoPrompt {
-			t.Error("showSudoPrompt should be false after entering password")
+	t.Run("enter with password completes modal", func(t *testing.T) {
+		modal := NewSudoModal("alice", "host1", 0, nil)
+		for _, r := range "mypassword" {
+			modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		}
-		if m2.sudoInput != "" {
-			t.Errorf("sudoInput should be cleared, got %q", m2.sudoInput)
+		cmd := modal.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if !modal.Done() {
+			t.Error("modal should be done after entering password")
+		}
+		if cmd == nil {
+			t.Error("expected non-nil cmd from OnComplete")
 		}
 	})
 
-	t.Run("esc cancels prompt", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		m.sudoInput = "typing"
-		msg := tea.KeyMsg{Type: tea.KeyEsc}
-		result, _ := m.handleKey(msg)
-		m2 := result.(Model)
-		if m2.showSudoPrompt {
-			t.Error("showSudoPrompt should be false after Esc")
+	t.Run("esc cancels modal", func(t *testing.T) {
+		modal := NewSudoModal("alice", "host1", 0, nil)
+		for _, r := range "typing" {
+			modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 		}
-		if m2.flash == "" {
-			t.Error("flash should be set after Esc")
+		cmd := modal.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+		if !modal.Done() {
+			t.Error("modal should be done after Esc")
+		}
+		if cmd == nil {
+			t.Error("expected non-nil cmd from OnCancel")
 		}
 	})
 }
@@ -120,7 +109,7 @@ func TestHandleSudoOrFlash(t *testing.T) {
 		}
 	})
 
-	t.Run("sudo error with no cached passwords shows prompt", func(t *testing.T) {
+	t.Run("sudo error with no cached passwords shows modal", func(t *testing.T) {
 		m := newTestModel()
 		m.hosts = []config.Host{{Entry: config.HostEntry{Name: "host1"}}}
 		err := ssh.ErrSudoRequired
@@ -128,8 +117,8 @@ func TestHandleSudoOrFlash(t *testing.T) {
 		if !ok {
 			t.Error("expected ok=true for sudo error")
 		}
-		if !m2.showSudoPrompt {
-			t.Error("expected showSudoPrompt=true when no passwords cached")
+		if m2.modal == nil {
+			t.Error("expected modal to be set when no passwords cached")
 		}
 		if cmd != nil {
 			t.Error("expected cmd=nil when showing prompt directly")
@@ -145,15 +134,15 @@ func TestHandleSudoOrFlash(t *testing.T) {
 		if !ok {
 			t.Error("expected ok=true for sudo error")
 		}
-		if m2.showSudoPrompt {
-			t.Error("expected showSudoPrompt=false when silently testing SSH password")
+		if m2.modal != nil {
+			t.Error("expected modal=nil when silently testing SSH password")
 		}
 		if cmd == nil {
 			t.Error("expected non-nil cmd for silent sudo test")
 		}
 	})
 
-	t.Run("sudo error with wrong cached sudo password clears and prompts", func(t *testing.T) {
+	t.Run("sudo error with wrong cached sudo password clears and shows modal", func(t *testing.T) {
 		m := newTestModel()
 		m.hosts = []config.Host{{Entry: config.HostEntry{Name: "host1"}}}
 		m.ssh.SetSudoPassword(0, "wrongpw")
@@ -162,42 +151,14 @@ func TestHandleSudoOrFlash(t *testing.T) {
 		if !ok {
 			t.Error("expected ok=true for sudo error")
 		}
-		if !m2.showSudoPrompt {
-			t.Error("expected showSudoPrompt=true after clearing wrong sudo password")
+		if m2.modal == nil {
+			t.Error("expected modal to be set after clearing wrong sudo password")
 		}
 		if cmd != nil {
 			t.Error("expected cmd=nil when showing prompt")
 		}
 		if m2.ssh.GetSudoPassword(0) != "" {
 			t.Error("expected sudo password to be cleared")
-		}
-	})
-}
-
-// TestRenderSudoPromptOrHintBar verifies the hint bar rendering with and without sudo prompt.
-func TestRenderSudoPromptOrHintBar(t *testing.T) {
-	t.Run("sudo prompt active shows masked password and username", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = true
-		m.sudoInput = "pw"
-		m.hosts = []config.Host{{Entry: config.HostEntry{Name: "host1", User: "alice"}}}
-		m.selectedHost = 0
-		out := m.renderSudoPromptOrHintBar(nil)
-		if !strings.Contains(out, "alice") {
-			t.Errorf("expected username 'alice' in output, got: %q", out)
-		}
-		if !strings.Contains(out, "**") {
-			t.Errorf("expected masked password '**' in output, got: %q", out)
-		}
-	})
-
-	t.Run("no sudo prompt delegates to hint bar", func(t *testing.T) {
-		m := newTestModel()
-		m.showSudoPrompt = false
-		hints := [][]string{{"Enter", "Confirm"}}
-		out := m.renderSudoPromptOrHintBar(hints)
-		if !strings.Contains(out, "<") {
-			t.Errorf("expected hint bar key brackets in output, got: %q", out)
 		}
 	})
 }

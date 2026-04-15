@@ -223,9 +223,7 @@ func (m Model) renderAzureAKSList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
 
-	if m.showConfirm {
-		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
-	} else if m.filterActive {
+	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
 		maxSortCol := 8 + len(displayTags)

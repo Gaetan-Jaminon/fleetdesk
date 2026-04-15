@@ -148,9 +148,7 @@ func (m Model) renderAzureVMList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
 
-	if m.showConfirm {
-		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
-	} else if m.filterActive {
+	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s█", m.filterText))
 	} else {
 		s += m.renderHintBar([][]string{

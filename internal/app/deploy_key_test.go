@@ -9,7 +9,7 @@ import (
 )
 
 func TestDeployKeyKeybind(t *testing.T) {
-	t.Run("K on online host shows confirm prompt", func(t *testing.T) {
+	t.Run("K on online host shows confirm modal", func(t *testing.T) {
 		m := newTestModel()
 		m.view = viewHostList
 		m.hosts = []config.Host{{
@@ -22,13 +22,10 @@ func TestDeployKeyKeybind(t *testing.T) {
 		result, cmd := m.handleHostListKeys(msg)
 		m2 := result.(Model)
 		if cmd != nil {
-			t.Error("expected nil cmd — confirm prompt should not fire command yet")
+			t.Error("expected nil cmd — confirm modal should not fire command yet")
 		}
-		if !m2.showConfirm {
-			t.Error("expected showConfirm = true")
-		}
-		if m2.pendingHandover == nil {
-			t.Error("expected pendingHandover to be set")
+		if m2.modal == nil {
+			t.Error("expected modal to be set")
 		}
 	})
 
@@ -41,21 +38,21 @@ func TestDeployKeyKeybind(t *testing.T) {
 		}}
 		m.hostCursor = 0
 		m.selectedHost = 0
-		m.showConfirm = true
-		m.confirmMessage = "Deploy SSH key to ansible@host1? [Y/n]"
-		m.pendingHandover = func() tea.Msg { return nil } // stub
 
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
-		result, cmd := m.handleKey(msg)
+		// Set up modal via the K keybind
+		result, _ := m.handleHostListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
 		m2 := result.(Model)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set after K")
+		}
+
+		// Confirm with Y
+		cmd := m2.modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
 		if cmd == nil {
 			t.Error("expected non-nil cmd after confirming deploy key")
 		}
-		if m2.showConfirm {
-			t.Error("expected showConfirm = false after confirm")
-		}
-		if m2.pendingHandover != nil {
-			t.Error("expected pendingHandover to be cleared after confirm")
+		if !m2.modal.Done() {
+			t.Error("expected modal to be done after confirm")
 		}
 	})
 
@@ -67,20 +64,18 @@ func TestDeployKeyKeybind(t *testing.T) {
 			Status: config.HostOnline,
 		}}
 		m.hostCursor = 0
-		m.showConfirm = true
-		m.pendingHandover = func() tea.Msg { return nil } // stub
 
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
-		result, cmd := m.handleKey(msg)
+		// Set up modal via the K keybind
+		result, _ := m.handleHostListKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'K'}})
 		m2 := result.(Model)
-		if cmd != nil {
-			t.Error("expected nil cmd after cancelling")
+
+		// Cancel with N
+		cmd := m2.modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+		if cmd == nil {
+			t.Error("expected non-nil cmd from cancel (confirmCancelledMsg)")
 		}
-		if m2.flash != "Cancelled" {
-			t.Errorf("flash = %q, want %q", m2.flash, "Cancelled")
-		}
-		if m2.pendingHandover != nil {
-			t.Error("expected pendingHandover to be cleared after cancel")
+		if !m2.modal.Done() {
+			t.Error("expected modal to be done after cancel")
 		}
 	})
 

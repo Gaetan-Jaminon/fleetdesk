@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,6 +30,7 @@ type ModalOverlay struct {
 	results    []any
 	OnComplete func([]any) tea.Cmd
 	OnCancel   func() tea.Cmd
+	FooterFn   func() string // optional custom footer; if nil, default footer is used
 	done       bool
 }
 
@@ -86,12 +88,17 @@ func (m *ModalOverlay) View(bgView string, width, height int) string {
 	innerWidth := modalWidth - 4 // padding
 
 	// Title bar
-	stepInfo := fmt.Sprintf("Step %d/%d", m.current+1, len(m.steps))
-	titleGap := innerWidth - len(m.title) - len(stepInfo)
-	if titleGap < 1 {
-		titleGap = 1
+	var titleLine string
+	if len(m.steps) > 1 {
+		stepInfo := fmt.Sprintf("Step %d/%d", m.current+1, len(m.steps))
+		titleGap := innerWidth - len(m.title) - len(stepInfo)
+		if titleGap < 1 {
+			titleGap = 1
+		}
+		titleLine = modalTitleStyle.Render(m.title) + strings.Repeat(" ", titleGap) + modalDimStyle.Render(stepInfo)
+	} else {
+		titleLine = modalTitleStyle.Render(m.title)
 	}
-	titleLine := modalTitleStyle.Render(m.title) + strings.Repeat(" ", titleGap) + modalDimStyle.Render(stepInfo)
 
 	// Step content
 	stepTitle := ""
@@ -102,11 +109,16 @@ func (m *ModalOverlay) View(bgView string, width, height int) string {
 	}
 
 	// Footer
-	footer := modalKeyStyle.Render("Enter") + " " + modalDimStyle.Render("confirm") +
-		"  " + modalKeyStyle.Render("Esc") + " " + modalDimStyle.Render("cancel")
-	if m.current > 0 {
+	var footer string
+	if m.FooterFn != nil {
+		footer = m.FooterFn()
+	} else {
 		footer = modalKeyStyle.Render("Enter") + " " + modalDimStyle.Render("confirm") +
-			"  " + modalKeyStyle.Render("Esc") + " " + modalDimStyle.Render("back")
+			"  " + modalKeyStyle.Render("Esc") + " " + modalDimStyle.Render("cancel")
+		if m.current > 0 {
+			footer = modalKeyStyle.Render("Enter") + " " + modalDimStyle.Render("confirm") +
+				"  " + modalKeyStyle.Render("Esc") + " " + modalDimStyle.Render("back")
+		}
 	}
 
 	// Build modal box
@@ -141,11 +153,17 @@ type TextInputContent struct {
 	value    string
 	validate func(string) error
 	err      string
+	masked   bool
 }
 
 // NewTextInputContent creates a text input step.
 func NewTextInputContent(prompt string, validate func(string) error) StepContent {
 	return &TextInputContent{prompt: prompt, validate: validate}
+}
+
+// NewMaskedTextInputContent creates a masked text input step (for passwords).
+func NewMaskedTextInputContent(prompt string) StepContent {
+	return &TextInputContent{prompt: prompt, masked: true}
 }
 
 func (t *TextInputContent) HandleKey(msg tea.KeyMsg) (StepContent, tea.Cmd, bool) {
@@ -180,7 +198,11 @@ func (t *TextInputContent) HandleKey(msg tea.KeyMsg) (StepContent, tea.Cmd, bool
 
 func (t *TextInputContent) View(width int) string {
 	cursor := "█"
-	input := t.value + cursor
+	display := t.value
+	if t.masked {
+		display = strings.Repeat("*", utf8.RuneCountInString(t.value))
+	}
+	input := display + cursor
 	line := modalInputStyle.Width(width).Render(input)
 	if t.err != "" {
 		line += "\n" + modalErrorStyle.Render(t.err)
@@ -299,4 +321,37 @@ func (s *StaticContent) View(width int) string {
 
 func (s *StaticContent) Result() any {
 	return nil
+}
+
+// --- ConfirmContent ---
+
+// ConfirmContent is a Y/N confirmation dialog.
+type ConfirmContent struct {
+	message   string
+	confirmed bool
+}
+
+// NewConfirmContent creates a confirmation step.
+func NewConfirmContent(message string) StepContent {
+	return &ConfirmContent{message: message}
+}
+
+func (c *ConfirmContent) HandleKey(msg tea.KeyMsg) (StepContent, tea.Cmd, bool) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		c.confirmed = true
+		return c, nil, true
+	case "n", "N":
+		c.confirmed = false
+		return c, nil, true
+	}
+	return c, nil, false
+}
+
+func (c *ConfirmContent) View(width int) string {
+	return flashErrorStyle.Render(c.message)
+}
+
+func (c *ConfirmContent) Result() any {
+	return c.confirmed
 }

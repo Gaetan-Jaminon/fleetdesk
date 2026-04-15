@@ -147,137 +147,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// confirmation prompt mode
-	if m.showConfirm {
-		switch msg.String() {
-		case "y", "Y":
-			// fall through
-		case "n", "N", "esc":
-			m.showConfirm = false
-			m.confirmCmd = ""
-			m.confirmBanner = ""
-			m.pendingHandover = nil
-			m.flash = "Cancelled"
-			return m, nil
-		default:
-			if msg.Type == tea.KeyEnter {
-				// Enter = default yes, fall through
-			} else {
-				return m, nil
-			}
-		}
-		// confirmed -- execute
-		m.showConfirm = false
-
-		if m.pendingTransition != nil {
-			t := m.pendingTransition
-			m.pendingTransition = nil
-			key := t.ResourceType + "/" + t.ResourceName
-			if m.transitions == nil {
-				m.transitions = make(map[string]transition)
-			}
-			m.transitions[key] = *t
-			m.flash = ""
-			execCmd := t.ExecFn
-			// Only start poll chain for poll-strategy transitions
-			if t.Strategy == "poll" && !m.polling {
-				m.polling = true
-				return m, tea.Batch(execCmd, m.startPoll())
-			}
-			return m, execCmd
-		}
-
-		if m.pendingHandover != nil {
-			c := m.pendingHandover
-			m.pendingHandover = nil
-			m.flash = ""
-			return m, c
-		}
-
-		h := m.hosts[m.selectedHost]
-		cmd := m.confirmCmd
-		banner := m.confirmBanner
-		m.confirmCmd = ""
-		m.confirmBanner = ""
-		m.flash = ""
-		return m, sshHandover(h, []string{cmd}, banner)
-	}
-
-	// password prompt mode -- capture input (only on host list view)
-	if m.showPasswordPrompt && m.view == viewHostList {
-		switch msg.Type {
-		case tea.KeyEnter:
-			m.showPasswordPrompt = false
-			password := m.passwordInput
-			m.passwordInput = "" // clear input immediately
-			m.flash = ""
-			m.ssh.SetCachedPassword(password)
-			// retry ALL password-needing hosts in one batch
-			var cmds []tea.Cmd
-			for i, h := range m.hosts {
-				if h.NeedsPassword && (h.Status == config.HostUnreachable || i == m.passwordHostIdx) {
-					m.hosts[i].Status = config.HostConnecting
-					ii := i
-					hh := h
-					sm := m.ssh
-					cmds = append(cmds, func() tea.Msg {
-						return sm.ConnectWithPassword(ii, hh, password)
-					})
-				}
-			}
-			return m, tea.Batch(cmds...)
-		case tea.KeyEsc:
-			m.showPasswordPrompt = false
-			m.hosts[m.passwordHostIdx].Status = config.HostUnreachable
-			m.hosts[m.passwordHostIdx].Error = "password prompt cancelled"
-			m.flash = ""
-			return m, nil
-		case tea.KeyBackspace:
-			if len(m.passwordInput) > 0 {
-				m.passwordInput = m.passwordInput[:len(m.passwordInput)-1]
-			}
-		default:
-			if msg.Type == tea.KeyRunes {
-				m.passwordInput += string(msg.Runes)
-			}
-		}
-		return m, nil
-	}
-
-	// sudo password prompt mode -- capture input on any SSH view
-	if m.showSudoPrompt {
-		switch msg.Type {
-		case tea.KeyEnter:
-			if m.sudoInput == "" {
-				return m, nil
-			}
-			m.showSudoPrompt = false
-			password := m.sudoInput
-			m.sudoInput = ""
-			m.ssh.SetSudoPassword(m.selectedHost, password)
-			retry := m.pendingSudoRetry
-			m.pendingSudoRetry = nil
-			return m, retry
-		case tea.KeyEsc:
-			m.showSudoPrompt = false
-			m.sudoInput = ""
-			m.pendingSudoRetry = nil
-			m.flash = "Sudo password prompt cancelled"
-			m.flashError = true
-			return m, nil
-		case tea.KeyBackspace:
-			if len(m.sudoInput) > 0 {
-				runes := []rune(m.sudoInput)
-				m.sudoInput = string(runes[:len(runes)-1])
-			}
-		default:
-			if msg.Type == tea.KeyRunes {
-				m.sudoInput += string(msg.Runes)
-			}
-		}
-		return m, nil
-	}
-
 	m.flash = ""
 	m.flashError = false
 
@@ -480,18 +349,17 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedHost = m.hostCursor
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("Deploy SSH key to %s@%s? [Y/n]", h.Entry.User, h.Entry.Name)
 			sshTarget := shellQuote(h.Entry.User) + "@" + shellQuote(h.Entry.Hostname)
 			portStr := fmt.Sprintf("%d", h.Entry.Port)
-			// Ensure home dir exists (IPA/IDM hosts may not have it until first login)
-			// then deploy key. Both commands prompt for password via terminal handover.
 			script := fmt.Sprintf(
 				"ssh -t -o StrictHostKeyChecking=no -p %s '%s' 'sudo mkdir -p $HOME/.ssh && sudo chown -R $(id -u):$(id -g) $HOME && chmod 700 $HOME/.ssh' && ssh-copy-id -o StrictHostKeyChecking=no -p %s '%s'",
 				portStr, sshTarget, portStr, sshTarget)
-			m.pendingHandover = cmdHandover("bash",
+			handover := cmdHandover("bash",
 				[]string{"-c", script},
 				fmt.Sprintf("deploy key to %s@%s", h.Entry.User, h.Entry.Name))
+			m.modal = NewConfirmModal("Confirm",
+				fmt.Sprintf("Deploy SSH key to %s@%s? [Y/n]", h.Entry.User, h.Entry.Name),
+				handover)
 		}
 	case "R":
 		if len(m.hosts) > 0 {
@@ -502,10 +370,10 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.selectedHost = m.hostCursor
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("REBOOT %s? [Y/n]", h.Entry.Name)
-			m.confirmCmd = `sudo reboot; echo 'Reboot initiated'`
-			m.confirmBanner = fmt.Sprintf("reboot %s", h.Entry.Name)
+			hh := h
+			m.modal = NewConfirmModal("Confirm",
+				fmt.Sprintf("REBOOT %s? [Y/n]", h.Entry.Name),
+				sshHandover(hh, []string{`sudo reboot; echo 'Reboot initiated'`}, fmt.Sprintf("reboot %s", h.Entry.Name)))
 		}
 	case "d":
 		m.metrics = make(map[int]config.HostMetrics)
@@ -1009,16 +877,14 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.updateCursor = 0
 	case "u":
 		h := m.hosts[m.selectedHost]
-		m.showConfirm = true
-		m.confirmMessage = fmt.Sprintf("Apply ALL updates on %s? [Y/n]", h.Entry.Name)
-		m.confirmCmd = `sudo dnf update -y --setopt=skip_if_unavailable=1; echo ''; echo 'Update complete. Press Enter to return...'`
-		m.confirmBanner = fmt.Sprintf("full update on %s", h.Entry.Name)
+		m.modal = NewConfirmModal("Confirm",
+			fmt.Sprintf("Apply ALL updates on %s? [Y/n]", h.Entry.Name),
+			sshHandover(h, []string{`sudo dnf update -y --setopt=skip_if_unavailable=1; echo ''; echo 'Update complete. Press Enter to return...'`}, fmt.Sprintf("full update on %s", h.Entry.Name)))
 	case "p":
 		h := m.hosts[m.selectedHost]
-		m.showConfirm = true
-		m.confirmMessage = fmt.Sprintf("Apply SECURITY updates on %s? [Y/n]", h.Entry.Name)
-		m.confirmCmd = `sudo dnf update --security -y --setopt=skip_if_unavailable=1; echo ''; echo 'Security update complete. Press Enter to return...'`
-		m.confirmBanner = fmt.Sprintf("security update on %s", h.Entry.Name)
+		m.modal = NewConfirmModal("Confirm",
+			fmt.Sprintf("Apply SECURITY updates on %s? [Y/n]", h.Entry.Name),
+			sshHandover(h, []string{`sudo dnf update --security -y --setopt=skip_if_unavailable=1; echo ''; echo 'Security update complete. Press Enter to return...'`}, fmt.Sprintf("security update on %s", h.Entry.Name)))
 	case "1", "2", "3":
 		col := int(msg.Runes[0] - '0')
 		if col >= 1 && col <= 3 {
@@ -1141,10 +1007,10 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if regType == "Satellite" {
 			cmd += " && sudo dnf remove -y katello-ca-consumer-*"
 		}
-		m.showConfirm = true
-		m.confirmMessage = fmt.Sprintf("Unregister from %s? [Y/n]", regType)
-		m.confirmCmd = cmd
-		m.confirmBanner = fmt.Sprintf("unregister from %s on %s", regType, h.Entry.Name)
+		banner := fmt.Sprintf("unregister from %s on %s", regType, h.Entry.Name)
+		m.modal = NewConfirmModal("Confirm",
+			fmt.Sprintf("Unregister from %s? [Y/n]", regType),
+			sshHandover(h, []string{cmd}, banner))
 	case "g":
 		h := m.hosts[m.selectedHost]
 		orgID := h.Entry.RHOrgID
@@ -1165,20 +1031,21 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd = fmt.Sprintf("sudo subscription-manager register --org='%s' --activationkey='%s'",
 				shellQuote(orgID), shellQuote(actKey))
 		}
-		m.showConfirm = true
-		m.confirmMessage = fmt.Sprintf("Register to %s? [Y/n]", target)
-		m.confirmCmd = cmd
-		m.confirmBanner = fmt.Sprintf("register to %s on %s", target, h.Entry.Name)
+		banner := fmt.Sprintf("register to %s on %s", target, h.Entry.Name)
+		m.modal = NewConfirmModal("Confirm",
+			fmt.Sprintf("Register to %s? [Y/n]", target),
+			sshHandover(h, []string{cmd}, banner))
 	case "d":
 		if len(m.subscriptions) > 0 {
 			sub := m.subscriptions[m.subscriptionCursor]
 			if strings.HasPrefix(sub.Field, "Repo: ") {
 				repoID := strings.TrimPrefix(sub.Field, "Repo: ")
 				h := m.hosts[m.selectedHost]
-				m.showConfirm = true
-				m.confirmMessage = fmt.Sprintf("Disable repo %s? [Y/n]", repoID)
-				m.confirmCmd = fmt.Sprintf("sudo dnf config-manager --set-disabled '%s' && echo '' && echo '\u2713 Repo %s disabled'", shellQuote(repoID), repoID)
-				m.confirmBanner = fmt.Sprintf("disable %s on %s", repoID, h.Entry.Name)
+				cmd := fmt.Sprintf("sudo dnf config-manager --set-disabled '%s' && echo '' && echo '\u2713 Repo %s disabled'", shellQuote(repoID), repoID)
+				banner := fmt.Sprintf("disable %s on %s", repoID, h.Entry.Name)
+				m.modal = NewConfirmModal("Confirm",
+					fmt.Sprintf("Disable repo %s? [Y/n]", repoID),
+					sshHandover(h, []string{cmd}, banner))
 			}
 		}
 	case "r":
@@ -1798,24 +1665,24 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if vm.PowerState == "running" {
 				m.flash = fmt.Sprintf("%s is already running", vm.Name)
 			} else {
-				m.showConfirm = true
-				m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", vm.Name)
 				am, sub, logger := m.azure, m.azureSubs[m.selectedAzureSub], m.logger
 				vmName, rg := vm.Name, vm.ResourceGroup
-				m.pendingTransition = &transition{
-					ResourceType: "vm", ResourceName: vm.Name,
-					Action: "start", Display: "starting...", TargetState: "running",
-					Strategy: "poll",
-					ExecFn: m.executeAzureVMAction(vmName, rg, "start"),
-					PollFn: func() (string, error) {
-						states, err := azure.FetchVMPowerStates(am, sub.ID, []string{vmName}, logger)
-						if err != nil { return "", err }
-						if s, ok := states[strings.ToLower(vmName)]; ok { return s, nil }
-						return "", fmt.Errorf("vm %s not in poll results", vmName)
-					},
-					RefreshFn: func() tea.Cmd { return m.fetchAzureVMs() },
-					IsTransitioning: isAzureTransitioningState,
-				}
+				m.modal = NewTransitionConfirmModal(
+					fmt.Sprintf("start %s? [Y/n]", vm.Name),
+					transition{
+						ResourceType: "vm", ResourceName: vm.Name,
+						Action: "start", Display: "starting...", TargetState: "running",
+						Strategy: "poll",
+						ExecFn: m.executeAzureVMAction(vmName, rg, "start"),
+						PollFn: func() (string, error) {
+							states, err := azure.FetchVMPowerStates(am, sub.ID, []string{vmName}, logger)
+							if err != nil { return "", err }
+							if s, ok := states[strings.ToLower(vmName)]; ok { return s, nil }
+							return "", fmt.Errorf("vm %s not in poll results", vmName)
+						},
+						RefreshFn: func() tea.Cmd { return m.fetchAzureVMs() },
+						IsTransitioning: isAzureTransitioningState,
+					})
 			}
 		}
 	case "o":
@@ -1825,24 +1692,24 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if vm.PowerState == "deallocated" {
 				m.flash = fmt.Sprintf("%s is already deallocated", vm.Name)
 			} else {
-				m.showConfirm = true
-				m.confirmMessage = fmt.Sprintf("deallocate %s? [Y/n]", vm.Name)
 				am, sub, logger := m.azure, m.azureSubs[m.selectedAzureSub], m.logger
 				vmName, rg := vm.Name, vm.ResourceGroup
-				m.pendingTransition = &transition{
-					ResourceType: "vm", ResourceName: vm.Name,
-					Action: "deallocate", Display: "deallocating...", TargetState: "deallocated",
-					Strategy: "poll",
-					ExecFn: m.executeAzureVMAction(vmName, rg, "deallocate"),
-					PollFn: func() (string, error) {
-						states, err := azure.FetchVMPowerStates(am, sub.ID, []string{vmName}, logger)
-						if err != nil { return "", err }
-						if s, ok := states[strings.ToLower(vmName)]; ok { return s, nil }
-						return "", fmt.Errorf("vm %s not in poll results", vmName)
-					},
-					RefreshFn: func() tea.Cmd { return m.fetchAzureVMs() },
-					IsTransitioning: isAzureTransitioningState,
-				}
+				m.modal = NewTransitionConfirmModal(
+					fmt.Sprintf("deallocate %s? [Y/n]", vm.Name),
+					transition{
+						ResourceType: "vm", ResourceName: vm.Name,
+						Action: "deallocate", Display: "deallocating...", TargetState: "deallocated",
+						Strategy: "poll",
+						ExecFn: m.executeAzureVMAction(vmName, rg, "deallocate"),
+						PollFn: func() (string, error) {
+							states, err := azure.FetchVMPowerStates(am, sub.ID, []string{vmName}, logger)
+							if err != nil { return "", err }
+							if s, ok := states[strings.ToLower(vmName)]; ok { return s, nil }
+							return "", fmt.Errorf("vm %s not in poll results", vmName)
+						},
+						RefreshFn: func() tea.Cmd { return m.fetchAzureVMs() },
+						IsTransitioning: isAzureTransitioningState,
+					})
 			}
 		}
 	case "t":
@@ -1852,24 +1719,24 @@ func (m Model) handleAzureVMListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if vm.PowerState != "running" {
 				m.flash = fmt.Sprintf("%s is not running (state: %s)", vm.Name, vm.PowerState)
 			} else {
-				m.showConfirm = true
-				m.confirmMessage = fmt.Sprintf("restart %s? [Y/n]", vm.Name)
 				am, sub, logger := m.azure, m.azureSubs[m.selectedAzureSub], m.logger
 				vmName, rg := vm.Name, vm.ResourceGroup
-				m.pendingTransition = &transition{
-					ResourceType: "vm", ResourceName: vm.Name,
-					Action: "restart", Display: "restarting...", TargetState: "running",
-					Strategy: "poll",
-					ExecFn: m.executeAzureVMAction(vmName, rg, "restart"),
-					PollFn: func() (string, error) {
-						states, err := azure.FetchVMPowerStates(am, sub.ID, []string{vmName}, logger)
-						if err != nil { return "", err }
-						if s, ok := states[strings.ToLower(vmName)]; ok { return s, nil }
-						return "", fmt.Errorf("vm %s not in poll results", vmName)
-					},
-					RefreshFn: func() tea.Cmd { return m.fetchAzureVMs() },
-					IsTransitioning: isAzureTransitioningState,
-				}
+				m.modal = NewTransitionConfirmModal(
+					fmt.Sprintf("restart %s? [Y/n]", vm.Name),
+					transition{
+						ResourceType: "vm", ResourceName: vm.Name,
+						Action: "restart", Display: "restarting...", TargetState: "running",
+						Strategy: "poll",
+						ExecFn: m.executeAzureVMAction(vmName, rg, "restart"),
+						PollFn: func() (string, error) {
+							states, err := azure.FetchVMPowerStates(am, sub.ID, []string{vmName}, logger)
+							if err != nil { return "", err }
+							if s, ok := states[strings.ToLower(vmName)]; ok { return s, nil }
+							return "", fmt.Errorf("vm %s not in poll results", vmName)
+						},
+						RefreshFn: func() tea.Cmd { return m.fetchAzureVMs() },
+						IsTransitioning: isAzureTransitioningState,
+					})
 			}
 		}
 	case "/":
@@ -1959,70 +1826,70 @@ func (m Model) handleAzureAKSListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredAzureAKS()
 		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
 			c := filtered[m.azureAKSCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("start %s? [Y/n]", c.Name)
 			am, sub, logger := m.azure, m.azureSubs[m.selectedAzureSub], m.logger
 			clusterName, rg := c.Name, c.ResourceGroup
-			m.pendingTransition = &transition{
-				ResourceType: "aks", ResourceName: c.Name,
-				Action: "start", Display: "starting...", TargetState: "running",
-				Strategy: "poll",
-				ExecFn: m.executeAzureAKSAction(clusterName, rg, "start"),
-				PollFn: func() (string, error) {
-					states, err := azure.FetchAKSPowerStates(am, sub.ID, []string{clusterName}, logger)
-					if err != nil { return "", err }
-					if s, ok := states[strings.ToLower(clusterName)]; ok { return s, nil }
-					return "gone", nil
-				},
-				RefreshFn: func() tea.Cmd { return m.fetchAzureAKSClusters() },
-				IsTransitioning: isAzureTransitioningState,
-			}
+			m.modal = NewTransitionConfirmModal(
+				fmt.Sprintf("start %s? [Y/n]", c.Name),
+				transition{
+					ResourceType: "aks", ResourceName: c.Name,
+					Action: "start", Display: "starting...", TargetState: "running",
+					Strategy: "poll",
+					ExecFn: m.executeAzureAKSAction(clusterName, rg, "start"),
+					PollFn: func() (string, error) {
+						states, err := azure.FetchAKSPowerStates(am, sub.ID, []string{clusterName}, logger)
+						if err != nil { return "", err }
+						if s, ok := states[strings.ToLower(clusterName)]; ok { return s, nil }
+						return "gone", nil
+					},
+					RefreshFn: func() tea.Cmd { return m.fetchAzureAKSClusters() },
+					IsTransitioning: isAzureTransitioningState,
+				})
 		}
 	case "o":
 		filtered := m.filteredAzureAKS()
 		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
 			c := filtered[m.azureAKSCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("stop %s? [Y/n]", c.Name)
 			am, sub, logger := m.azure, m.azureSubs[m.selectedAzureSub], m.logger
 			clusterName, rg := c.Name, c.ResourceGroup
-			m.pendingTransition = &transition{
-				ResourceType: "aks", ResourceName: c.Name,
-				Action: "stop", Display: "stopping...", TargetState: "stopped",
-				Strategy: "poll",
-				ExecFn: m.executeAzureAKSAction(clusterName, rg, "stop"),
-				PollFn: func() (string, error) {
-					states, err := azure.FetchAKSPowerStates(am, sub.ID, []string{clusterName}, logger)
-					if err != nil { return "", err }
-					if s, ok := states[strings.ToLower(clusterName)]; ok { return s, nil }
-					return "gone", nil
-				},
-				RefreshFn: func() tea.Cmd { return m.fetchAzureAKSClusters() },
-				IsTransitioning: isAzureTransitioningState,
-			}
+			m.modal = NewTransitionConfirmModal(
+				fmt.Sprintf("stop %s? [Y/n]", c.Name),
+				transition{
+					ResourceType: "aks", ResourceName: c.Name,
+					Action: "stop", Display: "stopping...", TargetState: "stopped",
+					Strategy: "poll",
+					ExecFn: m.executeAzureAKSAction(clusterName, rg, "stop"),
+					PollFn: func() (string, error) {
+						states, err := azure.FetchAKSPowerStates(am, sub.ID, []string{clusterName}, logger)
+						if err != nil { return "", err }
+						if s, ok := states[strings.ToLower(clusterName)]; ok { return s, nil }
+						return "gone", nil
+					},
+					RefreshFn: func() tea.Cmd { return m.fetchAzureAKSClusters() },
+					IsTransitioning: isAzureTransitioningState,
+				})
 		}
 	case "d":
 		filtered := m.filteredAzureAKS()
 		if len(filtered) > 0 && m.azureAKSCursor < len(filtered) {
 			c := filtered[m.azureAKSCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("DELETE cluster %s? This is irreversible! [Y/n]", c.Name)
 			am, sub, logger := m.azure, m.azureSubs[m.selectedAzureSub], m.logger
 			clusterName, rg := c.Name, c.ResourceGroup
-			m.pendingTransition = &transition{
-				ResourceType: "aks", ResourceName: c.Name,
-				Action: "delete", Display: "deleting...", TargetState: "gone",
-				Strategy: "poll",
-				ExecFn: m.executeAzureAKSAction(clusterName, rg, "delete"),
-				PollFn: func() (string, error) {
-					states, err := azure.FetchAKSPowerStates(am, sub.ID, []string{clusterName}, logger)
-					if err != nil { return "", err }
-					if s, ok := states[strings.ToLower(clusterName)]; ok { return s, nil }
-					return "gone", nil
-				},
-				RefreshFn: func() tea.Cmd { return m.fetchAzureAKSClusters() },
-				IsTransitioning: isAzureTransitioningState,
-			}
+			m.modal = NewTransitionConfirmModal(
+				fmt.Sprintf("DELETE cluster %s? This is irreversible! [Y/n]", c.Name),
+				transition{
+					ResourceType: "aks", ResourceName: c.Name,
+					Action: "delete", Display: "deleting...", TargetState: "gone",
+					Strategy: "poll",
+					ExecFn: m.executeAzureAKSAction(clusterName, rg, "delete"),
+					PollFn: func() (string, error) {
+						states, err := azure.FetchAKSPowerStates(am, sub.ID, []string{clusterName}, logger)
+						if err != nil { return "", err }
+						if s, ok := states[strings.ToLower(clusterName)]; ok { return s, nil }
+						return "gone", nil
+					},
+					RefreshFn: func() tea.Cmd { return m.fetchAzureAKSClusters() },
+					IsTransitioning: isAzureTransitioningState,
+				})
 		}
 	case "/":
 		m.filterActive = true
@@ -2155,19 +2022,19 @@ func (m Model) handleK8sContextListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		if len(m.k8sContexts) > 0 && m.k8sContextCursor < len(m.k8sContexts) {
 			ctx := m.k8sContexts[m.k8sContextCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("delete context %s? [Y/n]", ctx.Name)
 			ctxName := ctx.Name
 			clusterName := m.k8sClusters[m.selectedK8sCluster].Name
-			m.pendingTransition = &transition{
-				ResourceType: "k8s-context", ResourceName: ctx.Name,
-				Action: "delete", Display: "deleting...",
-				Strategy: "oneshot",
-				ExecFn: m.executeK8sContextDelete(ctxName),
-				RefreshFn: func() tea.Cmd {
-					return m.fetchK8sContexts(clusterName)
-				},
-			}
+			m.modal = NewTransitionConfirmModal(
+				fmt.Sprintf("delete context %s? [Y/n]", ctx.Name),
+				transition{
+					ResourceType: "k8s-context", ResourceName: ctx.Name,
+					Action: "delete", Display: "deleting...",
+					Strategy: "oneshot",
+					ExecFn: m.executeK8sContextDelete(ctxName),
+					RefreshFn: func() tea.Cmd {
+						return m.fetchK8sContexts(clusterName)
+					},
+				})
 		}
 	case "r":
 		m.k8sContexts = nil
@@ -2479,30 +2346,30 @@ func (m Model) handleK8sPodListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		filtered := m.filteredK8sPodList()
 		if len(filtered) > 0 && m.k8sPodCursor < len(filtered) {
 			p := filtered[m.k8sPodCursor]
-			m.showConfirm = true
-			m.confirmMessage = fmt.Sprintf("delete pod %s? [Y/n]", p.Name)
 			km, ctxName := m.k8s, m.selectedK8sContext
 			podName, podNs := p.Name, p.Namespace
 			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
 			wlName := m.k8sWorkloads[m.selectedK8sWorkload].Name
-			m.pendingTransition = &transition{
-				ResourceType: "k8s-pod", ResourceName: p.Name,
-				Action: "delete", Display: "deleting...", TargetState: "gone",
-				Strategy: "poll",
-				ExecFn: m.executeK8sPodAction(podNs, podName, "delete"),
-				PollFn: func() (string, error) {
-					_, err := km.RunCommand("get", "pod", podName, "-n", podNs, "--context", ctxName, "-o", "name")
-					if err != nil {
-						errStr := err.Error()
-						if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NotFound") {
-							return "gone", nil
+			m.modal = NewTransitionConfirmModal(
+				fmt.Sprintf("delete pod %s? [Y/n]", p.Name),
+				transition{
+					ResourceType: "k8s-pod", ResourceName: p.Name,
+					Action: "delete", Display: "deleting...", TargetState: "gone",
+					Strategy: "poll",
+					ExecFn: m.executeK8sPodAction(podNs, podName, "delete"),
+					PollFn: func() (string, error) {
+						_, err := km.RunCommand("get", "pod", podName, "-n", podNs, "--context", ctxName, "-o", "name")
+						if err != nil {
+							errStr := err.Error()
+							if strings.Contains(errStr, "not found") || strings.Contains(errStr, "NotFound") {
+								return "gone", nil
+							}
+							return "", err
 						}
-						return "", err
-					}
-					return "exists", nil
-				},
-				RefreshFn: func() tea.Cmd { return m.fetchK8sPods(ns, wlName) },
-			}
+						return "exists", nil
+					},
+					RefreshFn: func() tea.Cmd { return m.fetchK8sPods(ns, wlName) },
+				})
 		}
 	case "r":
 		m.k8sPodList = nil

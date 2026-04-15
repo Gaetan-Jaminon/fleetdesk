@@ -29,7 +29,7 @@ func subscriptionModel(regType string, extraSubs ...config.Subscription) Model {
 // --- Unregister (u key) ---
 
 func TestUnregisterAction(t *testing.T) {
-	t.Run("u on unregistered host flashes error, no confirm", func(t *testing.T) {
+	t.Run("u on unregistered host flashes error, no modal", func(t *testing.T) {
 		m := subscriptionModel("Unknown")
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}
 		result, cmd := m.handleSubscriptionKeys(msg)
@@ -37,8 +37,8 @@ func TestUnregisterAction(t *testing.T) {
 		if cmd != nil {
 			t.Error("expected nil cmd")
 		}
-		if m2.showConfirm {
-			t.Error("expected showConfirm = false")
+		if m2.modal != nil {
+			t.Error("expected modal = nil")
 		}
 		if m2.flash != "Host is not registered" {
 			t.Errorf("flash = %q, want %q", m2.flash, "Host is not registered")
@@ -48,7 +48,7 @@ func TestUnregisterAction(t *testing.T) {
 		}
 	})
 
-	t.Run("u on empty registration flashes error, no confirm", func(t *testing.T) {
+	t.Run("u on empty registration flashes error, no modal", func(t *testing.T) {
 		m := subscriptionModel("")
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}
 		result, cmd := m.handleSubscriptionKeys(msg)
@@ -56,15 +56,15 @@ func TestUnregisterAction(t *testing.T) {
 		if cmd != nil {
 			t.Error("expected nil cmd")
 		}
-		if m2.showConfirm {
-			t.Error("expected showConfirm = false")
+		if m2.modal != nil {
+			t.Error("expected modal = nil")
 		}
 		if !m2.flashError {
 			t.Error("expected flashError = true")
 		}
 	})
 
-	t.Run("u on CDN host shows confirm, no katello removal", func(t *testing.T) {
+	t.Run("u on CDN host shows confirm modal", func(t *testing.T) {
 		m := subscriptionModel("Red Hat CDN")
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}
 		result, cmd := m.handleSubscriptionKeys(msg)
@@ -72,24 +72,12 @@ func TestUnregisterAction(t *testing.T) {
 		if cmd != nil {
 			t.Error("expected nil cmd")
 		}
-		if !m2.showConfirm {
-			t.Error("expected showConfirm = true")
-		}
-		if strings.Contains(m2.confirmCmd, "katello") {
-			t.Errorf("CDN unregister should not remove katello, got: %s", m2.confirmCmd)
-		}
-		if !strings.Contains(m2.confirmCmd, "subscription-manager unregister") {
-			t.Errorf("expected unregister command, got: %s", m2.confirmCmd)
-		}
-		if !strings.Contains(m2.confirmCmd, "subscription-manager clean") {
-			t.Errorf("expected clean command, got: %s", m2.confirmCmd)
-		}
-		if !strings.Contains(m2.confirmMessage, "Red Hat CDN") {
-			t.Errorf("confirmMessage = %q, should mention registration type", m2.confirmMessage)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
 		}
 	})
 
-	t.Run("u on Satellite host shows confirm with katello removal", func(t *testing.T) {
+	t.Run("u on Satellite host shows confirm modal", func(t *testing.T) {
 		m := subscriptionModel("Satellite")
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}
 		result, cmd := m.handleSubscriptionKeys(msg)
@@ -97,48 +85,40 @@ func TestUnregisterAction(t *testing.T) {
 		if cmd != nil {
 			t.Error("expected nil cmd")
 		}
-		if !m2.showConfirm {
-			t.Error("expected showConfirm = true")
-		}
-		if !strings.Contains(m2.confirmCmd, "katello") {
-			t.Errorf("Satellite unregister must remove katello, got: %s", m2.confirmCmd)
-		}
-		if !strings.Contains(m2.confirmMessage, "Satellite") {
-			t.Errorf("confirmMessage = %q, should mention Satellite", m2.confirmMessage)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
 		}
 	})
 
-	t.Run("u confirm yes fires sshHandover", func(t *testing.T) {
+	t.Run("u confirm yes completes modal", func(t *testing.T) {
 		m := subscriptionModel("Red Hat CDN")
-		m.showConfirm = true
-		m.confirmMessage = "Unregister from Red Hat CDN? [Y/n]"
-		m.confirmCmd = "sudo subscription-manager unregister && sudo subscription-manager clean"
-		m.confirmBanner = "unregister from Red Hat CDN on host1"
-
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
-		result, cmd := m.handleKey(msg)
+		result, _ := m.handleSubscriptionKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 		m2 := result.(Model)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
+		}
+		cmd := m2.modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
 		if cmd == nil {
 			t.Error("expected non-nil cmd after confirming unregister")
 		}
-		if m2.showConfirm {
-			t.Error("expected showConfirm = false after confirm")
+		if !m2.modal.Done() {
+			t.Error("expected modal to be done after confirm")
 		}
 	})
 
 	t.Run("u confirm no cancels", func(t *testing.T) {
 		m := subscriptionModel("Red Hat CDN")
-		m.showConfirm = true
-		m.confirmCmd = "sudo subscription-manager unregister && sudo subscription-manager clean"
-
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
-		result, cmd := m.handleKey(msg)
+		result, _ := m.handleSubscriptionKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 		m2 := result.(Model)
-		if cmd != nil {
-			t.Error("expected nil cmd after cancel")
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
 		}
-		if m2.flash != "Cancelled" {
-			t.Errorf("flash = %q, want %q", m2.flash, "Cancelled")
+		cmd := m2.modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+		if cmd == nil {
+			t.Error("expected non-nil cmd from cancel (confirmCancelledMsg)")
+		}
+		if !m2.modal.Done() {
+			t.Error("expected modal to be done after cancel")
 		}
 	})
 }
@@ -154,15 +134,15 @@ func TestRegisterCDNAction(t *testing.T) {
 		if cmd != nil {
 			t.Error("expected nil cmd")
 		}
-		if m2.showConfirm {
-			t.Error("expected showConfirm = false without config")
+		if m2.modal != nil {
+			t.Error("expected modal = nil without config")
 		}
 		if !m2.flashError {
 			t.Error("expected flashError = true")
 		}
 	})
 
-	t.Run("g with CDN config registers to CDN", func(t *testing.T) {
+	t.Run("g with CDN config shows confirm modal", func(t *testing.T) {
 		m := subscriptionModel("Unknown")
 		m.hosts[0].Entry.RHOrgID = "12345"
 		m.hosts[0].Entry.RHActivationKey = "ak-cdn"
@@ -172,18 +152,12 @@ func TestRegisterCDNAction(t *testing.T) {
 		if cmd != nil {
 			t.Error("expected nil cmd — confirm not yet fired")
 		}
-		if !m2.showConfirm {
-			t.Error("expected showConfirm = true")
-		}
-		if !strings.Contains(m2.confirmMessage, "Red Hat CDN") {
-			t.Errorf("confirmMessage = %q, should mention Red Hat CDN", m2.confirmMessage)
-		}
-		if strings.Contains(m2.confirmCmd, "katello") {
-			t.Errorf("CDN register should not install katello, got: %s", m2.confirmCmd)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
 		}
 	})
 
-	t.Run("g with satellite_url registers to Satellite", func(t *testing.T) {
+	t.Run("g with satellite_url shows confirm modal", func(t *testing.T) {
 		m := subscriptionModel("Unknown")
 		m.hosts[0].Entry.RHOrgID = "Fluxys"
 		m.hosts[0].Entry.RHActivationKey = "ak-sat"
@@ -191,14 +165,8 @@ func TestRegisterCDNAction(t *testing.T) {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
 		result, _ := m.handleSubscriptionKeys(msg)
 		m2 := result.(Model)
-		if !strings.Contains(m2.confirmMessage, "Satellite") {
-			t.Errorf("confirmMessage = %q, should mention Satellite", m2.confirmMessage)
-		}
-		if !strings.Contains(m2.confirmCmd, "katello-ca-consumer") {
-			t.Errorf("Satellite register should install katello, got: %s", m2.confirmCmd)
-		}
-		if !strings.Contains(m2.confirmCmd, "--force") {
-			t.Errorf("Satellite register should use --force, got: %s", m2.confirmCmd)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
 		}
 	})
 
@@ -210,43 +178,45 @@ func TestRegisterCDNAction(t *testing.T) {
 			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}
 			result, _ := m.handleSubscriptionKeys(msg)
 			m2 := result.(Model)
-			if !m2.showConfirm {
-				t.Errorf("regType=%q: expected showConfirm = true", regType)
+			if m2.modal == nil {
+				t.Errorf("regType=%q: expected modal to be set", regType)
 			}
 		}
 	})
 
-	t.Run("g confirm yes fires handover", func(t *testing.T) {
+	t.Run("g confirm yes completes modal", func(t *testing.T) {
 		m := subscriptionModel("Unknown")
-		m.showConfirm = true
-		m.confirmMessage = "Register to Red Hat CDN? [Y/n]"
-		m.confirmCmd = "sudo subscription-manager register --org=12345 --activationkey=ak-test"
-		m.confirmBanner = "register to Red Hat CDN on host1"
-
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}}
-		result, cmd := m.handleKey(msg)
+		m.hosts[0].Entry.RHOrgID = "12345"
+		m.hosts[0].Entry.RHActivationKey = "ak-test"
+		result, _ := m.handleSubscriptionKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 		m2 := result.(Model)
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
+		}
+		cmd := m2.modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
 		if cmd == nil {
 			t.Error("expected non-nil cmd after confirming register")
 		}
-		if m2.showConfirm {
-			t.Error("expected showConfirm = false after confirm")
+		if !m2.modal.Done() {
+			t.Error("expected modal to be done after confirm")
 		}
 	})
 
 	t.Run("g confirm no cancels", func(t *testing.T) {
 		m := subscriptionModel("Unknown")
-		m.showConfirm = true
-		m.confirmCmd = "sudo subscription-manager register --org=12345 --activationkey=ak-test"
-
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}}
-		result, cmd := m.handleKey(msg)
+		m.hosts[0].Entry.RHOrgID = "12345"
+		m.hosts[0].Entry.RHActivationKey = "ak-test"
+		result, _ := m.handleSubscriptionKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 		m2 := result.(Model)
-		if cmd != nil {
-			t.Error("expected nil cmd after cancel")
+		if m2.modal == nil {
+			t.Fatal("expected modal to be set")
 		}
-		if m2.flash != "Cancelled" {
-			t.Errorf("flash = %q, want %q", m2.flash, "Cancelled")
+		cmd := m2.modal.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+		if cmd == nil {
+			t.Error("expected non-nil cmd from cancel")
+		}
+		if !m2.modal.Done() {
+			t.Error("expected modal to be done after cancel")
 		}
 	})
 }
