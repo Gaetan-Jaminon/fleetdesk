@@ -306,7 +306,7 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 		`(ip -br link | grep -c UP || echo 0) && ` +
 		`ip -br link | wc -l && ` +
 		`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0) && ` +
-		`(sudo dnf check-update --quiet 2>/dev/null | grep -c '^\S' || echo 0)`
+		`(dnf check-update --quiet 2>/dev/null | grep -c '^\S' || echo 0)`
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {
