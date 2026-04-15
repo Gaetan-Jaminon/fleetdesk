@@ -975,7 +975,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sudoTestMsg:
 		if msg.Success {
-			m.ssh.SetSudoPassword(m.selectedHost, msg.Password)
+			// Cache sudo password for all hosts — same password across the fleet
+			for i := range m.hosts {
+				m.ssh.SetSudoPassword(i, msg.Password)
+			}
 			return m, msg.Retry
 		}
 		// SSH password didn't work as sudo password — show prompt.
@@ -1017,7 +1020,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sudoEnteredMsg:
 		m.modal = nil
-		m.ssh.SetSudoPassword(msg.hostIdx, msg.password)
+		// Cache sudo password for all hosts — same password across the fleet
+		for i := range m.hosts {
+			m.ssh.SetSudoPassword(i, msg.password)
+		}
 		return m, msg.retry
 
 	case sudoCancelledMsg:
