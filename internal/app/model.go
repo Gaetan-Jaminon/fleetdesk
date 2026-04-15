@@ -1150,9 +1150,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchUpdatesMsg:
 		dismissLoading(&m)
 		if msg.err != nil {
-			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
-				return m2, cmd
-			}
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
 		} else {
