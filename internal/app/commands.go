@@ -472,9 +472,14 @@ func (m Model) fetchUpdates() func() tea.Msg {
 			return fetchUpdatesMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
 		}
 		// dnf check-update returns exit 100 when updates are available
-		if err != nil && !strings.Contains(out, "===SECURITY===") {
-			logger.Error("fetch failed", "view", "updates", "host_idx", idx, "err", err)
-			return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchUpdatesMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if !strings.Contains(out, "===SECURITY===") {
+				logger.Error("fetch failed", "view", "updates", "host_idx", idx, "err", err)
+				return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
+			}
 		}
 
 		parts := strings.SplitN(out, "===SECURITY===", 2)
