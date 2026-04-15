@@ -30,10 +30,10 @@ func (c AppConfig) Editor() string {
 	if c.editor != "" {
 		return c.editor
 	}
-	if e := os.Getenv("EDITOR"); e != "" {
+	if e := strings.TrimSpace(os.Getenv("EDITOR")); e != "" {
 		return e
 	}
-	if v := os.Getenv("VISUAL"); v != "" {
+	if v := strings.TrimSpace(os.Getenv("VISUAL")); v != "" {
 		return v
 	}
 	return "vi"

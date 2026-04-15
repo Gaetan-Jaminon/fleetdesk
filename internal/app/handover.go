@@ -89,6 +89,9 @@ func (e *editorExec) Run() error {
 
 	// Split editor string to support "code --wait" style commands
 	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		parts = []string{"vi"}
+	}
 	args := append(parts[1:], e.path)
 	c := exec.Command(parts[0], args...)
 	c.Stdin = os.Stdin
