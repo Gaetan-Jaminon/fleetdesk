@@ -651,21 +651,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modal = NewSudoWizard(user, host, idx, m.ssh)
 		return m, nil
 
+	case sudoWizardTestMsg:
+		// Step 2: show loading modal while testing sudo
+		showLoading(&m, "Testing sudo...")
+		idx := msg.hostIdx
+		pw := msg.password
+		sm := m.ssh
+		m.logger.Debug("sudo wizard testing password", "host_idx", idx)
+		return m, func() tea.Msg {
+			sm.SetSudoPassword(idx, pw)
+			out, err := sm.RunSudoCommand(idx, "sudo true")
+			sm.SetSudoPassword(idx, "")
+			success := err == nil && !ssh.IsSudoOutput(out)
+			return sudoWizardResultMsg{hostIdx: idx, password: pw, success: success}
+		}
+
 	case sudoWizardResultMsg:
-		m.modal = nil
 		if msg.success {
+			m.modal = nil
 			m.logger.Debug("sudo wizard success", "host_idx", msg.hostIdx)
-			// Password was tested and works — cache for all hosts
-			pw := m.ssh.GetSudoPassword(msg.hostIdx)
-			if pw == "" {
-				// Came from silent SSH password test — cache it
-				sshPw := m.ssh.GetCachedPassword()
-				if sshPw != "" {
-					pw = sshPw
-				}
-			}
+			// Cache password for all hosts
 			for i := range m.hosts {
-				m.ssh.SetSudoPassword(i, pw)
+				m.ssh.SetSudoPassword(i, msg.password)
 				if m.hosts[i].Status == config.HostOnline {
 					m.hosts[i].SudoReady = true
 				}
@@ -675,18 +682,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return sudoProbeMsg{hostIdx: msg.hostIdx, needsPw: false}
 			}
 		}
-		// Failed — show wizard again
-		m.logger.Debug("sudo wizard failed, re-prompting", "host_idx", msg.hostIdx)
-		idx := msg.hostIdx
-		user := ""
-		host := ""
-		if idx < len(m.hosts) {
-			user = m.hosts[idx].Entry.User
-			host = m.hosts[idx].Entry.Name
+		if msg.password != "" {
+			// Password was tested and failed — re-show wizard
+			m.logger.Debug("sudo wizard failed, re-prompting", "host_idx", msg.hostIdx)
+			idx := msg.hostIdx
+			user := ""
+			host := ""
+			if idx < len(m.hosts) {
+				user = m.hosts[idx].Entry.User
+				host = m.hosts[idx].Entry.Name
+			}
+			m.flash = "Wrong sudo password"
+			m.flashError = true
+			m.modal = NewSudoWizard(user, host, idx, m.ssh)
+			return m, nil
 		}
-		m.flash = "Wrong sudo password"
-		m.flashError = true
-		m.modal = NewSudoWizard(user, host, idx, m.ssh)
+		// Cancelled
+		m.modal = nil
 		return m, nil
 
 	case azure.SubscriptionProbeResult:
