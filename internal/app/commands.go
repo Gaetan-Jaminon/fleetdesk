@@ -464,9 +464,11 @@ func (m Model) fetchUpdates() func() tea.Msg {
 		// get pending updates and security updates in one command
 		cmd := `sudo dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; sudo dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
 		out, err := sm.RunSudoCommand(idx, cmd)
-		// Check for sudo password prompt before sentinel check —
-		// the echo always runs so ===SECURITY=== is always present.
-		if ssh.IsSudoOutput(out) {
+		// Only check for sudo prompt when no password is cached.
+		// When cached, rewriteSudoCmd pipes the password via -S, and
+		// the 2>&1 in the dnf command captures "[sudo] password for"
+		// into stdout — IsSudoOutput would false-positive.
+		if sm.GetSudoPassword(idx) == "" && ssh.IsSudoOutput(out) {
 			return fetchUpdatesMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
 		}
 		// dnf check-update returns exit 100 when updates are available
