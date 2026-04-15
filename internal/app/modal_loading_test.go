@@ -107,6 +107,16 @@ func TestDismissLoading_DoesNotClearStaticContentModal(t *testing.T) {
 	}
 }
 
+func TestLoadingModal_EscDoesNotDismissOverlay(t *testing.T) {
+	m := &Model{}
+	showLoading(m, "Loading services...")
+	// Press Esc through the full ModalOverlay — should NOT dismiss
+	m.modal.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.modal.Done() {
+		t.Error("Esc should not dismiss loading modal through ModalOverlay")
+	}
+}
+
 func TestDismissLoading_NilModalIsNoOp(t *testing.T) {
 	m := &Model{}
 	dismissLoading(m) // should not panic

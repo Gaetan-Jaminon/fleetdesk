@@ -47,7 +47,30 @@ func NewModalOverlay(title string, steps []ModalStep, onComplete func([]any) tea
 
 // HandleKey processes a key event, returning an optional tea.Cmd.
 func (m *ModalOverlay) HandleKey(msg tea.KeyMsg) tea.Cmd {
+	step := &m.steps[m.current]
+
+	// Let content handle Esc first — LoadingContent swallows it (done=false),
+	// preventing the overlay from dismissing a non-dismissable modal.
 	if msg.Type == tea.KeyEsc {
+		newContent, cmd, done := step.Content.HandleKey(msg)
+		step.Content = newContent
+		if done {
+			// Content accepted Esc as a dismiss signal
+			m.results = append(m.results, step.Content.Result())
+			m.current++
+			if m.current >= len(m.steps) {
+				m.done = true
+				if m.OnComplete != nil {
+					return m.OnComplete(m.results)
+				}
+				return cmd
+			}
+			return cmd
+		}
+		if cmd != nil {
+			return cmd
+		}
+		// Content did not handle Esc — fall through to overlay Esc behavior
 		if m.current == 0 {
 			m.done = true
 			if m.OnCancel != nil {
@@ -63,7 +86,6 @@ func (m *ModalOverlay) HandleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	step := &m.steps[m.current]
 	newContent, cmd, done := step.Content.HandleKey(msg)
 	step.Content = newContent
 

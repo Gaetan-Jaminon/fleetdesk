@@ -11,7 +11,9 @@ type LoadingContent struct {
 }
 
 func (l *LoadingContent) HandleKey(msg tea.KeyMsg) (StepContent, tea.Cmd, bool) {
-	return l, nil, false
+	// Return a no-op cmd to signal that we consumed the key event.
+	// This prevents ModalOverlay from falling through to its own Esc handling.
+	return l, func() tea.Msg { return nil }, false
 }
 
 func (l *LoadingContent) View(width int) string {

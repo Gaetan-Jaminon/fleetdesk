@@ -1159,6 +1159,7 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.interfaces = nil
 			m.sortColumn = 0
 			m.view = viewNetworkInterfaces
+			showLoading(&m, "Loading interfaces...")
 			return m, m.fetchInterfaces()
 		case 1: // Ports
 			m.portCursor = 0
@@ -1166,12 +1167,14 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.sortColumn = 0
 			m.filterText = ""
 			m.view = viewNetworkPorts
+			showLoading(&m, "Loading ports...")
 			return m, m.fetchPorts()
 		case 2: // Routes & DNS
 			m.routeCursor = 0
 			m.routes = nil
 			m.sortColumn = 0
 			m.view = viewNetworkRoutes
+			showLoading(&m, "Loading routes...")
 			return m, m.fetchRoutes()
 		case 3: // Firewall
 			m.firewallCursor = 0
@@ -1180,6 +1183,7 @@ func (m Model) handleNetworkPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.firewallBackend = ""
 			m.filterText = ""
 			m.view = viewNetworkFirewall
+			showLoading(&m, "Loading firewall...")
 			return m, m.fetchFirewall()
 		}
 	case "r":
