@@ -415,6 +415,24 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.selectedHost = m.hostCursor
 			m.resourceCursor = 0
+			// Clear stale data from previous host
+			m.services = nil
+			m.containers = nil
+			m.updates = nil
+			m.cronJobs = nil
+			m.logLevels = nil
+			m.errorLogs = nil
+			m.disks = nil
+			m.subscriptions = nil
+			m.accounts = nil
+			m.interfaces = nil
+			m.ports = nil
+			m.routes = nil
+			m.firewallRules = nil
+			m.failedLogins = nil
+			m.sudoEntries = nil
+			m.selinuxDenials = nil
+			m.auditEvents = nil
 			m.view = viewResourcePicker
 			// pre-fetch for accurate counts
 			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
