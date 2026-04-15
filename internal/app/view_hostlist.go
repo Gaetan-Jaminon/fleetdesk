@@ -114,27 +114,16 @@ func (m Model) renderHostList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	if m.showPasswordPrompt {
-		user := m.hosts[m.passwordHostIdx].Entry.User
-		masked := strings.Repeat("*", len(m.passwordInput))
-		prompt := fmt.Sprintf("  Password for %s: %s\u2588", user, masked)
-		s += hintBarStyle.Width(m.width).Render(prompt)
-	} else if m.showSudoPrompt {
-		s += m.renderSudoPromptOrHintBar(nil)
-	} else if m.showConfirm {
-		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
-	} else {
-		s += m.renderHintBar([][]string{
-			{"↑↓", "Navigate"},
-			{"Enter", "Drill In"},
-			{"x", "Shell"},
-			{"K", "Deploy Key"},
-			{"d", "Metrics"},
-			{"R", "Reboot"},
-			{"r", "Refresh"},
-			{"Esc", "Back"},
-			{"q", "Quit"},
-		})
-	}
+	s += m.renderHintBar([][]string{
+		{"↑↓", "Navigate"},
+		{"Enter", "Drill In"},
+		{"x", "Shell"},
+		{"K", "Deploy Key"},
+		{"d", "Metrics"},
+		{"R", "Reboot"},
+		{"r", "Refresh"},
+		{"Esc", "Back"},
+		{"q", "Quit"},
+	})
 	return s
 }

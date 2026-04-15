@@ -718,35 +718,6 @@ func (m *Model) applyProbeInfo(idx int, info ssh.ProbeInfo) {
 	m.hosts[idx].ListeningPorts = info.ListeningPorts
 }
 
-// retryRemainingPasswordHosts retries connection for hosts that still need a password.
-// Uses the password from the last successful retry (stored temporarily in sshManager).
-func (m Model) retryRemainingPasswordHosts() tea.Cmd {
-	var cmds []tea.Cmd
-	for i, h := range m.hosts {
-		if h.NeedsPassword && h.Status == config.HostUnreachable {
-			idx := i
-			hh := h
-			sm := m.ssh
-			// Clear NeedsPassword before launching retry to prevent duplicate
-			// retries — each PasswordRetryResult triggers this function again,
-			// and without this guard the same hosts get retried exponentially.
-			m.hosts[i].NeedsPassword = false
-			m.logger.Debug("retryRemainingPasswordHosts", "host_idx", idx, "host", hh.Entry.Name)
-			cmds = append(cmds, func() tea.Msg {
-				return sm.RetryWithCachedPassword(idx, hh)
-			})
-		}
-	}
-	if len(cmds) == 0 {
-		m.logger.Debug("retryRemainingPasswordHosts done, no hosts remaining")
-		// all done -- clear the cached password
-		m.ssh.ClearPassword()
-		return nil
-	}
-	m.logger.Debug("retryRemainingPasswordHosts", "retry_count", len(cmds))
-	return tea.Batch(cmds...)
-}
-
 // startProbe launches parallel SSH connections and probes for all hosts.
 // Returns a batch of commands, one per host, that will send hostProbeResult messages.
 func (m Model) startProbe() tea.Cmd {
@@ -829,13 +800,6 @@ func (m Model) containerDetailLines() []string {
 		}
 	}
 	return lines
-}
-
-// retryWithPassword attempts to connect a specific host using password auth.
-func retryWithPassword(sm *ssh.Manager, idx int, h config.Host, password string) tea.Cmd {
-	return func() tea.Msg {
-		return sm.ConnectWithPassword(idx, h, password)
-	}
 }
 
 // buildAzureSubList creates the runtime subscription list from an Azure fleet definition.

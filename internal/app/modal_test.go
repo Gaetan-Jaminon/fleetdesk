@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -159,5 +160,131 @@ func TestModalOverlay_MultiStepAdvance(t *testing.T) {
 	}
 	if gotResults[1] != "nvim" {
 		t.Errorf("result[1] = %v, want nvim", gotResults[1])
+	}
+}
+
+func TestConfirmContent_YConfirms(t *testing.T) {
+	cc := NewConfirmContent("Delete this? [Y/n]")
+	_, _, done := cc.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'Y'}})
+	if !done {
+		t.Error("expected done on Y")
+	}
+	if cc.Result().(bool) != true {
+		t.Error("expected Result()=true on Y")
+	}
+}
+
+func TestConfirmContent_EnterConfirms(t *testing.T) {
+	cc := NewConfirmContent("Delete this? [Y/n]")
+	_, _, done := cc.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !done {
+		t.Error("expected done on Enter")
+	}
+	if cc.Result().(bool) != true {
+		t.Error("expected Result()=true on Enter")
+	}
+}
+
+func TestConfirmContent_NRejects(t *testing.T) {
+	cc := NewConfirmContent("Delete this? [Y/n]")
+	_, _, done := cc.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if !done {
+		t.Error("expected done on n")
+	}
+	if cc.Result().(bool) != false {
+		t.Error("expected Result()=false on n")
+	}
+}
+
+func TestConfirmContent_OtherKeyNoOp(t *testing.T) {
+	cc := NewConfirmContent("Delete this? [Y/n]")
+	_, _, done := cc.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if done {
+		t.Error("expected no-op on arbitrary key")
+	}
+}
+
+func TestNewConfirmModal_EscCallsOnCancel(t *testing.T) {
+	cancelled := false
+	m := NewModalOverlay("Confirm", []ModalStep{
+		{Title: "", Content: NewConfirmContent("Do it? [Y/n]")},
+	}, func(results []any) tea.Cmd {
+		return nil
+	}, func() tea.Cmd {
+		cancelled = true
+		return nil
+	})
+	m.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if !cancelled {
+		t.Error("Esc should call OnCancel")
+	}
+}
+
+func TestNewConfirmModal_NCallsOnCancel(t *testing.T) {
+	var completedWith []any
+	m := NewModalOverlay("Confirm", []ModalStep{
+		{Title: "", Content: NewConfirmContent("Do it? [Y/n]")},
+	}, func(results []any) tea.Cmd {
+		completedWith = results
+		return nil
+	}, func() tea.Cmd {
+		return nil
+	})
+	m.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+	if completedWith == nil {
+		t.Fatal("expected OnComplete to be called")
+	}
+	if completedWith[0].(bool) != false {
+		t.Error("expected Result()=false for N")
+	}
+}
+
+func TestTextInputContent_Masked(t *testing.T) {
+	ti := NewMaskedTextInputContent("Password:")
+	for _, r := range "secret" {
+		ti, _, _ = ti.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	view := ti.View(80)
+	if strings.Contains(view, "secret") {
+		t.Error("masked view should not show raw value")
+	}
+	if !strings.Contains(view, "******") {
+		t.Error("masked view should show asterisks")
+	}
+	// Result still returns raw value
+	if ti.Result().(string) != "secret" {
+		t.Errorf("Result() = %q, want %q", ti.Result(), "secret")
+	}
+}
+
+func TestModalOverlay_SingleStepHidesCounter(t *testing.T) {
+	m := NewModalOverlay("Test", []ModalStep{
+		{Title: "Only step", Content: NewTextInputContent("Input:", nil)},
+	}, func(results []any) tea.Cmd { return nil }, func() tea.Cmd { return nil })
+	view := m.View("", 100, 40)
+	if strings.Contains(view, "Step 1/1") {
+		t.Error("single-step modal should not show step counter")
+	}
+}
+
+func TestModalOverlay_MultiStepShowsCounter(t *testing.T) {
+	m := NewModalOverlay("Test", []ModalStep{
+		{Title: "Step 1", Content: NewTextInputContent("Input:", nil)},
+		{Title: "Step 2", Content: NewSelectContent("Pick:", []string{"a"})},
+	}, func(results []any) tea.Cmd { return nil }, func() tea.Cmd { return nil })
+	view := m.View("", 100, 40)
+	if !strings.Contains(view, "Step 1/2") {
+		t.Error("multi-step modal should show step counter")
+	}
+}
+
+func TestModalOverlay_FooterFn(t *testing.T) {
+	m := NewModalOverlay("Test", []ModalStep{
+		{Title: "", Content: NewConfirmContent("Do it?")},
+	}, func(results []any) tea.Cmd { return nil }, func() tea.Cmd { return nil })
+	m.FooterFn = func() string { return "custom footer" }
+	view := m.View("", 100, 40)
+	if !strings.Contains(view, "custom footer") {
+		t.Error("expected custom footer in view")
 	}
 }

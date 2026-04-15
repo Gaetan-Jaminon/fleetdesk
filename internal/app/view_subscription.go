@@ -73,21 +73,17 @@ func (m Model) renderSubscription() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	if m.showConfirm {
-		s += hintBarStyle.Width(m.width).Render("  " + flashErrorStyle.Render(m.confirmMessage))
-	} else {
-		regTarget := "Register CDN"
-		if h.Entry.SatelliteURL != "" {
-			regTarget = "Register Satellite"
-		}
-		s += m.renderSudoPromptOrHintBar([][]string{
-			{"↑↓", "Navigate"},
-			{"u", "Unregister"},
-			{"g", regTarget},
-			{"d", "Disable Repo"},
-			{"r", "Refresh"},
-			{"Esc", "Back"},
-		})
+	regTarget := "Register CDN"
+	if h.Entry.SatelliteURL != "" {
+		regTarget = "Register Satellite"
 	}
+	s += m.renderHintBar([][]string{
+		{"↑↓", "Navigate"},
+		{"u", "Unregister"},
+		{"g", regTarget},
+		{"d", "Disable Repo"},
+		{"r", "Refresh"},
+		{"Esc", "Back"},
+	})
 	return s
 }

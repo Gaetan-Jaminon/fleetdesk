@@ -106,7 +106,7 @@ func (m Model) renderFleetPicker() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += m.renderSudoPromptOrHintBar([][]string{
+	s += m.renderHintBar([][]string{
 		{"Enter", "Select"},
 		{"e", "Edit"},
 		{"c", "Config"},

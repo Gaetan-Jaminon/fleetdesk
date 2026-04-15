@@ -163,32 +163,6 @@ func (m Model) fetchContainers() func() tea.Msg {
 	}
 }
 
-// confirmSvcAction returns a tea.Cmd that runs a systemctl action via terminal handover with sudo.
-// After the action, it shows systemctl status so the user can see the result.
-func (m Model) confirmSvcAction(action string) (tea.Model, tea.Cmd) {
-	h := m.hosts[m.selectedHost]
-	unit := m.services[m.serviceCursor].Name + ".service"
-
-	sysctl := "sudo systemctl"
-	statusctl := "sudo systemctl"
-	if h.Entry.SystemdMode == "user" {
-		sysctl = "systemctl --user"
-		statusctl = "systemctl --user"
-	}
-
-	m.showConfirm = true
-	m.confirmMessage = fmt.Sprintf("%s %s? [Y/n]", action, unit)
-	m.confirmCmd = fmt.Sprintf(
-		`%s %s %s; rc=$?; echo ''; if [ $rc -eq 0 ]; then echo '✓ %s %s succeeded'; else echo '✗ %s %s failed (exit '$rc')'; fi; echo ''; %s status %s --no-pager 2>&1; true`,
-		sysctl, action, unit,
-		action, unit,
-		action, unit,
-		statusctl, unit,
-	)
-	m.confirmBanner = fmt.Sprintf("%s %s on %s", action, unit, h.Entry.Name)
-	return m, nil
-}
-
 // --- Service Detail ---
 
 type fetchServiceDetailMsg struct {
@@ -208,16 +182,17 @@ func (m Model) confirmDetailSvcAction(action string) (tea.Model, tea.Cmd) {
 		sysctl = "systemctl --user"
 	}
 
-	m.showConfirm = true
-	m.confirmMessage = fmt.Sprintf("%s %s? [Y/n]", action, unit)
-	m.confirmCmd = fmt.Sprintf(
+	cmd := fmt.Sprintf(
 		`%s %s '%s'; rc=$?; echo ''; if [ $rc -eq 0 ]; then echo '✓ %s %s succeeded'; else echo '✗ %s %s failed (exit '$rc')'; fi; echo ''; %s status '%s' --no-pager 2>&1; true`,
 		sysctl, action, q,
 		action, unit,
 		action, unit,
 		sysctl, q,
 	)
-	m.confirmBanner = fmt.Sprintf("%s %s on %s", action, unit, h.Entry.Name)
+	banner := fmt.Sprintf("%s %s on %s", action, unit, h.Entry.Name)
+	m.modal = NewConfirmModal("Confirm",
+		fmt.Sprintf("%s %s? [Y/n]", action, unit),
+		sshHandover(h, []string{cmd}, banner))
 	return m, nil
 }
 
