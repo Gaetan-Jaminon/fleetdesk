@@ -653,7 +653,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sudoWizardTestMsg:
 		// Step 2: show loading modal while testing sudo
-		showLoading(&m, "Testing sudo...")
+		showLoading(&m, "sudotest", "Testing sudo...")
 		idx := msg.hostIdx
 		pw := msg.password
 		sm := m.ssh
@@ -713,14 +713,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case azureResourceCountsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "resourcecounts")
 		m.azureResourceCounts = msg.counts
 		m.azureResourceErr = msg.err
 		m.azureCountsLoaded = true
 		return m, nil
 
 	case fetchAzureVMsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "vms")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -854,7 +854,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sContextsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "contexts")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -873,14 +873,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case k8sResourceCountsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "resourcecounts")
 		m.k8sResourceCounts = msg.counts
 		m.k8sResourceErrors = msg.errs
 		m.k8sCountsLoaded = true
 		return m, nil
 
 	case fetchK8sNodesMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "nodes")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -914,7 +914,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sNamespacesMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "namespaces")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -939,7 +939,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sWorkloadsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "workloads")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -950,7 +950,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sPodsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "pods")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -976,7 +976,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sPodLogsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "podlogs")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1023,7 +1023,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchAzureAKSMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "aks")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1220,7 +1220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchServicesMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "services")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1249,7 +1249,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchContainersMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "containers")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1270,7 +1270,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchCronMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "cron")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1280,7 +1280,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchLogLevelsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "loglevels")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchLogLevels()); ok {
 				return m2, cmd
@@ -1293,7 +1293,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchErrorLogsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "errorlogs")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchErrorLogs()); ok {
 				return m2, cmd
@@ -1306,7 +1306,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchUpdatesMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "updates")
 		if msg.err != nil {
 			m.logger.Debug("fetchUpdates error", "err", msg.err, "view", m.view, "host_idx", m.selectedHost)
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
@@ -1335,7 +1335,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchSubscriptionMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "subscription")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchSubscription()); ok {
 				return m2, cmd
@@ -1365,7 +1365,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchAccountsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "accounts")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1379,7 +1379,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchPortsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "ports")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1393,7 +1393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchRoutesMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "routes")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1409,7 +1409,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchInterfacesMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "interfaces")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1423,7 +1423,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchNetworkInfoMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "network")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchNetworkInfo()); ok {
 				return m2, cmd
@@ -1438,7 +1438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchFirewallMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "firewall")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchFirewall()); ok {
 				return m2, cmd
@@ -1452,7 +1452,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchFailedLoginsMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "failedlogins")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchFailedLogins()); ok {
 				return m2, cmd
@@ -1469,7 +1469,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchSudoActivityMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "sudo")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchSudoActivity()); ok {
 				return m2, cmd
@@ -1486,7 +1486,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchSELinuxMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "selinux")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchSELinuxDenials()); ok {
 				return m2, cmd
@@ -1503,7 +1503,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchAuditSummaryMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "audit")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchAuditSummary()); ok {
 				return m2, cmd
@@ -1520,7 +1520,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchDiskMsg:
-		dismissLoading(&m)
+		dismissLoadingFor(&m, "disk")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true

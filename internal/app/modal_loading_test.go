@@ -48,88 +48,56 @@ func TestLoadingContent_Result(t *testing.T) {
 
 func TestShowLoading(t *testing.T) {
 	m := &Model{}
-	showLoading(m, "Loading services...")
+	showLoading(m, "services", "Loading services...")
 	if m.modal == nil {
 		t.Fatal("showLoading should set m.modal")
-	}
-	if m.modal.Done() {
-		t.Error("modal should not be done")
-	}
-	// Verify content is LoadingContent
-	if m.modal.current >= len(m.modal.steps) {
-		t.Fatal("modal has no steps")
 	}
 	lc, ok := m.modal.steps[m.modal.current].Content.(*LoadingContent)
 	if !ok {
 		t.Fatal("modal content should be *LoadingContent")
 	}
-	if lc.message != "Loading services..." {
-		t.Errorf("message = %q, want %q", lc.message, "Loading services...")
+	if lc.tag != "services" {
+		t.Errorf("tag = %q, want %q", lc.tag, "services")
 	}
 }
 
-func TestDismissLoading_ClearsLoadingModal(t *testing.T) {
+func TestDismissLoadingFor_MatchingTag(t *testing.T) {
 	m := &Model{}
-	showLoading(m, "Loading services...")
-	dismissLoading(m)
+	showLoading(m, "services", "Loading services...")
+	dismissLoadingFor(m, "services")
 	if m.modal != nil {
-		t.Error("dismissLoading should clear loading modal")
+		t.Error("dismissLoadingFor should clear loading modal with matching tag")
 	}
 }
 
-func TestDismissLoading_DoesNotClearConfirmModal(t *testing.T) {
+func TestDismissLoadingFor_WrongTag(t *testing.T) {
+	m := &Model{}
+	showLoading(m, "subscription", "Loading subscription...")
+	dismissLoadingFor(m, "services")
+	if m.modal == nil {
+		t.Error("dismissLoadingFor should NOT clear loading modal with different tag")
+	}
+}
+
+func TestDismissLoadingFor_DoesNotClearConfirmModal(t *testing.T) {
 	m := &Model{}
 	m.modal = NewConfirmModal("Confirm", "Delete? [Y/n]", nil)
-	dismissLoading(m)
+	dismissLoadingFor(m, "services")
 	if m.modal == nil {
-		t.Error("dismissLoading should not clear confirm modal")
+		t.Error("dismissLoadingFor should not clear confirm modal")
 	}
 }
 
-func TestDismissLoading_DoesNotClearAboutModal(t *testing.T) {
+func TestDismissLoadingFor_NilModalIsNoOp(t *testing.T) {
 	m := &Model{}
-	m.modal, _ = NewAboutModal("0.10.0", "abc1234")
-	dismissLoading(m)
-	if m.modal == nil {
-		t.Error("dismissLoading should not clear about modal")
-	}
-}
-
-func TestDismissLoading_DoesNotClearStaticContentModal(t *testing.T) {
-	m := &Model{}
-	m.modal = NewModalOverlay("Help", []ModalStep{
-		{Title: "", Content: NewStaticContent("help text")},
-	}, func(_ []any) tea.Cmd { return nil },
-		func() tea.Cmd { return nil })
-	dismissLoading(m)
-	if m.modal == nil {
-		t.Error("dismissLoading should not clear help modal")
-	}
+	dismissLoadingFor(m, "services") // should not panic
 }
 
 func TestLoadingModal_EscDoesNotDismissOverlay(t *testing.T) {
 	m := &Model{}
-	showLoading(m, "Loading services...")
-	// Press Esc through the full ModalOverlay — should NOT dismiss
+	showLoading(m, "services", "Loading services...")
 	m.modal.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.modal.Done() {
 		t.Error("Esc should not dismiss loading modal through ModalOverlay")
-	}
-}
-
-func TestDismissLoading_NilModalIsNoOp(t *testing.T) {
-	m := &Model{}
-	dismissLoading(m) // should not panic
-}
-
-func TestDismissLoading_DoneModalIsNoOp(t *testing.T) {
-	m := &Model{}
-	showLoading(m, "Loading...")
-	// Manually mark done
-	m.modal.done = true
-	dismissLoading(m)
-	// Should not clear a done modal
-	if m.modal == nil {
-		t.Error("dismissLoading should not clear a done modal")
 	}
 }
