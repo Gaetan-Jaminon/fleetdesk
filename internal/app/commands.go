@@ -462,7 +462,7 @@ func (m Model) fetchUpdates() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "updates", "host_idx", idx)
 		// get pending updates and security updates in one command
-		cmd := `dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
+		cmd := `sudo dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; sudo dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
 		out, err := sm.RunCommand(idx, cmd)
 		// dnf check-update returns exit 100 when updates are available
 		if err != nil && !strings.Contains(out, "===SECURITY===") {
