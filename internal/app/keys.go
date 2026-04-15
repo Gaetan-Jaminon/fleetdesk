@@ -12,6 +12,12 @@ import (
 )
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// modal overlay -- intercept all keys
+	if m.modal != nil && !m.modal.Done() {
+		cmd := m.modal.HandleKey(msg)
+		return m, cmd
+	}
+
 	// log detail mode -- any key goes back
 	if m.showLogDetail {
 		m.showLogDetail = false
@@ -358,6 +364,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleK8sPodDetailKeys(msg)
 	case viewK8sPodLogs:
 		return m.handleK8sPodLogKeys(msg)
+	case viewConfig:
+		return m.handleConfigKeys(msg)
 	}
 	return m, nil
 }
@@ -372,12 +380,15 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.fleetCursor < len(m.fleets)-1 {
 			m.fleetCursor++
 		}
+	case "c":
+		m.view = viewConfig
+		return m, nil
 	case "e":
 		if len(m.fleets) > 0 {
 			return m, m.editFleetFile()
 		}
 	case "r":
-		fleets, err := config.ScanFleets()
+		fleets, err := config.ScanFleets(m.appCfg.FleetDir)
 		if err != nil {
 			m.flash = fmt.Sprintf("Reload failed: %v", err)
 			m.flashError = true

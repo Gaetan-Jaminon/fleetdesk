@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,7 +21,8 @@ type sshHandoverFinishedMsg struct {
 
 // editFinishedMsg is sent when the editor returns.
 type editFinishedMsg struct {
-	Err error
+	Err        error
+	configEdit bool // true when config.yaml was edited (triggers config reload)
 }
 
 // sshExec wraps an SSH command with terminal handover.
@@ -68,12 +70,16 @@ func (s *sshExec) SetStderr(_ io.Writer) {}
 
 // editorExec wraps an editor command for terminal handover.
 type editorExec struct {
-	path string
-	err  error
+	path   string
+	editor string // resolved editor command
+	err    error
 }
 
 func (e *editorExec) Run() error {
-	editor := os.Getenv("EDITOR")
+	editor := e.editor
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
 	if editor == "" {
 		editor = os.Getenv("VISUAL")
 	}
@@ -81,7 +87,13 @@ func (e *editorExec) Run() error {
 		editor = "vi"
 	}
 
-	c := exec.Command(editor, e.path)
+	// Split editor string to support "code --wait" style commands
+	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		parts = []string{"vi"}
+	}
+	args := append(parts[1:], e.path)
+	c := exec.Command(parts[0], args...)
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -96,9 +108,18 @@ func (e *editorExec) SetStderr(_ io.Writer) {}
 // editFleetFile opens the selected fleet file in the user's editor.
 func (m Model) editFleetFile() tea.Cmd {
 	f := m.fleets[m.fleetCursor]
-	e := &editorExec{path: f.Path}
+	e := &editorExec{path: f.Path, editor: m.appCfg.Editor()}
 	return tea.Exec(e, func(err error) tea.Msg {
 		return editFinishedMsg{Err: e.err}
+	})
+}
+
+// editConfigFile opens config.yaml in the user's editor.
+func (m Model) editConfigFile() tea.Cmd {
+	path := filepath.Join(config.ConfigPath(), "config.yaml")
+	e := &editorExec{path: path, editor: m.appCfg.Editor()}
+	return tea.Exec(e, func(err error) tea.Msg {
+		return editFinishedMsg{Err: e.err, configEdit: true}
 	})
 }
 

@@ -33,14 +33,9 @@ func ConfigPath() string {
 	return filepath.Join(home, configDir)
 }
 
-// ScanFleets reads all .yaml files from the config directory (excluding config.yaml)
+// ScanFleets reads all .yaml files from the given directory (excluding config.yaml)
 // and returns parsed fleet definitions.
-func ScanFleets() ([]Fleet, error) {
-	dir := ConfigPath()
-	if dir == "" {
-		return nil, fmt.Errorf("cannot determine home directory")
-	}
-
+func ScanFleets(dir string) ([]Fleet, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
