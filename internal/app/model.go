@@ -90,6 +90,11 @@ type fetchLogFileStatMsg struct {
 
 // sshStreamBatchMsg and sshStreamDoneMsg are defined in sshstream.go
 
+// startCommandStreamMsg is sent when a user-defined command wizard completes.
+type startCommandStreamMsg struct {
+	cfg SSHStreamConfig
+}
+
 type startProcessActionViewMsg struct {
 	action  string
 	process string
@@ -371,6 +376,7 @@ type Model struct {
 	streamNewestFirst bool // true = newest on top (log tail), false = append (command output)
 	streamAutoDone    bool // true = show "Done" when command finishes
 	streamGeneration  int  // incremented on each start, used to discard stale messages
+	streamExitCode    *int // shared with goroutine; written before channel close
 	streamLastConfig  *SSHStreamConfig // saved for pause/resume
 
 	// probes fleet
@@ -1152,8 +1158,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			m.streamLines = append(m.streamLines, msg.lines...)
-			if len(m.streamLines) > 1000 {
-				m.streamLines = m.streamLines[len(m.streamLines)-1000:]
+			const streamCommandMaxLines = 5000
+			if len(m.streamLines) > streamCommandMaxLines {
+				m.streamLines = m.streamLines[len(m.streamLines)-streamCommandMaxLines:]
 			}
 		}
 		if m.streamChan != nil {
@@ -1168,7 +1175,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamChan = nil
 		m.streamStreaming = false
 		if m.streamAutoDone {
-			m.streamLines = append(m.streamLines, "", ansiColor("✓ Done — press Esc to return", "32"))
+			if msg.exitCode == 0 {
+				m.streamLines = append(m.streamLines, "", ansiColor("✓ Done — press Esc to return", "32"))
+			} else {
+				m.streamLines = append(m.streamLines, "",
+					ansiColor(fmt.Sprintf("✗ Exited with code %d — press Esc to return", msg.exitCode), "31"))
+			}
 		}
 		return m, nil
 
@@ -1182,6 +1194,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logFileStats = msg.stats
 		m.logFileStatDone = true
 		return m, nil
+
+	case startCommandStreamMsg:
+		m.modal = nil
+		// If the command contains sudo and no password is cached, prompt first
+		if strings.Contains(msg.cfg.Command, "sudo") && m.ssh.GetSudoPassword(msg.cfg.HostIdx) == "" {
+			cfg := msg.cfg
+			retry := func() tea.Msg { return startCommandStreamMsg{cfg: cfg} }
+			user := ""
+			host := ""
+			if cfg.HostIdx < len(m.hosts) {
+				user = m.hosts[cfg.HostIdx].Entry.User
+				host = m.hosts[cfg.HostIdx].Entry.Name
+			}
+			m.modal = NewSudoModal(user, host, cfg.HostIdx, retry)
+			return m, nil
+		}
+		return m, m.startSSHStream(msg.cfg)
 
 	case startProcessActionViewMsg:
 		// Validate action against allowlist

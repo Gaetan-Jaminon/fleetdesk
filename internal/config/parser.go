@@ -23,18 +23,25 @@ type fleetFile struct {
 	Hosts            []hostEntryFile `yaml:"hosts"`
 }
 
+type commandEntryFile struct {
+	Name  string `yaml:"name"`
+	Group string `yaml:"group"`
+	Run   string `yaml:"run"`
+}
+
 type defaultsFile struct {
-	User            string         `yaml:"user"`
-	Port            int            `yaml:"port"`
-	Timeout         string         `yaml:"timeout"`
-	SystemdMode     string         `yaml:"systemd_mode"`
-	ServiceFilter   []string       `yaml:"service_filter"`
-	Logs            []logEntryFile `yaml:"logs"`
-	ErrorLogSince   string         `yaml:"error_log_since"`
-	RefreshInterval string         `yaml:"refresh_interval"`
-	RHOrgID         string         `yaml:"rh_org_id"`
-	RHActivationKey string         `yaml:"rh_activation_key"`
-	SatelliteURL    string         `yaml:"satellite_url"`
+	User            string             `yaml:"user"`
+	Port            int                `yaml:"port"`
+	Timeout         string             `yaml:"timeout"`
+	SystemdMode     string             `yaml:"systemd_mode"`
+	ServiceFilter   []string           `yaml:"service_filter"`
+	Logs            []logEntryFile     `yaml:"logs"`
+	Commands        []commandEntryFile `yaml:"commands"`
+	ErrorLogSince   string             `yaml:"error_log_since"`
+	RefreshInterval string             `yaml:"refresh_interval"`
+	RHOrgID         string             `yaml:"rh_org_id"`
+	RHActivationKey string             `yaml:"rh_activation_key"`
+	SatelliteURL    string             `yaml:"satellite_url"`
 }
 
 type logEntryFile struct {
@@ -44,24 +51,26 @@ type logEntryFile struct {
 }
 
 type groupFile struct {
-	Name          string          `yaml:"name"`
-	Hosts         []hostEntryFile `yaml:"hosts"`
-	ServiceFilter []string        `yaml:"service_filter"`
-	Logs          []logEntryFile  `yaml:"logs"`
+	Name          string             `yaml:"name"`
+	Hosts         []hostEntryFile    `yaml:"hosts"`
+	ServiceFilter []string           `yaml:"service_filter"`
+	Logs          []logEntryFile     `yaml:"logs"`
+	Commands      []commandEntryFile `yaml:"commands"`
 }
 
 type hostEntryFile struct {
-	Name            string         `yaml:"name"`
-	Hostname        string         `yaml:"hostname"`
-	User            string         `yaml:"user"`
-	Port            int            `yaml:"port"`
-	Timeout         string         `yaml:"timeout"`
-	SystemdMode     string         `yaml:"systemd_mode"`
-	ServiceFilter   []string       `yaml:"service_filter"`
-	Logs            []logEntryFile `yaml:"logs"`
-	RHOrgID         string         `yaml:"rh_org_id"`
-	RHActivationKey string         `yaml:"rh_activation_key"`
-	SatelliteURL    string         `yaml:"satellite_url"`
+	Name            string             `yaml:"name"`
+	Hostname        string             `yaml:"hostname"`
+	User            string             `yaml:"user"`
+	Port            int                `yaml:"port"`
+	Timeout         string             `yaml:"timeout"`
+	SystemdMode     string             `yaml:"systemd_mode"`
+	ServiceFilter   []string           `yaml:"service_filter"`
+	Logs            []logEntryFile     `yaml:"logs"`
+	Commands        []commandEntryFile `yaml:"commands"`
+	RHOrgID         string             `yaml:"rh_org_id"`
+	RHActivationKey string             `yaml:"rh_activation_key"`
+	SatelliteURL    string             `yaml:"satellite_url"`
 }
 
 // probeFleetFile is the raw YAML structure for a probes fleet file.
@@ -170,11 +179,21 @@ func ParseFleetFile(path string) (Fleet, error) {
 		defaults.Logs = append(defaults.Logs, LogEntry{Name: l.Name, Path: l.Path, Sudo: l.Sudo})
 	}
 
+	// parse default commands
+	for _, c := range raw.Defaults.Commands {
+		ce := CommandEntry{Name: c.Name, Group: c.Group, Run: c.Run}
+		if err := ValidateCommand(ce); err != nil {
+			return Fleet{}, err
+		}
+		defaults.Commands = append(defaults.Commands, ce)
+	}
+
 	// parse groups
 	var groups []HostGroup
 	for _, g := range raw.Groups {
 		groupLogs := convertLogEntries(g.Logs)
-		hosts, err := parseHosts(g.Hosts, defaults, g.ServiceFilter, groupLogs)
+		groupCmds := convertCommandEntries(g.Commands)
+		hosts, err := parseHosts(g.Hosts, defaults, g.ServiceFilter, groupLogs, groupCmds)
 		if err != nil {
 			return Fleet{}, fmt.Errorf("group %q: %w", g.Name, err)
 		}
@@ -185,7 +204,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 	}
 
 	// parse ungrouped hosts
-	hosts, err := parseHosts(raw.Hosts, defaults, nil, nil)
+	hosts, err := parseHosts(raw.Hosts, defaults, nil, nil, nil)
 	if err != nil {
 		return Fleet{}, fmt.Errorf("hosts: %w", err)
 	}
@@ -211,7 +230,8 @@ func ParseFleetFile(path string) (Fleet, error) {
 // parseHosts converts raw host entries, applying defaults where needed.
 // groupFilter is the group-level service filter (can be nil).
 // groupLogs is the group-level log entries (can be nil).
-func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string, groupLogs []LogEntry) ([]HostEntry, error) {
+// groupCmds is the group-level command entries (can be nil).
+func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string, groupLogs []LogEntry, groupCmds []CommandEntry) ([]HostEntry, error) {
 	var hosts []HostEntry
 	for _, r := range raw {
 		if r.Name == "" {
@@ -283,6 +303,16 @@ func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string
 		}
 		h.Logs = merged
 
+		// commands: merge defaults + group + host (additive, dedupe by group/name)
+		hostCmds := convertCommandEntries(r.Commands)
+		mergedCmds := MergeCommands(defaults.Commands, groupCmds, hostCmds)
+		for _, c := range mergedCmds {
+			if err := ValidateCommand(c); err != nil {
+				return nil, fmt.Errorf("host %q: %w", r.Name, err)
+			}
+		}
+		h.Commands = mergedCmds
+
 		hosts = append(hosts, h)
 	}
 	return hosts, nil
@@ -293,6 +323,15 @@ func convertLogEntries(raw []logEntryFile) []LogEntry {
 	var entries []LogEntry
 	for _, r := range raw {
 		entries = append(entries, LogEntry{Name: r.Name, Path: r.Path, Sudo: r.Sudo})
+	}
+	return entries
+}
+
+// convertCommandEntries converts raw YAML command entries to domain CommandEntry.
+func convertCommandEntries(raw []commandEntryFile) []CommandEntry {
+	var entries []CommandEntry
+	for _, r := range raw {
+		entries = append(entries, CommandEntry{Name: r.Name, Group: r.Group, Run: r.Run})
 	}
 	return entries
 }

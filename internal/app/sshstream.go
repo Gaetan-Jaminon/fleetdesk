@@ -3,10 +3,12 @@ package app
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/crypto/ssh"
 )
 
 // SSHStreamConfig configures a generic SSH command stream rendered in-TUI.
@@ -33,6 +35,7 @@ type sshStreamBatchMsg struct {
 
 type sshStreamDoneMsg struct {
 	generation int
+	exitCode   int
 }
 
 // startSSHStream launches a generic SSH command stream.
@@ -60,6 +63,9 @@ func (m *Model) startSSHStream(cfg SSHStreamConfig) tea.Cmd {
 
 	ch := make(chan string, 200)
 	m.streamChan = ch
+
+	exitCode := new(int) // shared with goroutine; read after channel close
+	m.streamExitCode = exitCode
 
 	sm := m.ssh
 	idx := cfg.HostIdx
@@ -114,8 +120,16 @@ func (m *Model) startSSHStream(cfg SSHStreamConfig) tea.Cmd {
 		for scanner.Scan() {
 			ch <- scanner.Text()
 		}
-		session.Wait()
-		logger.Debug("ssh stream complete")
+		waitErr := session.Wait()
+		if waitErr != nil {
+			var exitErr *ssh.ExitError
+			if errors.As(waitErr, &exitErr) {
+				*exitCode = exitErr.ExitStatus()
+			} else {
+				*exitCode = -1
+			}
+		}
+		logger.Debug("ssh stream complete", "exit_code", *exitCode)
 	}()
 
 	return m.listenForStreamLines()
@@ -138,10 +152,15 @@ func (m Model) listenForStreamLines() tea.Cmd {
 		return nil
 	}
 	gen := m.streamGeneration
+	exitCode := m.streamExitCode
 	return func() tea.Msg {
 		first, ok := <-ch
 		if !ok {
-			return sshStreamDoneMsg{generation: gen}
+			code := 0
+			if exitCode != nil {
+				code = *exitCode
+			}
+			return sshStreamDoneMsg{generation: gen, exitCode: code}
 		}
 		batch := []string{first}
 		for len(batch) < 50 {
@@ -229,7 +248,7 @@ func (m Model) renderSSHStream() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
 
-	hints := [][]string{{"Esc", "Back"}}
+	var hints [][]string
 	if m.streamNewestFirst {
 		hints = [][]string{
 			{"↑↓", "Scroll"},
@@ -237,6 +256,11 @@ func (m Model) renderSSHStream() string {
 			{"G", "Latest"},
 			{"w", "Save"},
 			{"Esc", "Stop & Back"},
+		}
+	} else {
+		hints = [][]string{
+			{"w", "Save"},
+			{"Esc", "Back"},
 		}
 	}
 	s += m.renderHintBar(hintWithHelp(hints))
