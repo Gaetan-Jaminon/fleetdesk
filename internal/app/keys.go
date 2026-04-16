@@ -409,6 +409,27 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				fmt.Sprintf("REBOOT %s? [Y/n]", h.Entry.Name),
 				sshHandover(hh, []string{`sudo reboot; echo 'Reboot initiated'`}, fmt.Sprintf("reboot %s", h.Entry.Name)))
 		}
+	case "c":
+		f := m.fleets[m.selectedFleet]
+		if f.Type != "vm" {
+			return m, nil
+		}
+		if len(m.hosts) == 0 {
+			return m, nil
+		}
+		h := m.hosts[m.hostCursor]
+		if h.Status != config.HostOnline {
+			m.flash = "Host is not reachable"
+			m.flashError = true
+			return m, nil
+		}
+		if len(h.Entry.Commands) == 0 {
+			m.flash = "No commands defined for this host"
+			m.flashError = true
+			return m, nil
+		}
+		m.selectedHost = m.hostCursor
+		openCommandWizard(&m)
 	case "d":
 		m.metrics = make(map[int]config.HostMetrics)
 		m.metricErrors = make(map[int]bool)
@@ -2758,7 +2779,7 @@ func (m Model) handleSSHStreamKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "w":
-		if m.streamNewestFirst && len(m.streamLines) > 0 {
+		if len(m.streamLines) > 0 {
 			f := m.fleets[m.selectedFleet]
 			h := m.hosts[m.selectedHost]
 			lw := newLogWriter(m.appCfg.FleetDir, f.Name, h.Entry.Name, m.streamSourceName)

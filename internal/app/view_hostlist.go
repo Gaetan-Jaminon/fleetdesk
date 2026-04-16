@@ -118,16 +118,18 @@ func (m Model) renderHostList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	s += m.renderHintBar(hintWithHelp([][]string{
+	hints := [][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Drill In"},
 		{"x", "Shell"},
+		{"c", "Commands"},
 		{"K", "Deploy Key"},
 		{"d", "Metrics"},
 		{"R", "Reboot"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
-	}))
+	}
+	s += m.renderHintBar(hintWithHelp(hints))
 	return s
 }

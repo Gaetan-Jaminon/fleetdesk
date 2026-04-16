@@ -23,7 +23,8 @@ type HostDefaults struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	SystemdMode     string        `yaml:"systemd_mode"`
 	ServiceFilter   []string      `yaml:"service_filter"`
-	Logs            []LogEntry    `yaml:"-"` // populated by parser via merge cascade
+	Logs            []LogEntry       `yaml:"-"` // populated by parser via merge cascade
+	Commands        []CommandEntry   `yaml:"-"` // populated by parser via merge cascade
 	ErrorLogSince   string
 	RefreshInterval string
 	RHOrgID         string `yaml:"rh_org_id"`
@@ -46,8 +47,9 @@ type HostEntry struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	SystemdMode     string        `yaml:"systemd_mode"`
 	ServiceFilter   []string
-	Logs            []LogEntry // merged from defaults + group + host
-	RHOrgID         string     `yaml:"rh_org_id"`
+	Logs            []LogEntry       // merged from defaults + group + host
+	Commands        []CommandEntry   // merged from defaults + group + host
+	RHOrgID         string           `yaml:"rh_org_id"`
 	RHActivationKey string     `yaml:"rh_activation_key"`
 	SatelliteURL    string     `yaml:"satellite_url"`
 }
