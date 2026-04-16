@@ -77,7 +77,7 @@ func (m *Manager) probeLoop(ctx context.Context, idx int, entry config.ProbeEntr
 	client := buildHTTPClient(timeout, defaults.ProxyURL, defaults.InsecureSkipVerify)
 
 	// Probe immediately on start.
-	result := runProbe(ctx, client, entry, idx, defaults.ProxyURL)
+	result := runProbe(ctx, client, entry, idx, defaults.ProxyURL, defaults.InsecureSkipVerify)
 	m.logger.Debug("probe complete", "name", entry.Name, "status", result.Status.String(), "latency", result.Latency, "code", result.Code)
 	select {
 	case ch <- result:
@@ -91,7 +91,7 @@ func (m *Manager) probeLoop(ctx context.Context, idx int, entry config.ProbeEntr
 	for {
 		select {
 		case <-ticker.C:
-			result := runProbe(ctx, client, entry, idx, defaults.ProxyURL)
+			result := runProbe(ctx, client, entry, idx, defaults.ProxyURL, defaults.InsecureSkipVerify)
 			m.logger.Debug("probe complete", "name", entry.Name, "status", result.Status.String(), "latency", result.Latency, "code", result.Code)
 			select {
 			case ch <- result:
@@ -133,7 +133,7 @@ func buildHTTPClient(timeout time.Duration, proxyURL string, insecureSkipVerify 
 	}
 }
 
-func runProbe(ctx context.Context, client *http.Client, entry config.ProbeEntry, idx int, proxyURL string) ProbeResult {
+func runProbe(ctx context.Context, client *http.Client, entry config.ProbeEntry, idx int, proxyURL string, skipTLSCheck bool) ProbeResult {
 	result := ProbeResult{
 		ProbeIndex: idx,
 		ProbeTime:  time.Now(),
@@ -192,7 +192,7 @@ func runProbe(ctx context.Context, client *http.Client, entry config.ProbeEntry,
 	result.BodyPreview = readBodyPreview(resp)
 
 	// Derive status
-	result.Status = deriveStatus(entry.ExpectedCode, result.Code, result.TLS)
+	result.Status = deriveStatus(entry.ExpectedCode, result.Code, result.TLS, skipTLSCheck)
 	if result.Status == ProbeStatusDown && result.Error == ErrorClassNone {
 		result.Error = ErrorClassHTTPStatus
 		result.ErrorMsg = fmt.Sprintf("expected %d, got %d", entry.ExpectedCode, result.Code)
@@ -255,11 +255,11 @@ func isTimeoutError(err error) bool {
 	return false
 }
 
-func deriveStatus(expectedCode, actualCode int, tlsInfo *TLSInfo) ProbeStatus {
+func deriveStatus(expectedCode, actualCode int, tlsInfo *TLSInfo, skipTLSCheck bool) ProbeStatus {
 	if actualCode != expectedCode {
 		return ProbeStatusDown
 	}
-	if tlsInfo != nil && tlsInfo.DaysToExpiry < CertWarnDays {
+	if !skipTLSCheck && tlsInfo != nil && tlsInfo.DaysToExpiry < CertWarnDays {
 		return ProbeStatusDegraded
 	}
 	return ProbeStatusUp
