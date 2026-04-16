@@ -70,6 +70,7 @@ type Host struct {
 	InterfacesTotal int
 	ListeningPorts  int
 	UpdateCount     int
+	SudoReady       bool
 	Error           string
 }
 
