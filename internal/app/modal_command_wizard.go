@@ -54,7 +54,11 @@ func (s *commandPickStep) setGroup(group string, all []config.CommandEntry) {
 	s.commands = filtered
 	names := make([]string, len(filtered))
 	for i, c := range filtered {
-		names[i] = c.Name
+		if c.Description != "" {
+			names[i] = c.Name + " — " + c.Description
+		} else {
+			names[i] = c.Name
+		}
 	}
 	s.inner = NewSelectContent("", names).(*SelectContent)
 }

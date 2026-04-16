@@ -4,9 +4,10 @@ import "fmt"
 
 // CommandEntry is a user-defined shell command on a remote host.
 type CommandEntry struct {
-	Name  string // display name (dedupe key within group)
-	Group string // logical grouping label
-	Run   string // shell command string
+	Name        string // display name (dedupe key within group)
+	Group       string // logical grouping label
+	Description string // optional human-readable description
+	Run         string // shell command string
 }
 
 // MergeCommands merges command entries from defaults, group, and host levels.

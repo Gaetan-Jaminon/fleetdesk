@@ -24,9 +24,10 @@ type fleetFile struct {
 }
 
 type commandEntryFile struct {
-	Name  string `yaml:"name"`
-	Group string `yaml:"group"`
-	Run   string `yaml:"run"`
+	Name        string `yaml:"name"`
+	Group       string `yaml:"group"`
+	Description string `yaml:"description"`
+	Run         string `yaml:"run"`
 }
 
 type defaultsFile struct {
@@ -181,7 +182,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 
 	// parse default commands
 	for _, c := range raw.Defaults.Commands {
-		ce := CommandEntry{Name: c.Name, Group: c.Group, Run: c.Run}
+		ce := CommandEntry{Name: c.Name, Group: c.Group, Description: c.Description, Run: c.Run}
 		if err := ValidateCommand(ce); err != nil {
 			return Fleet{}, err
 		}
@@ -331,7 +332,7 @@ func convertLogEntries(raw []logEntryFile) []LogEntry {
 func convertCommandEntries(raw []commandEntryFile) []CommandEntry {
 	var entries []CommandEntry
 	for _, r := range raw {
-		entries = append(entries, CommandEntry{Name: r.Name, Group: r.Group, Run: r.Run})
+		entries = append(entries, CommandEntry{Name: r.Name, Group: r.Group, Description: r.Description, Run: r.Run})
 	}
 	return entries
 }
