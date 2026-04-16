@@ -92,7 +92,7 @@ func TestDeriveStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := deriveStatus(tt.expectedCode, tt.actualCode, tt.tls)
+			got := deriveStatus(tt.expectedCode, tt.actualCode, tt.tls, false)
 			if got != tt.want {
 				t.Errorf("deriveStatus(%d, %d, tls) = %v, want %v", tt.expectedCode, tt.actualCode, got, tt.want)
 			}
