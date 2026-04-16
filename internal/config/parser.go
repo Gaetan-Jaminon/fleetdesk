@@ -24,35 +24,44 @@ type fleetFile struct {
 }
 
 type defaultsFile struct {
-	User            string   `yaml:"user"`
-	Port            int      `yaml:"port"`
-	Timeout         string   `yaml:"timeout"`
-	SystemdMode     string   `yaml:"systemd_mode"`
-	ServiceFilter   []string `yaml:"service_filter"`
-	ErrorLogSince   string   `yaml:"error_log_since"`
-	RefreshInterval string   `yaml:"refresh_interval"`
-	RHOrgID         string   `yaml:"rh_org_id"`
-	RHActivationKey string   `yaml:"rh_activation_key"`
-	SatelliteURL    string   `yaml:"satellite_url"`
+	User            string         `yaml:"user"`
+	Port            int            `yaml:"port"`
+	Timeout         string         `yaml:"timeout"`
+	SystemdMode     string         `yaml:"systemd_mode"`
+	ServiceFilter   []string       `yaml:"service_filter"`
+	Logs            []logEntryFile `yaml:"logs"`
+	ErrorLogSince   string         `yaml:"error_log_since"`
+	RefreshInterval string         `yaml:"refresh_interval"`
+	RHOrgID         string         `yaml:"rh_org_id"`
+	RHActivationKey string         `yaml:"rh_activation_key"`
+	SatelliteURL    string         `yaml:"satellite_url"`
+}
+
+type logEntryFile struct {
+	Name string `yaml:"name"`
+	Path string `yaml:"path"`
+	Sudo bool   `yaml:"sudo"`
 }
 
 type groupFile struct {
 	Name          string          `yaml:"name"`
 	Hosts         []hostEntryFile `yaml:"hosts"`
 	ServiceFilter []string        `yaml:"service_filter"`
+	Logs          []logEntryFile  `yaml:"logs"`
 }
 
 type hostEntryFile struct {
-	Name            string   `yaml:"name"`
-	Hostname        string   `yaml:"hostname"`
-	User            string   `yaml:"user"`
-	Port            int      `yaml:"port"`
-	Timeout         string   `yaml:"timeout"`
-	SystemdMode     string   `yaml:"systemd_mode"`
-	ServiceFilter   []string `yaml:"service_filter"`
-	RHOrgID         string   `yaml:"rh_org_id"`
-	RHActivationKey string   `yaml:"rh_activation_key"`
-	SatelliteURL    string   `yaml:"satellite_url"`
+	Name            string         `yaml:"name"`
+	Hostname        string         `yaml:"hostname"`
+	User            string         `yaml:"user"`
+	Port            int            `yaml:"port"`
+	Timeout         string         `yaml:"timeout"`
+	SystemdMode     string         `yaml:"systemd_mode"`
+	ServiceFilter   []string       `yaml:"service_filter"`
+	Logs            []logEntryFile `yaml:"logs"`
+	RHOrgID         string         `yaml:"rh_org_id"`
+	RHActivationKey string         `yaml:"rh_activation_key"`
+	SatelliteURL    string         `yaml:"satellite_url"`
 }
 
 // probeFleetFile is the raw YAML structure for a probes fleet file.
@@ -150,10 +159,22 @@ func ParseFleetFile(path string) (Fleet, error) {
 		defaults.Timeout = 10 * time.Second
 	}
 
+	// parse default logs
+	for _, l := range raw.Defaults.Logs {
+		if l.Name == "" {
+			return Fleet{}, fmt.Errorf("log entry missing required field 'name'")
+		}
+		if err := ValidateLogPath(l.Name, l.Path); err != nil {
+			return Fleet{}, err
+		}
+		defaults.Logs = append(defaults.Logs, LogEntry{Name: l.Name, Path: l.Path, Sudo: l.Sudo})
+	}
+
 	// parse groups
 	var groups []HostGroup
 	for _, g := range raw.Groups {
-		hosts, err := parseHosts(g.Hosts, defaults, g.ServiceFilter)
+		groupLogs := convertLogEntries(g.Logs)
+		hosts, err := parseHosts(g.Hosts, defaults, g.ServiceFilter, groupLogs)
 		if err != nil {
 			return Fleet{}, fmt.Errorf("group %q: %w", g.Name, err)
 		}
@@ -164,7 +185,7 @@ func ParseFleetFile(path string) (Fleet, error) {
 	}
 
 	// parse ungrouped hosts
-	hosts, err := parseHosts(raw.Hosts, defaults, nil)
+	hosts, err := parseHosts(raw.Hosts, defaults, nil, nil)
 	if err != nil {
 		return Fleet{}, fmt.Errorf("hosts: %w", err)
 	}
@@ -189,7 +210,8 @@ func ParseFleetFile(path string) (Fleet, error) {
 
 // parseHosts converts raw host entries, applying defaults where needed.
 // groupFilter is the group-level service filter (can be nil).
-func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string) ([]HostEntry, error) {
+// groupLogs is the group-level log entries (can be nil).
+func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string, groupLogs []LogEntry) ([]HostEntry, error) {
 	var hosts []HostEntry
 	for _, r := range raw {
 		if r.Name == "" {
@@ -251,9 +273,28 @@ func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string
 			h.Timeout = defaults.Timeout
 		}
 
+		// logs: merge defaults + group + host (additive, dedupe by name)
+		hostLogs := convertLogEntries(r.Logs)
+		merged := MergeLogEntries(defaults.Logs, groupLogs, hostLogs)
+		for _, l := range merged {
+			if err := ValidateLogPath(l.Name, l.Path); err != nil {
+				return nil, fmt.Errorf("host %q: %w", r.Name, err)
+			}
+		}
+		h.Logs = merged
+
 		hosts = append(hosts, h)
 	}
 	return hosts, nil
+}
+
+// convertLogEntries converts raw YAML log entries to domain LogEntry.
+func convertLogEntries(raw []logEntryFile) []LogEntry {
+	var entries []LogEntry
+	for _, r := range raw {
+		entries = append(entries, LogEntry{Name: r.Name, Path: r.Path, Sudo: r.Sudo})
+	}
+	return entries
 }
 
 // parseProbeFleetFile parses a probes fleet YAML file into a Fleet with ProbeFleet set.

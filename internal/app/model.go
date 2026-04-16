@@ -72,6 +72,29 @@ type transitionExpireMsg struct {
 	key string
 }
 
+// logFileStat holds stat metadata for a log file.
+type logFileStat struct {
+	Size    string
+	ModTime string
+}
+
+type fetchProcessesMsg struct {
+	processes []config.Process
+	err       error
+}
+
+type fetchLogFileStatMsg struct {
+	stats map[int]logFileStat
+	err   error
+}
+
+// sshStreamBatchMsg and sshStreamDoneMsg are defined in sshstream.go
+
+type startProcessActionViewMsg struct {
+	action  string
+	process string
+}
+
 type probeResultBatchMsg struct {
 	results    []probes.ProbeResult
 	generation int
@@ -229,13 +252,15 @@ const (
 	viewK8sPodList
 	viewK8sPodDetail
 	viewK8sPodLogs
+	viewProcessList
+	viewLogFileList
+	viewSSHStream
 	viewProbeList
 	viewProbeDetail
 	viewConfig
 )
 
-// resourceCount is the number of items in the resource picker (0-indexed).
-const resourceCount = 13
+// resourceCount removed — replaced by dynamic visibleResourceRows()
 
 // networkSubViewCount is the number of sub-views in the network picker.
 const networkSubViewCount = 4
@@ -323,6 +348,30 @@ type Model struct {
 	k8sLogDetailScroll    int  // scroll offset for log detail view
 	k8sLogDetailWasStreaming bool // resume streaming after closing detail
 	k8sPodLogFromDetail   bool // true when logs opened from pod detail (Esc returns to detail)
+
+	// supervisord processes
+	processes     []config.Process
+	processCursor int
+
+	// log files
+	logFileEntries  []config.LogEntry
+	logFileCursor   int
+	logFileStats    map[int]logFileStat // index → {size, modtime}
+	logFileStatDone bool
+
+	// generic SSH stream view (used by log tail, process actions, etc.)
+	streamLines       []string
+	streamCursor      int
+	streamCancel      context.CancelFunc
+	streamChan        chan string
+	streamStreaming    bool
+	streamTitle       string // display title in breadcrumb
+	streamSourceName  string // clean name for file save (no special chars)
+	streamReturnView  view
+	streamNewestFirst bool // true = newest on top (log tail), false = append (command output)
+	streamAutoDone    bool // true = show "Done" when command finishes
+	streamGeneration  int  // incremented on each start, used to discard stale messages
+	streamLastConfig  *SSHStreamConfig // saved for pause/resume
 
 	// probes fleet
 	probesManager     *probes.Manager
@@ -1072,6 +1121,91 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.probesStreaming = false
 		return m, nil
 
+	case fetchProcessesMsg:
+		dismissLoadingFor(&m, "processes")
+		if msg.err != nil {
+			mm, cmd, handled := m.handleSudoOrFlash(msg.err, m.fetchProcesses())
+			if handled {
+				return mm, cmd
+			}
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+			return m, nil
+		}
+		m.processes = msg.processes
+		return m, nil
+
+	case sshStreamBatchMsg:
+		if msg.generation != m.streamGeneration {
+			return m, nil // stale message from previous stream
+		}
+		if m.streamNewestFirst {
+			wasAtTop := m.streamCursor == 0
+			m.streamLines = append(msg.lines, m.streamLines...)
+			if len(m.streamLines) > 1000 {
+				m.streamLines = m.streamLines[:1000]
+			}
+			if wasAtTop {
+				m.streamCursor = 0
+			} else {
+				m.streamCursor += len(msg.lines)
+			}
+		} else {
+			m.streamLines = append(m.streamLines, msg.lines...)
+			if len(m.streamLines) > 1000 {
+				m.streamLines = m.streamLines[len(m.streamLines)-1000:]
+			}
+		}
+		if m.streamChan != nil {
+			return m, m.listenForStreamLines()
+		}
+		return m, nil
+
+	case sshStreamDoneMsg:
+		if msg.generation != m.streamGeneration {
+			return m, nil // stale done from previous stream
+		}
+		m.streamChan = nil
+		m.streamStreaming = false
+		if m.streamAutoDone {
+			m.streamLines = append(m.streamLines, "", ansiColor("✓ Done — press Esc to return", "32"))
+		}
+		return m, nil
+
+	case fetchLogFileStatMsg:
+		dismissLoadingFor(&m, "logfiles")
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Failed: %v", msg.err)
+			m.flashError = true
+			return m, nil
+		}
+		m.logFileStats = msg.stats
+		m.logFileStatDone = true
+		return m, nil
+
+	case startProcessActionViewMsg:
+		// Validate action against allowlist
+		action := msg.action
+		switch action {
+		case "start", "stop", "restart":
+			// valid
+		default:
+			m.flash = fmt.Sprintf("Invalid action: %s", action)
+			m.flashError = true
+			return m, nil
+		}
+		cmd := fmt.Sprintf("sudo supervisorctl %s '%s'; echo ''; echo '--- Current Status ---'; sudo supervisorctl status",
+			action, shellQuote(msg.process))
+		return m, m.startSSHStream(SSHStreamConfig{
+			Command:     cmd,
+			Title:       "Processes › " + msg.action + " " + msg.process,
+			SourceName:  msg.action + "-" + msg.process,
+			ReturnView:  viewProcessList,
+			HostIdx:     m.selectedHost,
+			NewestFirst: false,
+			AutoDone:    true,
+		})
+
 	case fetchAzureAKSMsg:
 		dismissLoadingFor(&m, "aks")
 		if msg.err != nil {
@@ -1655,6 +1789,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchAccounts())
 		case viewNetworkPicker:
 			return m, tea.Batch(tea.EnterAltScreen, m.fetchNetworkInfo())
+		case viewProcessList:
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchProcesses())
+		case viewLogFileList:
+			return m, tea.Batch(tea.EnterAltScreen, m.fetchLogFileStats())
+		case viewSSHStream:
+			return m, tea.EnterAltScreen
 		}
 		return m, tea.EnterAltScreen
 
@@ -1772,6 +1912,12 @@ func (m Model) renderCurrentView() string {
 		return m.renderK8sPodDetail()
 	case viewK8sPodLogs:
 		return m.renderK8sPodLogs()
+	case viewProcessList:
+		return m.renderProcessList()
+	case viewLogFileList:
+		return m.renderLogFileList()
+	case viewSSHStream:
+		return m.renderSSHStream()
 	case viewProbeList:
 		return m.renderProbeList()
 	case viewProbeDetail:
