@@ -716,6 +716,7 @@ func (m *Model) applyProbeInfo(idx int, info ssh.ProbeInfo) {
 	m.hosts[idx].InterfacesUp = info.InterfacesUp
 	m.hosts[idx].InterfacesTotal = info.InterfacesTotal
 	m.hosts[idx].ListeningPorts = info.ListeningPorts
+	m.hosts[idx].UpdateCount = info.UpdateCount
 }
 
 // startProbe launches parallel SSH connections and probes for all hosts.

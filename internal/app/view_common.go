@@ -28,6 +28,11 @@ func (m Model) renderHeader(breadcrumb string, current, total int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// hintWithHelp appends the "? Help" hint to any hint bar.
+func hintWithHelp(hints [][]string) [][]string {
+	return append(hints, []string{"?", "Help"})
+}
+
 func (m Model) renderHintBar(hints [][]string) string {
 	var parts []string
 	for _, h := range hints {
@@ -76,9 +81,7 @@ func (m Model) renderActivityLog(iw int) string {
 	s += borderedRow(fmt.Sprintf("  ── Recent Activity (Resource Group, last %dh) ──", hours), iw, colHeaderStyle) + "\n"
 	s += borderedRow("", iw, normalRowStyle) + "\n"
 
-	if m.azureActivityLog == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(m.azureActivityLog) == 0 {
+	if len(m.azureActivityLog) == 0 {
 		s += borderedRow("  No recent activity.", iw, normalRowStyle) + "\n"
 	} else {
 		s += m.renderActivityLogTable(iw, m.azureActivityLog, m.azureActivityCursor)

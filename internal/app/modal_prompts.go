@@ -37,6 +37,11 @@ type transitionConfirmedMsg struct {
 // confirmCancelledMsg is sent when any confirm modal is cancelled.
 type confirmCancelledMsg struct{}
 
+// isPasswordModal returns true if the modal is an SSH password prompt.
+func isPasswordModal(m *ModalOverlay) bool {
+	return m != nil && m.title == "SSH Password"
+}
+
 // --- Modal constructors ---
 
 // NewPasswordModal creates a 1-step masked input modal for SSH password.

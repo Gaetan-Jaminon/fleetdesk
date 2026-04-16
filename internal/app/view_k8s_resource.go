@@ -67,13 +67,13 @@ func (m Model) renderK8sResourcePicker() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Select"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
-	})
+	}))
 	return s
 }
 

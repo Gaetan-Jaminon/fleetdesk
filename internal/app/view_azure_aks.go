@@ -69,9 +69,7 @@ func (m Model) renderAzureAKSList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.azureAKSCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if m.azureAKSClusters == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {
@@ -228,7 +226,7 @@ func (m Model) renderAzureAKSList() string {
 	} else {
 		maxSortCol := 8 + len(displayTags)
 		sortLabel := fmt.Sprintf("1-%d", maxSortCol)
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
 			{"s", "Start"},
@@ -239,7 +237,7 @@ func (m Model) renderAzureAKSList() string {
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }
@@ -378,11 +376,11 @@ func (m Model) renderAzureAKSDetail() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"
 
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Scroll"},
 		{"a", "Activity Log"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
-	})
+	}))
 	return s
 }

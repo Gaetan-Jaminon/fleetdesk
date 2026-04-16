@@ -41,9 +41,7 @@ func (m Model) renderNetworkRoutes() string {
 	s += borderedRow(dnsLine, iw, lipgloss.NewStyle().Foreground(colorCyan)) + "\n"
 	s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
-	if m.routes == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		s += borderedRow("  No routes found.", iw, normalRowStyle) + "\n"
 	} else {
 		// compute column widths
@@ -118,12 +116,12 @@ func (m Model) renderNetworkRoutes() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"\u2191\u2193", "Navigate"},
 		{"1-4", "Sort"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
-	})
+	}))
 	return s
 }

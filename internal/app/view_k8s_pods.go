@@ -43,9 +43,7 @@ func (m Model) renderK8sPodList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sPodCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if m.k8sPodList == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(filtered) == 0 {
+	if len(filtered) == 0 {
 		if m.filterText != "" {
 			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
 		} else {
@@ -140,7 +138,7 @@ func (m Model) renderK8sPodList() string {
 	if m.filterActive {
 		s += hintBarStyle.Width(m.width).Render(fmt.Sprintf("  /%s\u2588", m.filterText))
 	} else {
-		s += m.renderHintBar([][]string{
+		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Detail"},
 			{"l", "Logs"},
@@ -150,7 +148,7 @@ func (m Model) renderK8sPodList() string {
 			{"r", "Refresh"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
-		})
+		}))
 	}
 	return s
 }
@@ -464,12 +462,12 @@ func (m Model) renderK8sPodDetail() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"\u2191\u2193", "Scroll"},
 		{"g", "Top"},
 		{"l", "Logs"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
-	})
+	}))
 	return s
 }

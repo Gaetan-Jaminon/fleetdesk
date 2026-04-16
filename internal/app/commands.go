@@ -462,12 +462,24 @@ func (m Model) fetchUpdates() func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "updates", "host_idx", idx)
 		// get pending updates and security updates in one command
-		cmd := `dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
-		out, err := sm.RunCommand(idx, cmd)
+		cmd := `sudo dnf --setopt=skip_if_unavailable=1 check-update 2>&1; echo '===SECURITY==='; sudo dnf --setopt=skip_if_unavailable=1 updateinfo list --security --quiet 2>/dev/null`
+		out, err := sm.RunSudoCommand(idx, cmd)
+		// Only check for sudo prompt when no password is cached.
+		// When cached, rewriteSudoCmd pipes the password via -S, and
+		// the 2>&1 in the dnf command captures "[sudo] password for"
+		// into stdout — IsSudoOutput would false-positive.
+		if sm.GetSudoPassword(idx) == "" && ssh.IsSudoOutput(out) {
+			return fetchUpdatesMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+		}
 		// dnf check-update returns exit 100 when updates are available
-		if err != nil && !strings.Contains(out, "===SECURITY===") {
-			logger.Error("fetch failed", "view", "updates", "host_idx", idx, "err", err)
-			return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
+		if err != nil {
+			if ssh.IsSudoOutput(out) {
+				return fetchUpdatesMsg{err: fmt.Errorf("%w", ssh.ErrSudoRequired)}
+			}
+			if !strings.Contains(out, "===SECURITY===") {
+				logger.Error("fetch failed", "view", "updates", "host_idx", idx, "err", err)
+				return fetchUpdatesMsg{err: fmt.Errorf("updates: %w", err)}
+			}
 		}
 
 		parts := strings.SplitN(out, "===SECURITY===", 2)
@@ -512,12 +524,21 @@ func (m Model) fetchUpdates() func() tea.Msg {
 			}
 		}
 
+		inObsoleting := false
 		for _, line := range strings.Split(strings.TrimSpace(updatesSection), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "Last metadata") || strings.HasPrefix(line, "Obsoleting") || strings.HasPrefix(line, "Is this ok") || strings.HasPrefix(line, "Not root") || strings.HasPrefix(line, "Microsoft") || strings.HasPrefix(line, "Error:") || strings.HasPrefix(line, "Warning:") || strings.HasPrefix(line, "Importing") || strings.HasPrefix(line, "Userid") || strings.HasPrefix(line, "Fingerprint") || strings.HasPrefix(line, "From") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" || strings.HasPrefix(trimmed, "Last metadata") || strings.HasPrefix(trimmed, "Is this ok") || strings.HasPrefix(trimmed, "Not root") || strings.HasPrefix(trimmed, "Microsoft") || strings.HasPrefix(trimmed, "Error:") || strings.HasPrefix(trimmed, "Warning:") || strings.HasPrefix(trimmed, "Importing") || strings.HasPrefix(trimmed, "Userid") || strings.HasPrefix(trimmed, "Fingerprint") || strings.HasPrefix(trimmed, "From") {
 				continue
 			}
-			fields := strings.Fields(line)
+			// Skip entire Obsoleting Packages section — duplicates of updates listed above
+			if strings.HasPrefix(trimmed, "Obsoleting") {
+				inObsoleting = true
+				continue
+			}
+			if inObsoleting {
+				continue
+			}
+			fields := strings.Fields(trimmed)
 			// package lines have format: name.arch  version  repo
 			if len(fields) < 2 || !strings.Contains(fields[0], ".") {
 				continue

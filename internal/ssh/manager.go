@@ -131,7 +131,25 @@ func (sm *Manager) RunSudoCommand(idx int, cmd string) (string, error) {
 	if pw != "" {
 		cmd = rewriteSudoCmd(cmd, pw)
 	}
-	return sm.RunCommand(idx, cmd)
+	out, err := sm.RunCommand(idx, cmd)
+	if pw != "" {
+		out = stripSudoPrompt(out)
+	}
+	return out, err
+}
+
+// stripSudoPrompt removes "[sudo] password for ..." lines from output.
+// These leak into stdout when commands use 2>&1 with sudo -S.
+func stripSudoPrompt(s string) string {
+	var clean []string
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[sudo] password for") {
+			continue
+		}
+		clean = append(clean, line)
+	}
+	return strings.Join(clean, "\n")
 }
 
 // rewriteSudoCmd rewrites every "sudo " occurrence in cmd to pipe the password
@@ -305,7 +323,8 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 		`(getent passwd | awk -F: '$3 >= 1000 && $3 != 65534 {print $1}'; for d in /home/*/; do u=$(basename "$d"); getent passwd "$u" >/dev/null 2>&1 && echo "$u"; done) | sort -u | wc -l && ` +
 		`(ip -br link | grep -c UP || echo 0) && ` +
 		`ip -br link | wc -l && ` +
-		`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0)`
+		`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0) && ` +
+		`(dnf check-update --quiet 2>/dev/null | grep -c '^\S' || echo 0)`
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {

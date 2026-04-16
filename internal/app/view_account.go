@@ -72,9 +72,7 @@ func (m Model) renderAccountList() string {
 		s += borderedRow(fmt.Sprintf("  / %s\u2588", m.filterText), iw, normalRowStyle) + "\n"
 	}
 
-	if accts == nil {
-		s += borderedRow("  Loading...", iw, normalRowStyle) + "\n"
-	} else if len(accts) == 0 {
+	if len(accts) == 0 {
 		s += borderedRow("  No accounts found.", iw, normalRowStyle) + "\n"
 	} else {
 		// compute dynamic column widths
@@ -162,13 +160,13 @@ func (m Model) renderAccountList() string {
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"\u2191\u2193", "Navigate"},
 		{"1-4", "Sort"},
 {"Enter", "Detail"},
 		{"/", "Search"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},
-	})
+	}))
 	return s
 }

@@ -69,6 +69,8 @@ type Host struct {
 	InterfacesUp    int
 	InterfacesTotal int
 	ListeningPorts  int
+	UpdateCount     int
+	SudoReady       bool
 	Error           string
 }
 

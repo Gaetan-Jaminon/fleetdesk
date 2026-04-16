@@ -44,7 +44,7 @@ func (m Model) renderHostList() string {
 			}
 		}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s", nameCol, "HOST", osCol, "OS", upCol, "UP SINCE")
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %s", nameCol, "HOST", osCol, "OS", upCol, "UP SINCE", "UPD")
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 
@@ -95,8 +95,12 @@ func (m Model) renderHostList() string {
 				}
 				line = fmt.Sprintf("%s  %-*s  unreachable (%s)", cur, nameCol, h.Entry.Name, reason)
 			default:
-				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s",
-					cur, nameCol, h.Entry.Name, osCol, h.OS, upCol, h.UpSince)
+				updStr := fmt.Sprintf("%d", h.UpdateCount)
+				if h.UpdateCount == 0 {
+					updStr = "—"
+				}
+				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s  %s",
+					cur, nameCol, h.Entry.Name, osCol, h.OS, upCol, h.UpSince, updStr)
 			}
 
 			var style lipgloss.Style
@@ -114,7 +118,7 @@ func (m Model) renderHostList() string {
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 
-	s += m.renderHintBar([][]string{
+	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Drill In"},
 		{"x", "Shell"},
@@ -124,6 +128,6 @@ func (m Model) renderHostList() string {
 		{"r", "Refresh"},
 		{"Esc", "Back"},
 		{"q", "Quit"},
-	})
+	}))
 	return s
 }

@@ -159,6 +159,13 @@ type sudoTestMsg struct {
 	Password string
 	Success  bool
 	Retry    tea.Cmd
+	HostIdx  int
+}
+
+// sudoProbeMsg is sent after testing sudo availability on a host during probe.
+type sudoProbeMsg struct {
+	hostIdx int
+	needsPw bool // true if sudo requires a password
 }
 
 func (m Model) tickCmd() tea.Cmd {
@@ -421,6 +428,7 @@ type Model struct {
 
 	// app info
 	version string
+	commit  string
 
 	// config
 	appCfg config.AppConfig
@@ -431,7 +439,7 @@ type Model struct {
 	wizardExitError error
 }
 
-func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logger, version string) Model {
+func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logger, version, commit string) Model {
 	m := Model{
 		view:    viewFleetPicker,
 		fleets:  fleets,
@@ -441,6 +449,7 @@ func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logge
 		k8s:     k8s.NewManager(logger),
 		logger:  logger,
 		version: version,
+		commit:  commit,
 	}
 	if appCfg.FleetDir == "" {
 		m.modal = NewFirstRunWizard()
@@ -477,9 +486,11 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 		user = m.hosts[idx].Entry.User
 		host = m.hosts[idx].Entry.Name
 	}
+	m.logger.Debug("sudo required", "host_idx", idx, "host", host, "user", user)
 
 	// Wrong cached password: it was tried and failed — clear and re-prompt.
 	if m.ssh.GetSudoPassword(idx) != "" {
+		m.logger.Debug("sudo cached password failed, re-prompting", "host_idx", idx)
 		m.ssh.SetSudoPassword(idx, "")
 		m.modal = NewSudoModal(user, host, idx, retry)
 		return m, nil, true
@@ -488,6 +499,7 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 	// Try the SSH connection password silently if available.
 	sshPw := m.ssh.GetCachedPassword()
 	if sshPw != "" {
+		m.logger.Debug("sudo trying SSH password silently", "host_idx", idx)
 		sm := m.ssh
 		r := retry
 		testCmd := func() tea.Msg {
@@ -495,14 +507,27 @@ func (m Model) handleSudoOrFlash(err error, retry tea.Cmd) (Model, tea.Cmd, bool
 			out, runErr := sm.RunSudoCommand(idx, "sudo true")
 			sm.SetSudoPassword(idx, "") // always clear — model Update sets it on success
 			success := runErr == nil && !ssh.IsSudoOutput(out)
-			return sudoTestMsg{Password: sshPw, Success: success, Retry: r}
+			return sudoTestMsg{Password: sshPw, Success: success, Retry: r, HostIdx: idx}
 		}
 		return m, testCmd, true
 	}
 
 	// No SSH password cached (key auth): show prompt directly.
+	m.logger.Debug("sudo no SSH password cached, showing prompt", "host_idx", idx)
 	m.modal = NewSudoModal(user, host, idx, retry)
 	return m, nil, true
+}
+
+// testSudo fires a goroutine to test if sudo works on the given host.
+func (m Model) testSudo(idx int) tea.Cmd {
+	sm := m.ssh
+	logger := m.logger
+	return func() tea.Msg {
+		out, err := sm.RunCommand(idx, "sudo -n true 2>&1")
+		needsPw := err != nil || ssh.IsSudoOutput(out)
+		logger.Debug("sudo test", "host_idx", idx, "needs_password", needsPw)
+		return sudoProbeMsg{hostIdx: idx, needsPw: needsPw}
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -535,6 +560,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modal = newCustomEditorWizard(msg.fleetDir)
 		return m, nil
 
+	case aboutFieldMsg:
+		if m.modal != nil && !m.modal.Done() && m.modal.current < len(m.modal.steps) {
+			if ac, ok := m.modal.steps[m.modal.current].Content.(*AboutContent); ok {
+				ac.UpdateField(msg.field, msg.value)
+			}
+		}
+		return m, nil
+
 	case ssh.HostProbeResult:
 		if msg.Index < len(m.hosts) {
 			if msg.Err != nil {
@@ -543,8 +576,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.hosts[msg.Index].Status = config.HostUnreachable
 					m.hosts[msg.Index].Error = "password required"
 					m.hosts[msg.Index].NeedsPassword = true
-					// show prompt if not already showing one
-					if m.modal == nil || m.modal.Done() {
+					// show prompt — SSH password takes priority over other modals
+					// (sudo, loading, etc.) but don't replace another password modal
+					if m.modal == nil || m.modal.Done() || !isPasswordModal(m.modal) {
 						h := m.hosts[msg.Index]
 						m.modal = NewPasswordModal(h.Entry.User, h.Entry.Name, msg.Index)
 					}
@@ -556,6 +590,115 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applyProbeInfo(msg.Index, msg.Info)
 			}
 		}
+		return m, nil
+
+	case sudoProbeMsg:
+		if !msg.needsPw || m.ssh.GetSudoPassword(msg.hostIdx) != "" {
+			// Sudo ready — navigate to resource picker
+			m.logger.Debug("sudo ready, navigating", "host_idx", msg.hostIdx)
+			if msg.hostIdx < len(m.hosts) {
+				m.hosts[msg.hostIdx].SudoReady = true
+			}
+			m.selectedHost = msg.hostIdx
+			m.resourceCursor = 0
+			m.services = nil
+			m.containers = nil
+			m.updates = nil
+			m.cronJobs = nil
+			m.logLevels = nil
+			m.errorLogs = nil
+			m.disks = nil
+			m.subscriptions = nil
+			m.accounts = nil
+			m.interfaces = nil
+			m.ports = nil
+			m.routes = nil
+			m.firewallRules = nil
+			m.failedLogins = nil
+			m.sudoEntries = nil
+			m.selinuxDenials = nil
+			m.auditEvents = nil
+			m.view = viewResourcePicker
+			return m, tea.Batch(m.fetchServices(), m.fetchContainers(), m.fetchUpdates())
+		}
+
+		// Try SSH password silently first
+		idx := msg.hostIdx
+		sshPw := m.ssh.GetCachedPassword()
+		if sshPw != "" {
+			m.logger.Debug("sudo trying SSH password silently", "host_idx", idx)
+			sm := m.ssh
+			return m, func() tea.Msg {
+				sm.SetSudoPassword(idx, sshPw)
+				out, runErr := sm.RunSudoCommand(idx, "sudo true")
+				if runErr == nil && !ssh.IsSudoOutput(out) {
+					// Leave password cached — sudoWizardResultMsg handler will propagate
+					return sudoWizardResultMsg{hostIdx: idx, success: true}
+				}
+				sm.SetSudoPassword(idx, "") // wrong — clear
+				return sudoWizardResultMsg{hostIdx: idx, success: false}
+			}
+		}
+
+		// No SSH password — show sudo wizard
+		user := ""
+		host := ""
+		if idx < len(m.hosts) {
+			user = m.hosts[idx].Entry.User
+			host = m.hosts[idx].Entry.Name
+		}
+		m.logger.Debug("sudo wizard opening", "host_idx", idx)
+		m.modal = NewSudoWizard(user, host, idx, m.ssh)
+		return m, nil
+
+	case sudoWizardTestMsg:
+		// Step 2: show loading modal while testing sudo
+		showLoading(&m, "sudotest", "Testing sudo...")
+		idx := msg.hostIdx
+		pw := msg.password
+		sm := m.ssh
+		m.logger.Debug("sudo wizard testing password", "host_idx", idx)
+		return m, func() tea.Msg {
+			sm.SetSudoPassword(idx, pw)
+			out, err := sm.RunSudoCommand(idx, "sudo true")
+			sm.SetSudoPassword(idx, "")
+			success := err == nil && !ssh.IsSudoOutput(out)
+			return sudoWizardResultMsg{hostIdx: idx, password: pw, success: success}
+		}
+
+	case sudoWizardResultMsg:
+		if msg.success {
+			m.modal = nil
+			m.logger.Debug("sudo wizard success", "host_idx", msg.hostIdx)
+			// Cache password for all hosts
+			for i := range m.hosts {
+				m.ssh.SetSudoPassword(i, msg.password)
+				if m.hosts[i].Status == config.HostOnline {
+					m.hosts[i].SudoReady = true
+				}
+			}
+			// Navigate
+			return m, func() tea.Msg {
+				return sudoProbeMsg{hostIdx: msg.hostIdx, needsPw: false}
+			}
+		}
+		if msg.password != "" {
+			// Password was tested and failed — re-show wizard
+			m.logger.Debug("sudo wizard failed, re-prompting", "host_idx", msg.hostIdx)
+			idx := msg.hostIdx
+			user := ""
+			host := ""
+			if idx < len(m.hosts) {
+				user = m.hosts[idx].Entry.User
+				host = m.hosts[idx].Entry.Name
+			}
+			m.flash = "Wrong sudo password"
+			m.flashError = true
+			m.modal = NewSudoWizard(user, host, idx, m.ssh)
+			return m, nil
+		}
+		// Cancelled
+		m.modal = nil
 		return m, nil
 
 	case azure.SubscriptionProbeResult:
@@ -570,12 +713,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case azureResourceCountsMsg:
+		dismissLoadingFor(&m, "resourcecounts")
 		m.azureResourceCounts = msg.counts
 		m.azureResourceErr = msg.err
 		m.azureCountsLoaded = true
 		return m, nil
 
 	case fetchAzureVMsMsg:
+		dismissLoadingFor(&m, "vms")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -709,6 +854,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sContextsMsg:
+		dismissLoadingFor(&m, "contexts")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -727,12 +873,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case k8sResourceCountsMsg:
+		dismissLoadingFor(&m, "resourcecounts")
 		m.k8sResourceCounts = msg.counts
 		m.k8sResourceErrors = msg.errs
 		m.k8sCountsLoaded = true
 		return m, nil
 
 	case fetchK8sNodesMsg:
+		dismissLoadingFor(&m, "nodes")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -766,6 +914,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sNamespacesMsg:
+		dismissLoadingFor(&m, "namespaces")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -790,6 +939,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sWorkloadsMsg:
+		dismissLoadingFor(&m, "workloads")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -800,6 +950,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sPodsMsg:
+		dismissLoadingFor(&m, "pods")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -825,6 +976,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchK8sPodLogsMsg:
+		dismissLoadingFor(&m, "podlogs")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -871,6 +1023,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchAzureAKSMsg:
+		dismissLoadingFor(&m, "aks")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -953,19 +1106,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case sudoTestMsg:
+		m.logger.Debug("sudo test result", "success", msg.Success, "host_idx", msg.HostIdx)
 		if msg.Success {
-			m.ssh.SetSudoPassword(m.selectedHost, msg.Password)
-			return m, msg.Retry
+			// Cache sudo password and mark all online hosts as sudo-ready
+			for i := range m.hosts {
+				m.ssh.SetSudoPassword(i, msg.Password)
+				if m.hosts[i].Status == config.HostOnline {
+					m.hosts[i].SudoReady = true
+				}
+			}
+			if msg.Retry != nil {
+				return m, msg.Retry
+			}
+			// From probe flow — trigger navigation
+			idx := msg.HostIdx
+			return m, func() tea.Msg { return sudoProbeMsg{hostIdx: idx, needsPw: false} }
 		}
 		// SSH password didn't work as sudo password — show prompt.
-		idx := m.selectedHost
+		idx := msg.HostIdx
 		user := ""
 		host := ""
 		if idx < len(m.hosts) {
 			user = m.hosts[idx].Entry.User
 			host = m.hosts[idx].Entry.Name
 		}
-		m.modal = NewSudoModal(user, host, idx, msg.Retry)
+		// Retry: re-test sudo after password entry, which will trigger navigation
+		retryNavigate := func() tea.Msg { return sudoProbeMsg{hostIdx: idx, needsPw: false} }
+		m.modal = NewSudoModal(user, host, idx, retryNavigate)
 		return m, nil
 
 	case passwordEnteredMsg:
@@ -996,8 +1163,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sudoEnteredMsg:
 		m.modal = nil
-		m.ssh.SetSudoPassword(msg.hostIdx, msg.password)
-		return m, msg.retry
+		// Test the password before caching
+		m.logger.Debug("sudo password entered, testing", "host_idx", msg.hostIdx)
+		idx := msg.hostIdx
+		pw := msg.password
+		retry := msg.retry
+		sm := m.ssh
+		sm.SetSudoPassword(idx, pw)
+		return m, func() tea.Msg {
+			out, runErr := sm.RunSudoCommand(idx, "sudo true")
+			sm.SetSudoPassword(idx, "") // clear — sudoTestMsg sets it on success
+			success := runErr == nil && !ssh.IsSudoOutput(out)
+			return sudoTestMsg{Password: pw, Success: success, Retry: retry, HostIdx: idx}
+		}
 
 	case sudoCancelledMsg:
 		m.modal = nil
@@ -1042,6 +1220,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchServicesMsg:
+		dismissLoadingFor(&m, "services")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1070,6 +1249,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchContainersMsg:
+		dismissLoadingFor(&m, "containers")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1090,6 +1270,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchCronMsg:
+		dismissLoadingFor(&m, "cron")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1099,6 +1280,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchLogLevelsMsg:
+		dismissLoadingFor(&m, "loglevels")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchLogLevels()); ok {
 				return m2, cmd
@@ -1111,6 +1293,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchErrorLogsMsg:
+		dismissLoadingFor(&m, "errorlogs")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchErrorLogs()); ok {
 				return m2, cmd
@@ -1123,7 +1306,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchUpdatesMsg:
+		dismissLoadingFor(&m, "updates")
 		if msg.err != nil {
+			m.logger.Debug("fetchUpdates error", "err", msg.err, "view", m.view, "host_idx", m.selectedHost)
+			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchUpdates()); ok {
+				return m2, cmd
+			}
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
 		} else {
@@ -1147,6 +1335,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchSubscriptionMsg:
+		dismissLoadingFor(&m, "subscription")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchSubscription()); ok {
 				return m2, cmd
@@ -1176,6 +1365,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchAccountsMsg:
+		dismissLoadingFor(&m, "accounts")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1189,6 +1379,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchPortsMsg:
+		dismissLoadingFor(&m, "ports")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1202,6 +1393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchRoutesMsg:
+		dismissLoadingFor(&m, "routes")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1217,6 +1409,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchInterfacesMsg:
+		dismissLoadingFor(&m, "interfaces")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
@@ -1230,6 +1423,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchNetworkInfoMsg:
+		dismissLoadingFor(&m, "network")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchNetworkInfo()); ok {
 				return m2, cmd
@@ -1244,6 +1438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchFirewallMsg:
+		dismissLoadingFor(&m, "firewall")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchFirewall()); ok {
 				return m2, cmd
@@ -1257,6 +1452,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchFailedLoginsMsg:
+		dismissLoadingFor(&m, "failedlogins")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchFailedLogins()); ok {
 				return m2, cmd
@@ -1273,6 +1469,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchSudoActivityMsg:
+		dismissLoadingFor(&m, "sudo")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchSudoActivity()); ok {
 				return m2, cmd
@@ -1289,6 +1486,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchSELinuxMsg:
+		dismissLoadingFor(&m, "selinux")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchSELinuxDenials()); ok {
 				return m2, cmd
@@ -1305,6 +1503,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchAuditSummaryMsg:
+		dismissLoadingFor(&m, "audit")
 		if msg.err != nil {
 			if m2, cmd, ok := m.handleSudoOrFlash(msg.err, m.fetchAuditSummary()); ok {
 				return m2, cmd
@@ -1321,6 +1520,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case fetchDiskMsg:
+		dismissLoadingFor(&m, "disk")
 		if msg.err != nil {
 			m.flash = fmt.Sprintf("Failed: %v", msg.err)
 			m.flashError = true
