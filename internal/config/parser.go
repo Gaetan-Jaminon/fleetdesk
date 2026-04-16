@@ -77,11 +77,12 @@ type probeGroupFile struct {
 }
 
 type probeEntryFile struct {
-	Name         string `yaml:"name"`
-	URL          string `yaml:"url"`
-	Protocol     string `yaml:"protocol"`
-	ExpectedCode int    `yaml:"expected_code"`
-	Interval     string `yaml:"interval"`
+	Name               string `yaml:"name"`
+	URL                string `yaml:"url"`
+	Protocol           string `yaml:"protocol"`
+	ExpectedCode       int    `yaml:"expected_code"`
+	Interval           string `yaml:"interval"`
+	InsecureSkipVerify *bool  `yaml:"insecure_skip_verify"`
 }
 
 // ParseFleetFile reads and parses a single fleet YAML file.
@@ -376,11 +377,12 @@ func parseProbeEntries(raw []probeEntryFile) ([]ProbeEntry, error) {
 		}
 
 		entries = append(entries, ProbeEntry{
-			Name:         r.Name,
-			URL:          r.URL,
-			Protocol:     protocol,
-			ExpectedCode: expectedCode,
-			Interval:     interval,
+			Name:               r.Name,
+			URL:                r.URL,
+			Protocol:           protocol,
+			ExpectedCode:       expectedCode,
+			Interval:           interval,
+			InsecureSkipVerify: r.InsecureSkipVerify,
 		})
 	}
 	return entries, nil

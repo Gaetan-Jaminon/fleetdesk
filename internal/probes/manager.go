@@ -74,10 +74,16 @@ func (m *Manager) probeLoop(ctx context.Context, idx int, entry config.ProbeEntr
 		}
 	}
 
-	client := buildHTTPClient(timeout, defaults.ProxyURL, defaults.InsecureSkipVerify)
+	// Resolve per-probe insecure_skip_verify: probe override → fleet default
+	skipVerify := defaults.InsecureSkipVerify
+	if entry.InsecureSkipVerify != nil {
+		skipVerify = *entry.InsecureSkipVerify
+	}
+
+	client := buildHTTPClient(timeout, defaults.ProxyURL, skipVerify)
 
 	// Probe immediately on start.
-	result := runProbe(ctx, client, entry, idx, defaults.ProxyURL, defaults.InsecureSkipVerify)
+	result := runProbe(ctx, client, entry, idx, defaults.ProxyURL, skipVerify)
 	m.logger.Debug("probe complete", "name", entry.Name, "status", result.Status.String(), "latency", result.Latency, "code", result.Code)
 	select {
 	case ch <- result:
@@ -91,7 +97,7 @@ func (m *Manager) probeLoop(ctx context.Context, idx int, entry config.ProbeEntr
 	for {
 		select {
 		case <-ticker.C:
-			result := runProbe(ctx, client, entry, idx, defaults.ProxyURL, defaults.InsecureSkipVerify)
+			result := runProbe(ctx, client, entry, idx, defaults.ProxyURL, skipVerify)
 			m.logger.Debug("probe complete", "name", entry.Name, "status", result.Status.String(), "latency", result.Latency, "code", result.Code)
 			select {
 			case ch <- result:
@@ -294,14 +300,10 @@ func readBodyPreview(resp *http.Response) string {
 		return "(binary — skipped)"
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyPreview+1))
+	// Read up to 64KB for JSON pretty-printing, then truncate the formatted output.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {
 		return fmt.Sprintf("(read error: %v)", err)
-	}
-
-	truncated := len(body) > maxBodyPreview
-	if truncated {
-		body = body[:maxBodyPreview]
 	}
 
 	s := string(body)
@@ -313,8 +315,8 @@ func readBodyPreview(resp *http.Response) string {
 		}
 	}
 
-	if truncated {
-		s += "\n... (truncated)"
+	if len(s) > maxBodyPreview {
+		s = s[:maxBodyPreview] + "\n... (truncated)"
 	}
 
 	return sanitizeBodyPreview(s)

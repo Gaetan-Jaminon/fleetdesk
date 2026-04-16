@@ -37,8 +37,12 @@ func (m Model) renderProbeDetail() string {
 
 	statusStr, statusColor := probeStatusDisplay(r.Status)
 
+	skipVerify := m.fleets[m.selectedFleet].ProbeFleet.Defaults.InsecureSkipVerify
+	if p.Entry.InsecureSkipVerify != nil {
+		skipVerify = *p.Entry.InsecureSkipVerify
+	}
 	tlsVerify := "Yes"
-	if m.fleets[m.selectedFleet].ProbeFleet.Defaults.InsecureSkipVerify {
+	if skipVerify {
 		tlsVerify = ansiColor("Skipped", "33")
 	}
 

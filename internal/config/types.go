@@ -270,11 +270,12 @@ type ProbeGroup struct {
 
 // ProbeEntry represents a single probe configuration.
 type ProbeEntry struct {
-	Name         string
-	URL          string
-	Protocol     string        // "http" only in v1
-	ExpectedCode int           // default 200
-	Interval     time.Duration // 0 = use fleet default
+	Name               string
+	URL                string
+	Protocol           string        // "http" only in v1
+	ExpectedCode       int           // default 200
+	Interval           time.Duration // 0 = use fleet default
+	InsecureSkipVerify *bool         // nil = use fleet default, true/false = per-probe override
 }
 
 // ServiceStatus holds parsed systemctl show output for a service.
