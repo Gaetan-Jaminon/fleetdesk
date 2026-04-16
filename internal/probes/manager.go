@@ -74,7 +74,7 @@ func (m *Manager) probeLoop(ctx context.Context, idx int, entry config.ProbeEntr
 		}
 	}
 
-	client := buildHTTPClient(timeout, defaults.ProxyURL)
+	client := buildHTTPClient(timeout, defaults.ProxyURL, defaults.InsecureSkipVerify)
 
 	// Probe immediately on start.
 	result := runProbe(ctx, client, entry, idx, defaults.ProxyURL)
@@ -104,10 +104,11 @@ func (m *Manager) probeLoop(ctx context.Context, idx int, entry config.ProbeEntr
 	}
 }
 
-func buildHTTPClient(timeout time.Duration, proxyURL string) *http.Client {
+func buildHTTPClient(timeout time.Duration, proxyURL string, insecureSkipVerify bool) *http.Client {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: insecureSkipVerify,
 		},
 	}
 

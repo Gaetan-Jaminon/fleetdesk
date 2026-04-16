@@ -1436,6 +1436,8 @@ func (m *Model) sortProbeItems() {
 			less = m.probeItems[i].Result.Code < m.probeItems[j].Result.Code
 		case 5:
 			less = m.probeItems[i].Result.Latency < m.probeItems[j].Result.Latency
+		case 6:
+			less = m.probeItems[i].Entry.Interval < m.probeItems[j].Entry.Interval
 		default:
 			return false
 		}

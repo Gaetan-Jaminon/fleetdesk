@@ -37,11 +37,17 @@ func (m Model) renderProbeDetail() string {
 
 	statusStr, statusColor := probeStatusDisplay(r.Status)
 
+	tlsVerify := "Yes"
+	if m.fleets[m.selectedFleet].ProbeFleet.Defaults.InsecureSkipVerify {
+		tlsVerify = ansiColor("Skipped", "33")
+	}
+
 	kvSummary := []struct{ k, v string }{
 		{"Name", p.Entry.Name},
 		{"URL", p.Entry.URL},
 		{"Protocol", p.Entry.Protocol},
 		{"Expected Code", fmt.Sprintf("%d", p.Entry.ExpectedCode)},
+		{"TLS Verify", tlsVerify},
 		{"Status", statusColor(statusStr)},
 	}
 	if !r.ProbeTime.IsZero() {
