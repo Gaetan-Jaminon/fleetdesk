@@ -1682,6 +1682,7 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewAzureVMList
+			showLoading(&m, "vms", "Loading VMs...")
 			return m, m.fetchAzureVMs()
 		case 1: // AKS Clusters
 			m.azureAKSClusters = nil
@@ -1691,6 +1692,7 @@ func (m Model) handleAzureResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			m.filterText = ""
 			m.filterActive = false
 			m.view = viewAzureAKSList
+			showLoading(&m, "aks", "Loading AKS clusters...")
 			return m, m.fetchAzureAKSClusters()
 		}
 	case "r":
