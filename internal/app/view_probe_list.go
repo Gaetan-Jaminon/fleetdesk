@@ -145,9 +145,13 @@ func (m Model) renderProbeList() string {
 				urlStr = urlStr[:urlCol-1] + "…"
 			}
 
-			// TLS verify indicator (pre-padded — ANSI codes break %-Ns)
+			// TLS verify indicator — resolve per-probe override
+			skipVerify := m.fleets[m.selectedFleet].ProbeFleet.Defaults.InsecureSkipVerify
+			if p.Entry.InsecureSkipVerify != nil {
+				skipVerify = *p.Entry.InsecureSkipVerify
+			}
 			tlsStr := "✓         "
-			if m.fleets[m.selectedFleet].ProbeFleet.Defaults.InsecureSkipVerify {
+			if skipVerify {
 				tlsStr = ansiColor("Skipped", "33") + "   "
 			}
 
