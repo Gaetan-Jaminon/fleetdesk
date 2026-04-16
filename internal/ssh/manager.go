@@ -283,6 +283,23 @@ func (sm *Manager) ConnectWithPassword(idx int, h config.Host, password string) 
 	return PasswordRetryResult{Index: idx, Info: info}
 }
 
+// RewriteSudoInCmd rewrites sudo commands with the cached password for the given host.
+// If no password is cached, returns the command unchanged.
+func (sm *Manager) RewriteSudoInCmd(idx int, cmd string) string {
+	pw := sm.GetSudoPassword(idx)
+	if pw == "" {
+		return cmd
+	}
+	return rewriteSudoCmd(cmd, pw)
+}
+
+// GetConnection returns the SSH client for the given host index, or nil if not connected.
+func (sm *Manager) GetConnection(idx int) *gossh.Client {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	return sm.conns[idx]
+}
+
 // HasConnection returns true if the manager has an active SSH client for the given host index.
 func (sm *Manager) HasConnection(idx int) bool {
 	sm.mu.Lock()
@@ -324,7 +341,8 @@ func Probe(client *gossh.Client, systemdMode string, errorLogSince string) (Prob
 		`(ip -br link | grep -c UP || echo 0) && ` +
 		`ip -br link | wc -l && ` +
 		`(ss -tlnp 2>/dev/null | tail -n +2 | wc -l || echo 0) && ` +
-		`(dnf check-update --quiet 2>/dev/null | grep -c '^\S' || echo 0)`
+		`(dnf check-update --quiet 2>/dev/null | grep -c '^\S' || echo 0) && ` +
+		`(command -v supervisorctl >/dev/null 2>&1 && echo 1 || echo 0)`
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {

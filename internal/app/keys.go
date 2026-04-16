@@ -244,6 +244,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleK8sPodDetailKeys(msg)
 	case viewK8sPodLogs:
 		return m.handleK8sPodLogKeys(msg)
+	case viewProcessList:
+		return m.handleProcessListKeys(msg)
+	case viewLogFileList:
+		return m.handleLogFileListKeys(msg)
+	case viewSSHStream:
+		return m.handleSSHStreamKeys(msg)
 	case viewProbeList:
 		return m.handleProbeListKeys(msg)
 	case viewProbeDetail:
@@ -463,100 +469,42 @@ func (m Model) handleHostListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleResourcePickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rows := m.visibleResourceRows()
+	maxIdx := len(rows) - 1
+	if m.resourceCursor > maxIdx {
+		m.resourceCursor = maxIdx
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if m.resourceCursor > 0 {
 			m.resourceCursor--
 		}
 	case "down", "j":
-		if m.resourceCursor < resourceCount-1 {
+		if m.resourceCursor < maxIdx {
 			m.resourceCursor++
 		}
 	case "enter":
-		switch m.resourceCursor {
-		case 0: // Services
-			m.serviceCursor = 0
-			m.sortColumn = 0
-			m.view = viewServiceList
-			showLoading(&m, "services", "Loading services...")
-			return m, m.fetchServices()
-		case 1: // Containers
-			m.containerCursor = 0
-			m.sortColumn = 0
-			m.view = viewContainerList
-			showLoading(&m, "containers", "Loading containers...")
-			return m, m.fetchContainers()
-		case 2: // Cron Jobs
-			m.cronCursor = 0
-			m.sortColumn = 0
-			m.view = viewCronList
-			showLoading(&m, "cron", "Loading cron jobs...")
-			return m, m.fetchCronJobs()
-		case 3: // Error Logs -> Log Level Picker
-			m.logLevelCursor = 0
-			m.sortColumn = 0
-			m.view = viewLogLevelPicker
-			showLoading(&m, "loglevels", "Loading log levels...")
-			return m, m.fetchLogLevels()
-		case 4: // Updates
-			m.updateCursor = 0
-			m.sortColumn = 0
-			m.view = viewUpdateList
-			showLoading(&m, "updates", "Loading updates...")
-			return m, m.fetchUpdates()
-		case 5: // Disk
-			m.diskCursor = 0
-			m.sortColumn = 0
-			m.view = viewDiskList
-			showLoading(&m, "disk", "Loading disk info...")
-			return m, m.fetchDisk()
-		case 6: // Subscription
-			m.subscriptionCursor = 0
-			m.sortColumn = 0
-			m.view = viewSubscription
-			showLoading(&m, "subscription", "Loading subscription...")
-			return m, m.fetchSubscription()
-		case 7: // Accounts
-			m.accountCursor = 0
-			m.sortColumn = 0
-			m.view = viewAccountList
-			showLoading(&m, "accounts", "Loading accounts...")
-			return m, m.fetchAccounts()
-		case 8: // Network
-			m.networkCursor = 0
-			m.sortColumn = 0
-			m.view = viewNetworkPicker
-			showLoading(&m, "network", "Loading network info...")
-			return m, m.fetchNetworkInfo()
-		case 9: // Failed Logins
-			m.failedLoginCursor = 0
-			m.filterText = ""
-			m.sortColumn = 0
-			m.view = viewSecurityFailedLogins
-			showLoading(&m, "failedlogins", "Loading failed logins...")
-			return m, m.fetchFailedLogins()
-		case 10: // Sudo Activity
-			m.sudoCursor = 0
-			m.filterText = ""
-			m.sortColumn = 0
-			m.view = viewSecuritySudo
-			showLoading(&m, "sudo", "Loading sudo activity...")
-			return m, m.fetchSudoActivity()
-		case 11: // SELinux Denials
-			m.selinuxCursor = 0
-			m.filterText = ""
-			m.sortColumn = 0
-			m.view = viewSecuritySELinux
-			showLoading(&m, "selinux", "Loading SELinux denials...")
-			return m, m.fetchSELinuxDenials()
-		case 12: // Audit Summary
-			m.auditCursor = 0
-			m.filterText = ""
-			m.sortColumn = 0
-			m.view = viewSecurityAudit
-			showLoading(&m, "audit", "Loading audit summary...")
-			return m, m.fetchAuditSummary()
+		targetView, fetchFn, loadKey := m.resourcePickerEnter()
+		if fetchFn == nil {
+			return m, nil
 		}
+		m.sortColumn = 0
+		m.filterText = ""
+		m.filterActive = false
+		// Reset view-specific cursors
+		switch targetView {
+		case viewProcessList:
+			m.processCursor = 0
+		case viewLogFileList:
+			m.logFileCursor = 0
+			m.logFileEntries = m.hosts[m.selectedHost].Entry.Logs
+			m.logFileStats = nil
+			m.logFileStatDone = false
+		}
+		m.view = targetView
+		showLoading(&m, loadKey, fmt.Sprintf("Loading %s...", loadKey))
+		return m, fetchFn()
 	case "r":
 		m.services = nil
 		m.containers = nil
@@ -2689,6 +2637,226 @@ func (m Model) handleProbeListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sortProbeItems()
 	case "q":
 		m.stopProbing()
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleProcessListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredProcesses()
+
+	if m.filterActive {
+		switch msg.String() {
+		case "enter":
+			m.filterActive = false
+			m.processCursor = 0
+		case "esc":
+			m.filterActive = false
+			m.filterText = ""
+			m.processCursor = 0
+		case "backspace":
+			if len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				m.processCursor = 0
+			}
+		default:
+			if len(msg.String()) == 1 {
+				m.filterText += msg.String()
+				m.processCursor = 0
+			}
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "up", "k":
+		if m.processCursor > 0 {
+			m.processCursor--
+		}
+	case "down", "j":
+		if m.processCursor < len(filtered)-1 {
+			m.processCursor++
+		}
+	case "s":
+		if len(filtered) > 0 {
+			p := filtered[m.processCursor]
+			return m.confirmProcessAction(p.Name, "start")
+		}
+	case "o":
+		if len(filtered) > 0 {
+			p := filtered[m.processCursor]
+			return m.confirmProcessAction(p.Name, "stop")
+		}
+	case "t":
+		if len(filtered) > 0 {
+			p := filtered[m.processCursor]
+			return m.confirmProcessAction(p.Name, "restart")
+		}
+	case "l":
+		if len(filtered) > 0 {
+			p := filtered[m.processCursor]
+			basename := p.Name
+			if idx := strings.LastIndex(p.Name, ":"); idx >= 0 {
+				basename = p.Name[idx+1:]
+			}
+			cmd := fmt.Sprintf("sudo tail -n 200 -f /var/log/supervisor/%s.log", shellQuote(basename))
+			return m, m.startSSHStream(SSHStreamConfig{
+				Command:     cmd,
+				Title:       "Processes › " + p.Name + " log",
+				SourceName:  basename + "-log",
+				ReturnView:  viewProcessList,
+				HostIdx:     m.selectedHost,
+				NewestFirst: true,
+				AutoDone:    false,
+			})
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+	case "r":
+		m.processes = nil
+		showLoading(&m, "processes", "Loading processes...")
+		return m, m.fetchProcesses()
+	case "1", "2", "3", "4":
+		col := int(msg.String()[0] - '0')
+		if col == m.sortColumn {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortProcesses()
+	case "esc":
+		m.view = viewResourcePicker
+	case "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleSSHStreamKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.streamNewestFirst && m.streamCursor > 0 {
+			m.streamCursor--
+		}
+	case "down", "j":
+		if m.streamNewestFirst && m.streamCursor < len(m.streamLines)-1 {
+			m.streamCursor++
+		}
+	case " ":
+		if m.streamNewestFirst {
+			if m.streamStreaming {
+				m.stopSSHStream()
+			} else if m.streamLastConfig != nil {
+				// Resume: restart the stream with the same config, keep existing lines
+				cfg := *m.streamLastConfig
+				existingLines := m.streamLines
+				cmd := m.startSSHStream(cfg)
+				m.streamLines = existingLines
+				return m, cmd
+			}
+		}
+	case "w":
+		if m.streamNewestFirst && len(m.streamLines) > 0 {
+			f := m.fleets[m.selectedFleet]
+			h := m.hosts[m.selectedHost]
+			lw := newLogWriter(m.appCfg.FleetDir, f.Name, h.Entry.Name, m.streamSourceName)
+			if lw != nil {
+				lw.WriteLines(m.streamLines)
+				m.flash = fmt.Sprintf("Saved %d lines to %s", len(m.streamLines), lw.Path())
+				m.flashError = false
+				lw.Close()
+			} else {
+				m.flash = "Failed to save log file"
+				m.flashError = true
+			}
+		}
+	case "G":
+		if m.streamNewestFirst {
+			m.streamCursor = 0
+		}
+	case "esc":
+		m.stopSSHStream()
+		retView := m.streamReturnView
+		m.view = retView
+		// Refresh the return view
+		switch retView {
+		case viewProcessList:
+			return m, m.fetchProcesses()
+		case viewLogFileList:
+			return m, m.fetchLogFileStats()
+		}
+	case "q":
+		m.stopSSHStream()
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleLogFileListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredLogFiles()
+
+	if m.filterActive {
+		switch msg.String() {
+		case "enter":
+			m.filterActive = false
+			m.logFileCursor = 0
+		case "esc":
+			m.filterActive = false
+			m.filterText = ""
+			m.logFileCursor = 0
+		case "backspace":
+			if len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				m.logFileCursor = 0
+			}
+		default:
+			if len(msg.String()) == 1 {
+				m.filterText += msg.String()
+				m.logFileCursor = 0
+			}
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "up", "k":
+		if m.logFileCursor > 0 {
+			m.logFileCursor--
+		}
+	case "down", "j":
+		if m.logFileCursor < len(filtered)-1 {
+			m.logFileCursor++
+		}
+	case "enter":
+		if len(filtered) > 0 {
+			item := filtered[m.logFileCursor]
+			cmd := fmt.Sprintf("tail -n 200 -f %s", shellQuote(item.entry.Path))
+			if item.entry.Sudo {
+				cmd = "sudo " + cmd
+			}
+			return m, m.startSSHStream(SSHStreamConfig{
+				Command:     cmd,
+				Title:       "Logs › " + item.entry.Name,
+				SourceName:  item.entry.Name,
+				ReturnView:  viewLogFileList,
+				HostIdx:     m.selectedHost,
+				NewestFirst: true,
+				AutoDone:    false,
+			})
+		}
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+	case "r":
+		m.logFileStats = nil
+		m.logFileStatDone = false
+		showLoading(&m, "logfiles", "Loading log file stats...")
+		return m, m.fetchLogFileStats()
+	case "esc":
+		m.view = viewResourcePicker
+	case "q":
 		return m, tea.Quit
 	}
 	return m, nil

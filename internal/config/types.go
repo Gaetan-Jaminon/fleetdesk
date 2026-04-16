@@ -23,6 +23,7 @@ type HostDefaults struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	SystemdMode     string        `yaml:"systemd_mode"`
 	ServiceFilter   []string      `yaml:"service_filter"`
+	Logs            []LogEntry    `yaml:"-"` // populated by parser via merge cascade
 	ErrorLogSince   string
 	RefreshInterval string
 	RHOrgID         string `yaml:"rh_org_id"`
@@ -45,9 +46,10 @@ type HostEntry struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	SystemdMode     string        `yaml:"systemd_mode"`
 	ServiceFilter   []string
-	RHOrgID         string `yaml:"rh_org_id"`
-	RHActivationKey string `yaml:"rh_activation_key"`
-	SatelliteURL    string `yaml:"satellite_url"`
+	Logs            []LogEntry // merged from defaults + group + host
+	RHOrgID         string     `yaml:"rh_org_id"`
+	RHActivationKey string     `yaml:"rh_activation_key"`
+	SatelliteURL    string     `yaml:"satellite_url"`
 }
 
 // Host is the runtime representation of a host with connection state.
@@ -71,8 +73,9 @@ type Host struct {
 	InterfacesTotal int
 	ListeningPorts  int
 	UpdateCount     int
-	SudoReady       bool
-	Error           string
+	SudoReady              bool
+	SupervisorctlPresent   bool
+	Error                  string
 }
 
 // HostStatus represents the connection state of a host.
@@ -245,6 +248,21 @@ type ContainerDetail struct {
 	Env     []string
 	Mounts  []string // "source:destination" format
 	Ports   []string // "hostPort:containerPort/proto" format
+}
+
+// LogEntry is a named log file path on a remote host.
+type LogEntry struct {
+	Name string
+	Path string
+	Sudo bool
+}
+
+// Process represents a supervisord-managed process.
+type Process struct {
+	Name   string // full group:process name
+	State  string // RUNNING, FATAL, STOPPED, BACKOFF, STARTING, EXITED
+	Uptime string
+	PID    string
 }
 
 // ProbeFleet holds the probes-fleet-specific config parsed from YAML.

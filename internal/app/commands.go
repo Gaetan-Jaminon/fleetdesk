@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -2011,3 +2012,132 @@ func (m Model) listenForProbeResults() tea.Cmd {
 		return probeResultBatchMsg{results: batch, generation: gen}
 	}
 }
+
+// Old streamLogTail, stopLogTail, listenForLogTailLines removed — replaced by generic sshstream.go
+
+// fetchProcesses fetches supervisord process list via sudo supervisorctl status.
+func (m Model) fetchProcesses() tea.Cmd {
+	idx := m.selectedHost
+	sm := m.ssh
+	logger := m.logger
+	return func() tea.Msg {
+		logger.Debug("fetch processes start", "host_idx", idx)
+		out, err := sm.RunSudoCommand(idx, "sudo supervisorctl status 2>&1 || true")
+		if err != nil {
+			return fetchProcessesMsg{err: err}
+		}
+		procs := ssh.ParseSupervisordStatus(out)
+		// Sort: failures first
+		sort.Slice(procs, func(i, j int) bool {
+			oi := ssh.ProcessStateOrder(procs[i].State)
+			oj := ssh.ProcessStateOrder(procs[j].State)
+			if oi != oj {
+				return oi < oj
+			}
+			return procs[i].Name < procs[j].Name
+		})
+		logger.Debug("fetch processes complete", "host_idx", idx, "count", len(procs))
+		return fetchProcessesMsg{processes: procs}
+	}
+}
+
+// fetchLogFileStats fetches file size and mtime for configured log files via stat.
+func (m Model) fetchLogFileStats() tea.Cmd {
+	idx := m.selectedHost
+	sm := m.ssh
+	logger := m.logger
+	// Read from host entry directly — m.logFileEntries may not be set yet when captured in closure
+	entries := m.hosts[m.selectedHost].Entry.Logs
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Build stat command for all paths
+	var paths []string
+	needsSudo := false
+	for _, e := range entries {
+		paths = append(paths, shellQuote(e.Path))
+		if e.Sudo {
+			needsSudo = true
+		}
+	}
+	cmd := fmt.Sprintf("stat --printf='%%n\\t%%s\\t%%Y\\n' %s 2>/dev/null || true", strings.Join(paths, " "))
+	if needsSudo {
+		cmd = "sudo " + cmd
+	}
+
+	return func() tea.Msg {
+		logger.Debug("fetch log stats start", "host_idx", idx, "count", len(entries))
+		var out string
+		var err error
+		if needsSudo {
+			out, err = sm.RunSudoCommand(idx, cmd)
+		} else {
+			out, err = sm.RunCommand(idx, cmd)
+		}
+		if err != nil {
+			return fetchLogFileStatMsg{err: err}
+		}
+
+		stats := make(map[int]logFileStat)
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			parts := strings.SplitN(line, "\t", 3)
+			if len(parts) < 3 {
+				continue
+			}
+			path := parts[0]
+			size := parts[1]
+			epoch := parts[2]
+			// Find matching entry index
+			for i, e := range entries {
+				if e.Path == path {
+					mtime := epoch // raw epoch, format later if needed
+					if len(epoch) > 0 {
+						if t, err := strconv.ParseInt(epoch, 10, 64); err == nil {
+							mtime = time.Unix(t, 0).Format("2006-01-02 15:04")
+						}
+					}
+					sizeInt, _ := strconv.ParseInt(size, 10, 64)
+					sizeStr := formatByteSize(sizeInt)
+					stats[i] = logFileStat{Size: sizeStr, ModTime: mtime}
+					break
+				}
+			}
+		}
+		logger.Debug("fetch log stats complete", "host_idx", idx, "stats", len(stats))
+		return fetchLogFileStatMsg{stats: stats}
+	}
+}
+
+// formatByteSize formats a byte count to human-readable form.
+func formatByteSize(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1fG", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1fK", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
+}
+
+// confirmProcessAction shows a [Y/n] confirm modal for a supervisord action.
+// On confirm, shows a loading overlay, runs the command via SSH, then refreshes.
+func (m Model) confirmProcessAction(processName, action string) (Model, tea.Cmd) {
+	pName := processName
+	pAction := action
+	m.modal = NewConfirmModal(
+		"Confirm",
+		fmt.Sprintf("%s %s? [Y/n]", action, processName),
+		func() tea.Msg {
+			// Return a signal to start the streamed action view
+			return startProcessActionViewMsg{action: pAction, process: pName}
+		},
+	)
+	return m, nil
+}
+
+// Old streamProcessAction and listenForProcessActionLines removed — replaced by generic sshstream.go
+

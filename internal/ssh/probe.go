@@ -20,8 +20,9 @@ type ProbeInfo struct {
 	InterfacesUp    int
 	InterfacesTotal int
 	ListeningPorts  int
-	UpdateCount     int
-	SystemdMode     string
+	UpdateCount          int
+	SupervisorctlPresent bool
+	SystemdMode          string
 }
 
 // FormatDateEU converts a date string to DD/MM/YYYY format.
@@ -57,6 +58,7 @@ func FormatDateEU(s string) string {
 //	9: interfaces total
 //	10: listening ports
 //	11: update count (dnf check-update)
+//	12: supervisorctl present (1 or 0)
 func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 	// Strip any shell warnings (e.g., "Could not chdir to home directory")
 	// that appear before the probe sentinel marker.
@@ -88,7 +90,8 @@ func ParseProbeOutput(output string, systemdMode string) (ProbeInfo, error) {
 		InterfacesUp:    getInt(8),
 		InterfacesTotal: getInt(9),
 		ListeningPorts:  getInt(10),
-		UpdateCount:     getInt(11),
-		SystemdMode:     systemdMode,
+		UpdateCount:          getInt(11),
+		SupervisorctlPresent: getInt(12) == 1,
+		SystemdMode:          systemdMode,
 	}, nil
 }
