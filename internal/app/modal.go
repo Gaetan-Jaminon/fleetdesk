@@ -377,3 +377,8 @@ func (c *ConfirmContent) View(width int) string {
 func (c *ConfirmContent) Result() any {
 	return c.confirmed
 }
+
+// SetMessage updates the confirmation message (used by multi-step wizards).
+func (c *ConfirmContent) SetMessage(s string) {
+	c.message = s
+}
