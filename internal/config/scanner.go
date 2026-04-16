@@ -17,8 +17,10 @@ func fleetTypeOrder(t string) int {
 		return 1
 	case "kubernetes":
 		return 2
-	default:
+	case "probes":
 		return 3
+	default:
+		return 4
 	}
 }
 

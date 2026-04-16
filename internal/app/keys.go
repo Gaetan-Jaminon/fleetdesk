@@ -244,6 +244,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleK8sPodDetailKeys(msg)
 	case viewK8sPodLogs:
 		return m.handleK8sPodLogKeys(msg)
+	case viewProbeList:
+		return m.handleProbeListKeys(msg)
+	case viewProbeDetail:
+		return m.handleProbeDetailKeys(msg)
 	case viewConfig:
 		return m.handleConfigKeys(msg)
 	}
@@ -325,6 +329,15 @@ func (m Model) handleFleetPickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.k8sClusterCursor = 0
 				m.view = viewK8sClusterList
 				return m, m.startK8sProbe()
+			case "probes":
+				m.selectedFleet = m.fleetCursor
+				m.probeItems = buildProbeList(f.ProbeFleet)
+				m.probeCursor = 0
+				m.sortColumn = 0
+				m.filterText = ""
+				m.filterActive = false
+				m.view = viewProbeList
+				return m, m.startProbing()
 			default:
 				m.flash = "Unsupported fleet type"
 				m.flashError = false
@@ -2607,6 +2620,94 @@ func (m Model) handleK8sPodLogKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.k8sPodLogCancel != nil {
 			m.k8sPodLogCancel()
 		}
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleProbeListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	filtered := m.filteredProbeItems()
+
+	if m.filterActive {
+		switch msg.String() {
+		case "enter":
+			m.filterActive = false
+			m.probeCursor = 0
+		case "esc":
+			m.filterActive = false
+			m.filterText = ""
+			m.probeCursor = 0
+		case "backspace":
+			if len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				m.probeCursor = 0
+			}
+		default:
+			if len(msg.String()) == 1 {
+				m.filterText += msg.String()
+				m.probeCursor = 0
+			}
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "up", "k":
+		if m.probeCursor > 0 {
+			m.probeCursor--
+		}
+	case "down", "j":
+		if m.probeCursor < len(filtered)-1 {
+			m.probeCursor++
+		}
+	case "enter":
+		if len(filtered) > 0 {
+			m.selectedProbe = m.probeCursor
+			m.probeDetailScroll = 0
+			m.view = viewProbeDetail
+		}
+	case "esc":
+		m.stopProbing()
+		m.view = viewFleetPicker
+	case "/":
+		m.filterActive = true
+		m.filterText = ""
+	case "r":
+		// Force re-probe: stop and restart
+		m.stopProbing()
+		return m, m.startProbing()
+	case "1", "2", "3", "4", "5":
+		col := int(msg.String()[0] - '0')
+		if col == m.sortColumn {
+			m.sortAsc = !m.sortAsc
+		} else {
+			m.sortColumn = col
+			m.sortAsc = true
+		}
+		m.sortProbeItems()
+	case "q":
+		m.stopProbing()
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) handleProbeDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.view = viewProbeList
+	case "up", "k":
+		if m.probeDetailScroll > 0 {
+			m.probeDetailScroll--
+		}
+	case "down", "j":
+		m.probeDetailScroll++
+	case "r":
+		// Force re-probe: stop and restart
+		m.stopProbing()
+		return m, m.startProbing()
+	case "q":
+		m.stopProbing()
 		return m, tea.Quit
 	}
 	return m, nil

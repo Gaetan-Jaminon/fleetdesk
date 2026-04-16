@@ -10,6 +10,7 @@ import (
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/probes"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -1328,4 +1329,128 @@ func (m *Model) sortK8sPodLogs() {
 		}
 		return !less
 	})
+}
+
+// ProbeItem is the runtime representation of a probe with its last result.
+type ProbeItem struct {
+	Entry  config.ProbeEntry
+	Group  string
+	Result probes.ProbeResult
+}
+
+// buildProbeList creates the initial ProbeItem list from a ProbeFleet.
+func buildProbeList(pf *config.ProbeFleet) []ProbeItem {
+	var items []ProbeItem
+	idx := 0
+	for _, g := range pf.Groups {
+		for _, p := range g.Probes {
+			items = append(items, ProbeItem{
+				Entry: p,
+				Group: g.Name,
+				Result: probes.ProbeResult{
+					ProbeIndex: idx,
+					Status:     probes.ProbeStatusPending,
+					Error:      probes.ErrorClassNone,
+				},
+			})
+			idx++
+		}
+	}
+	for _, p := range pf.Probes {
+		items = append(items, ProbeItem{
+			Entry: p,
+			Group: "",
+			Result: probes.ProbeResult{
+				ProbeIndex: idx,
+				Status:     probes.ProbeStatusPending,
+				Error:      probes.ErrorClassNone,
+			},
+		})
+		idx++
+	}
+	return items
+}
+
+// fleetProbeCount returns the total number of probe entries in a probes fleet.
+func fleetProbeCount(f config.Fleet) int {
+	if f.ProbeFleet == nil {
+		return 0
+	}
+	count := len(f.ProbeFleet.Probes)
+	for _, g := range f.ProbeFleet.Groups {
+		count += len(g.Probes)
+	}
+	return count
+}
+
+// filteredProbeItems returns probe items matching the filter text (name or URL).
+func (m Model) filteredProbeItems() []ProbeItem {
+	if m.filterText == "" {
+		return m.probeItems
+	}
+	f := strings.ToLower(m.filterText)
+	var result []ProbeItem
+	for _, p := range m.probeItems {
+		if strings.Contains(strings.ToLower(p.Entry.Name), f) ||
+			strings.Contains(strings.ToLower(p.Entry.URL), f) ||
+			strings.Contains(strings.ToLower(p.Result.Status.String()), f) {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// sortProbeItems sorts the probe list: down first, then degraded, then up, then pending.
+func (m *Model) sortProbeItems() {
+	statusOrder := func(s probes.ProbeStatus) int {
+		switch s {
+		case probes.ProbeStatusDown:
+			return 0
+		case probes.ProbeStatusDegraded:
+			return 1
+		case probes.ProbeStatusUp:
+			return 2
+		default: // Pending
+			return 3
+		}
+	}
+
+	sort.Slice(m.probeItems, func(i, j int) bool {
+		si := statusOrder(m.probeItems[i].Result.Status)
+		sj := statusOrder(m.probeItems[j].Result.Status)
+		if m.sortColumn == 0 {
+			if si != sj {
+				return si < sj
+			}
+			return strings.ToLower(m.probeItems[i].Entry.Name) < strings.ToLower(m.probeItems[j].Entry.Name)
+		}
+		var less bool
+		switch m.sortColumn {
+		case 1:
+			less = strings.ToLower(m.probeItems[i].Entry.Name) < strings.ToLower(m.probeItems[j].Entry.Name)
+		case 2:
+			less = strings.ToLower(m.probeItems[i].Entry.URL) < strings.ToLower(m.probeItems[j].Entry.URL)
+		case 3:
+			less = si < sj
+		case 4:
+			less = m.probeItems[i].Result.Code < m.probeItems[j].Result.Code
+		case 5:
+			less = m.probeItems[i].Result.Latency < m.probeItems[j].Result.Latency
+		default:
+			return false
+		}
+		if m.sortAsc {
+			return less
+		}
+		return !less
+	})
+}
+
+// probeEntries returns a flat list of ProbeEntry from the current probeItems.
+func (m Model) probeEntries() []config.ProbeEntry {
+	entries := make([]config.ProbeEntry, len(m.probeItems))
+	for i, p := range m.probeItems {
+		entries[i] = p.Entry
+	}
+	return entries
 }
