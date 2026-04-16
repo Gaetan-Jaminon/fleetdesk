@@ -914,14 +914,38 @@ func (m Model) handleUpdateListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.updateCursor = 0
 	case "u":
 		h := m.hosts[m.selectedHost]
-		m.modal = NewConfirmModal("Confirm",
-			fmt.Sprintf("Apply ALL updates on %s? [Y/n]", h.Entry.Name),
-			sshHandover(h, []string{`sudo dnf update -y --setopt=skip_if_unavailable=1; echo ''; echo 'Update complete. Press Enter to return...'`}, fmt.Sprintf("full update on %s", h.Entry.Name)))
+		dnfOpts := []MultiSelectOption{
+			{Key: "--allowerasing", Label: "--allowerasing", Description: "replace conflicts"},
+			{Key: "--skip-broken", Label: "--skip-broken", Description: "skip failures"},
+			{Key: "--nobest", Label: "--nobest", Description: "allow older versions"},
+		}
+		banner := fmt.Sprintf("full update on %s", h.Entry.Name)
+		hh := h
+		m.modal = NewOptionsConfirmModal(
+			"Update Options",
+			fmt.Sprintf("Select flags for dnf update on %s:", h.Entry.Name),
+			dnfOpts,
+			func(keys []string) string { return buildDnfCommand("sudo dnf update", keys) },
+			func(cmd string) tea.Cmd { return sshHandover(hh, []string{cmd}, banner) },
+			func() tea.Cmd { return func() tea.Msg { return confirmCancelledMsg{} } },
+		)
 	case "p":
 		h := m.hosts[m.selectedHost]
-		m.modal = NewConfirmModal("Confirm",
-			fmt.Sprintf("Apply SECURITY updates on %s? [Y/n]", h.Entry.Name),
-			sshHandover(h, []string{`sudo dnf update --security -y --setopt=skip_if_unavailable=1; echo ''; echo 'Security update complete. Press Enter to return...'`}, fmt.Sprintf("security update on %s", h.Entry.Name)))
+		dnfOpts := []MultiSelectOption{
+			{Key: "--allowerasing", Label: "--allowerasing", Description: "replace conflicts"},
+			{Key: "--skip-broken", Label: "--skip-broken", Description: "skip failures"},
+			{Key: "--nobest", Label: "--nobest", Description: "allow older versions"},
+		}
+		banner := fmt.Sprintf("security update on %s", h.Entry.Name)
+		hh := h
+		m.modal = NewOptionsConfirmModal(
+			"Security Update Options",
+			fmt.Sprintf("Select flags for dnf update --security on %s:", h.Entry.Name),
+			dnfOpts,
+			func(keys []string) string { return buildDnfCommand("sudo dnf update --security", keys) },
+			func(cmd string) tea.Cmd { return sshHandover(hh, []string{cmd}, banner) },
+			func() tea.Cmd { return func() tea.Msg { return confirmCancelledMsg{} } },
+		)
 	case "1", "2", "3":
 		col := int(msg.Runes[0] - '0')
 		if col >= 1 && col <= 3 {
