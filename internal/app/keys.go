@@ -2676,7 +2676,7 @@ func (m Model) handleProbeListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Force re-probe: stop and restart
 		m.stopProbing()
 		return m, m.startProbing()
-	case "1", "2", "3", "4", "5":
+	case "1", "2", "3", "4", "5", "6":
 		col := int(msg.String()[0] - '0')
 		if col == m.sortColumn {
 			m.sortAsc = !m.sortAsc

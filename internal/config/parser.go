@@ -65,9 +65,10 @@ type probeFleetFile struct {
 }
 
 type probeDefaultsFile struct {
-	Interval string `yaml:"interval"`
-	Proxy    string `yaml:"proxy"`
-	Timeout  string `yaml:"timeout"`
+	Interval           string `yaml:"interval"`
+	Proxy              string `yaml:"proxy"`
+	Timeout            string `yaml:"timeout"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 }
 
 type probeGroupFile struct {
@@ -293,6 +294,7 @@ func parseProbeFleetFile(data []byte, name, path string) (Fleet, error) {
 		}
 		defaults.ProxyURL = raw.Defaults.Proxy
 	}
+	defaults.InsecureSkipVerify = raw.Defaults.InsecureSkipVerify
 
 	// parse groups
 	var groups []ProbeGroup

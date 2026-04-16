@@ -256,9 +256,10 @@ type ProbeFleet struct {
 
 // ProbeDefaults holds fleet-wide probe settings.
 type ProbeDefaults struct {
-	Interval time.Duration // default probe interval (minimum 5s, default 30s)
-	ProxyURL string        // raw proxy URL — only passed into http.Transport closure, never logged
-	Timeout  time.Duration // HTTP client timeout (default 10s)
+	Interval           time.Duration // default probe interval (minimum 5s, default 30s)
+	ProxyURL           string        // raw proxy URL — only passed into http.Transport closure, never logged
+	Timeout            time.Duration // HTTP client timeout (default 10s)
+	InsecureSkipVerify bool          // skip TLS certificate verification
 }
 
 // ProbeGroup provides visual grouping of probes.

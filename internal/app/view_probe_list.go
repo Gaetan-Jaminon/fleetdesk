@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -30,9 +31,6 @@ func (m Model) renderProbeList() string {
 	s := m.renderHeader(f.Name+filterInfo, cur, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	// Live status indicator
-	s += borderedRow("  "+ansiColor("● LIVE", "32"), iw, normalRowStyle) + "\n"
-
 	if len(filtered) == 0 {
 		msg := "  No probes"
 		if m.filterText != "" {
@@ -52,8 +50,8 @@ func (m Model) renderProbeList() string {
 			}
 		}
 		nameCol += 2
-		// Cap URL column to leave room for status/code/latency
-		maxURL := iw - nameCol - 35
+		// Cap URL column to leave room for status/code/interval/latency
+		maxURL := iw - nameCol - 58
 		if maxURL < 10 {
 			maxURL = 10
 		}
@@ -61,11 +59,13 @@ func (m Model) renderProbeList() string {
 			urlCol = maxURL
 		}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-8s  %-4s  %s",
+		hdr := fmt.Sprintf("     %-*s  %-*s  %-8s  %-4s  %-10s  %-8s  %s",
 			nameCol, "NAME"+m.sortIndicator(1),
 			urlCol, "URL"+m.sortIndicator(2),
 			"STATUS"+m.sortIndicator(3),
 			"CODE"+m.sortIndicator(4),
+			"TLS VERIFY",
+			"INTERVAL"+m.sortIndicator(6),
 			"LATENCY"+m.sortIndicator(5),
 		)
 		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
@@ -122,18 +122,43 @@ func (m Model) renderProbeList() string {
 				latencyStr = formatLatency(p.Result.Latency)
 			}
 
+			// Interval (resolved: per-probe or fleet default)
+			interval := p.Entry.Interval
+			if interval == 0 {
+				interval = m.fleets[m.selectedFleet].ProbeFleet.Defaults.Interval
+			}
+			intervalStr := fmt.Sprintf("%ds", int(interval.Seconds()))
+
+			// Live indicator — green steady, green ring during probe, white pending
+			live := ansiColor("●", "97") // white: pending
+			if p.Result.Status != probes.ProbeStatusPending {
+				if time.Since(p.Result.ProbeTime) < 2*time.Second {
+					live = ansiColor("◉", "32") // green ring: just probed
+				} else {
+					live = ansiColor("●", "32") // green filled: steady
+				}
+			}
+
 			// Truncate URL if needed
 			urlStr := p.Entry.URL
 			if len(urlStr) > urlCol {
 				urlStr = urlStr[:urlCol-1] + "…"
 			}
 
-			line := fmt.Sprintf("%s  %-*s  %-*s  %s  %-4s  %s",
-				cursor,
+			// TLS verify indicator (pre-padded — ANSI codes break %-Ns)
+			tlsStr := "✓         "
+			if m.fleets[m.selectedFleet].ProbeFleet.Defaults.InsecureSkipVerify {
+				tlsStr = ansiColor("Skipped", "33") + "   "
+			}
+
+			line := fmt.Sprintf("%s%s %-*s  %-*s  %s  %-4s  %s  %-8s  %s",
+				cursor, live,
 				nameCol, p.Entry.Name,
 				urlCol, urlStr,
 				statusColor(fmt.Sprintf("%-8s", statusStr)),
 				codeStr,
+				tlsStr,
+				intervalStr,
 				latencyStr,
 			)
 
@@ -160,7 +185,7 @@ func (m Model) renderProbeList() string {
 			{"Enter", "Detail"},
 			{"r", "Refresh"},
 			{"/", "Filter"},
-			{"1-5", "Sort"},
+			{"1-6", "Sort"},
 			{"Esc", "Back"},
 			{"q", "Quit"},
 		}))
