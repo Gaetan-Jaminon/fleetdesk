@@ -16,6 +16,7 @@ import (
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/probes"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -1942,4 +1943,71 @@ func parseStreamLine(line string) k8s.K8sLogEntry {
 		return k8s.K8sLogEntry{}
 	}
 	return entry
+}
+
+// startProbing launches all probe goroutines and returns the first listenForProbeResults cmd.
+func (m *Model) startProbing() tea.Cmd {
+	if m.probesStreaming {
+		m.stopProbing()
+	}
+
+	f := m.fleets[m.selectedFleet]
+	if f.ProbeFleet == nil {
+		return nil
+	}
+
+	m.probesGeneration++
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.probesCancel = cancel
+
+	ch := make(chan probes.ProbeResult, 200)
+	m.probesChan = ch
+	m.probesStreaming = true
+
+	entries := m.probeEntries()
+	defaults := f.ProbeFleet.Defaults
+	mgr := m.probesManager
+	mgr.Start(ctx, entries, defaults, ch)
+
+	return m.listenForProbeResults()
+}
+
+// stopProbing cancels all probe goroutines and clears channel state.
+func (m *Model) stopProbing() {
+	if m.probesCancel != nil {
+		m.probesCancel()
+		m.probesCancel = nil
+	}
+	m.probesChan = nil
+	m.probesStreaming = false
+}
+
+// listenForProbeResults blocks on the probe channel, batches up to 50 results, returns probeResultBatchMsg.
+func (m Model) listenForProbeResults() tea.Cmd {
+	ch := m.probesChan
+	if ch == nil {
+		return nil
+	}
+	gen := m.probesGeneration
+	return func() tea.Msg {
+		first, ok := <-ch
+		if !ok {
+			return probesDoneMsg{generation: gen}
+		}
+		batch := []probes.ProbeResult{first}
+		// Drain buffered results non-blocking, up to 50
+		for len(batch) < 50 {
+			select {
+			case r, ok := <-ch:
+				if !ok {
+					return probeResultBatchMsg{results: batch, generation: gen}
+				}
+				batch = append(batch, r)
+			default:
+				return probeResultBatchMsg{results: batch, generation: gen}
+			}
+		}
+		return probeResultBatchMsg{results: batch, generation: gen}
+	}
 }

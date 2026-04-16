@@ -13,6 +13,7 @@ type Fleet struct {
 	Defaults         HostDefaults `yaml:"defaults"`
 	Groups           []HostGroup  `yaml:"groups"`
 	Hosts            []HostEntry  `yaml:"hosts"`
+	ProbeFleet       *ProbeFleet  `yaml:"-"` // non-nil only when Type == "probes"
 }
 
 // HostDefaults holds default values applied to all hosts in a fleet.
@@ -244,6 +245,35 @@ type ContainerDetail struct {
 	Env     []string
 	Mounts  []string // "source:destination" format
 	Ports   []string // "hostPort:containerPort/proto" format
+}
+
+// ProbeFleet holds the probes-fleet-specific config parsed from YAML.
+type ProbeFleet struct {
+	Defaults ProbeDefaults
+	Groups   []ProbeGroup
+	Probes   []ProbeEntry // ungrouped probes
+}
+
+// ProbeDefaults holds fleet-wide probe settings.
+type ProbeDefaults struct {
+	Interval time.Duration // default probe interval (minimum 5s, default 30s)
+	ProxyURL string        // raw proxy URL — only passed into http.Transport closure, never logged
+	Timeout  time.Duration // HTTP client timeout (default 10s)
+}
+
+// ProbeGroup provides visual grouping of probes.
+type ProbeGroup struct {
+	Name   string
+	Probes []ProbeEntry
+}
+
+// ProbeEntry represents a single probe configuration.
+type ProbeEntry struct {
+	Name         string
+	URL          string
+	Protocol     string        // "http" only in v1
+	ExpectedCode int           // default 200
+	Interval     time.Duration // 0 = use fleet default
 }
 
 // ServiceStatus holds parsed systemctl show output for a service.

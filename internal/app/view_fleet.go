@@ -59,6 +59,8 @@ func (m Model) renderFleetPicker() string {
 					label = "Kubernetes"
 				} else if label == "azure" {
 					label = "Azure"
+				} else if label == "probes" {
+					label = "Probes"
 				} else {
 					label = "VM"
 				}
@@ -85,9 +87,12 @@ func (m Model) renderFleetPicker() string {
 				ftype = "k8s"
 			}
 			var targetCount int
-			if f.Type == "vm" {
+			switch f.Type {
+			case "vm":
 				targetCount = m.fleetHostCount(f)
-			} else {
+			case "probes":
+				targetCount = fleetProbeCount(f)
+			default:
 				targetCount = len(f.Groups)
 			}
 			line := fmt.Sprintf("%s  %-*s  %-6s  %d", cur, nameCol, f.Name, ftype, targetCount)

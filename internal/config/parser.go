@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,34 @@ type hostEntryFile struct {
 	SatelliteURL    string   `yaml:"satellite_url"`
 }
 
+// probeFleetFile is the raw YAML structure for a probes fleet file.
+type probeFleetFile struct {
+	Name     string              `yaml:"name"`
+	Type     string              `yaml:"type"`
+	Defaults probeDefaultsFile   `yaml:"defaults"`
+	Groups   []probeGroupFile    `yaml:"groups"`
+	Probes   []probeEntryFile    `yaml:"probes"`
+}
+
+type probeDefaultsFile struct {
+	Interval string `yaml:"interval"`
+	Proxy    string `yaml:"proxy"`
+	Timeout  string `yaml:"timeout"`
+}
+
+type probeGroupFile struct {
+	Name   string           `yaml:"name"`
+	Probes []probeEntryFile `yaml:"probes"`
+}
+
+type probeEntryFile struct {
+	Name         string `yaml:"name"`
+	URL          string `yaml:"url"`
+	Protocol     string `yaml:"protocol"`
+	ExpectedCode int    `yaml:"expected_code"`
+	Interval     string `yaml:"interval"`
+}
+
 // ParseFleetFile reads and parses a single fleet YAML file.
 func ParseFleetFile(path string) (Fleet, error) {
 	data, err := os.ReadFile(path)
@@ -76,11 +105,13 @@ func ParseFleetFile(path string) (Fleet, error) {
 	// validate type
 	switch raw.Type {
 	case "vm", "azure", "kubernetes":
-		// valid
+		// valid — parsed below
+	case "probes":
+		return parseProbeFleetFile(data, name, path)
 	case "":
 		return Fleet{}, fmt.Errorf("missing required field 'type' in %s", path)
 	default:
-		return Fleet{}, fmt.Errorf("unknown fleet type %q in %s (must be vm, azure, or kubernetes)", raw.Type, path)
+		return Fleet{}, fmt.Errorf("unknown fleet type %q in %s (must be vm, azure, kubernetes, or probes)", raw.Type, path)
 	}
 
 	// parse defaults
@@ -221,4 +252,134 @@ func parseHosts(raw []hostEntryFile, defaults HostDefaults, groupFilter []string
 		hosts = append(hosts, h)
 	}
 	return hosts, nil
+}
+
+// parseProbeFleetFile parses a probes fleet YAML file into a Fleet with ProbeFleet set.
+func parseProbeFleetFile(data []byte, name, path string) (Fleet, error) {
+	var raw probeFleetFile
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return Fleet{}, fmt.Errorf("parsing probes YAML: %w", err)
+	}
+
+	if raw.Name != "" {
+		name = raw.Name
+	}
+
+	// parse defaults
+	defaults := ProbeDefaults{
+		Interval: 30 * time.Second,
+		Timeout:  10 * time.Second,
+	}
+	if raw.Defaults.Interval != "" {
+		d, err := time.ParseDuration(raw.Defaults.Interval)
+		if err != nil {
+			return Fleet{}, fmt.Errorf("invalid default interval %q: %w", raw.Defaults.Interval, err)
+		}
+		if d < 5*time.Second {
+			return Fleet{}, fmt.Errorf("default interval %v must be >= 5s", d)
+		}
+		defaults.Interval = d
+	}
+	if raw.Defaults.Timeout != "" {
+		d, err := time.ParseDuration(raw.Defaults.Timeout)
+		if err != nil {
+			return Fleet{}, fmt.Errorf("invalid default timeout %q: %w", raw.Defaults.Timeout, err)
+		}
+		defaults.Timeout = d
+	}
+	if raw.Defaults.Proxy != "" {
+		if _, err := url.Parse(raw.Defaults.Proxy); err != nil {
+			return Fleet{}, fmt.Errorf("invalid proxy URL %q: %w", raw.Defaults.Proxy, err)
+		}
+		defaults.ProxyURL = raw.Defaults.Proxy
+	}
+
+	// parse groups
+	var groups []ProbeGroup
+	for _, g := range raw.Groups {
+		if g.Name == "" {
+			return Fleet{}, fmt.Errorf("probe group missing required field 'name'")
+		}
+		probes, err := parseProbeEntries(g.Probes)
+		if err != nil {
+			return Fleet{}, fmt.Errorf("group %q: %w", g.Name, err)
+		}
+		groups = append(groups, ProbeGroup{
+			Name:   g.Name,
+			Probes: probes,
+		})
+	}
+
+	// parse ungrouped probes
+	ungrouped, err := parseProbeEntries(raw.Probes)
+	if err != nil {
+		return Fleet{}, fmt.Errorf("probes: %w", err)
+	}
+
+	pf := &ProbeFleet{
+		Defaults: defaults,
+		Groups:   groups,
+		Probes:   ungrouped,
+	}
+
+	return Fleet{
+		Name:       name,
+		Type:       "probes",
+		Path:       path,
+		ProbeFleet: pf,
+	}, nil
+}
+
+// parseProbeEntries converts raw probe entries, applying defaults where needed.
+func parseProbeEntries(raw []probeEntryFile) ([]ProbeEntry, error) {
+	var entries []ProbeEntry
+	for _, r := range raw {
+		if r.Name == "" {
+			return nil, fmt.Errorf("probe missing required field 'name'")
+		}
+		if r.URL == "" {
+			return nil, fmt.Errorf("probe %q missing required field 'url'", r.Name)
+		}
+		u, err := url.Parse(r.URL)
+		if err != nil {
+			return nil, fmt.Errorf("probe %q invalid URL: %w", r.Name, err)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return nil, fmt.Errorf("probe %q URL scheme must be http or https, got %q", r.Name, u.Scheme)
+		}
+
+		protocol := r.Protocol
+		if protocol == "" {
+			protocol = "http"
+		}
+		if protocol != "http" {
+			return nil, fmt.Errorf("probe %q unsupported protocol %q (v1 supports http only)", r.Name, protocol)
+		}
+
+		expectedCode := r.ExpectedCode
+		if expectedCode == 0 {
+			expectedCode = 200
+		}
+
+		var interval time.Duration
+		if r.Interval != "" {
+			d, err := time.ParseDuration(r.Interval)
+			if err != nil {
+				return nil, fmt.Errorf("probe %q invalid interval: %w", r.Name, err)
+			}
+			if d < 5*time.Second {
+				return nil, fmt.Errorf("probe %q interval %v must be >= 5s", r.Name, d)
+			}
+			interval = d
+		}
+
+		entries = append(entries, ProbeEntry{
+			Name:         r.Name,
+			URL:          r.URL,
+			Protocol:     protocol,
+			ExpectedCode: expectedCode,
+			Interval:     interval,
+		})
+	}
+	return entries, nil
 }

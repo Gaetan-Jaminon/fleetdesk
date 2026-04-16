@@ -11,8 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
-	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/probes"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
 
@@ -69,6 +70,15 @@ type pollResultMsg struct {
 
 type transitionExpireMsg struct {
 	key string
+}
+
+type probeResultBatchMsg struct {
+	results    []probes.ProbeResult
+	generation int
+}
+
+type probesDoneMsg struct {
+	generation int
 }
 
 type fetchAzureAKSMsg struct {
@@ -219,6 +229,8 @@ const (
 	viewK8sPodList
 	viewK8sPodDetail
 	viewK8sPodLogs
+	viewProbeList
+	viewProbeDetail
 	viewConfig
 )
 
@@ -311,6 +323,17 @@ type Model struct {
 	k8sLogDetailScroll    int  // scroll offset for log detail view
 	k8sLogDetailWasStreaming bool // resume streaming after closing detail
 	k8sPodLogFromDetail   bool // true when logs opened from pod detail (Esc returns to detail)
+
+	// probes fleet
+	probesManager     *probes.Manager
+	probeItems        []ProbeItem
+	probeCursor       int
+	selectedProbe     int
+	probeDetailScroll int
+	probesCancel      context.CancelFunc
+	probesChan        chan probes.ProbeResult
+	probesStreaming   bool
+	probesGeneration  int // incremented on each startProbing, used to discard stale messages
 
 	// metrics dashboard
 	metrics          map[int]config.HostMetrics
@@ -446,8 +469,9 @@ func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logge
 		appCfg:  appCfg,
 		ssh:     ssh.NewManager(logger),
 		azure:   azure.NewManager(logger),
-		k8s:     k8s.NewManager(logger),
-		logger:  logger,
+		k8s:           k8s.NewManager(logger),
+		probesManager: probes.NewManager(logger),
+		logger:        logger,
 		version: version,
 		commit:  commit,
 	}
@@ -1020,6 +1044,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case k8sPodLogDoneMsg:
 		m.k8sPodLogChan = nil
 		m.k8sPodLogStreaming = false
+		return m, nil
+
+	case probeResultBatchMsg:
+		if msg.generation != m.probesGeneration {
+			return m, nil // stale message from previous session
+		}
+		for _, r := range msg.results {
+			// Look up by ProbeIndex identity, not by slice position (sort reorders the slice).
+			for i := range m.probeItems {
+				if m.probeItems[i].Result.ProbeIndex == r.ProbeIndex {
+					m.probeItems[i].Result = r
+					break
+				}
+			}
+		}
+		if m.probesChan != nil {
+			return m, m.listenForProbeResults()
+		}
+		return m, nil
+
+	case probesDoneMsg:
+		if msg.generation != m.probesGeneration {
+			return m, nil // stale done from previous session
+		}
+		m.probesChan = nil
+		m.probesStreaming = false
 		return m, nil
 
 	case fetchAzureAKSMsg:
@@ -1722,6 +1772,10 @@ func (m Model) renderCurrentView() string {
 		return m.renderK8sPodDetail()
 	case viewK8sPodLogs:
 		return m.renderK8sPodLogs()
+	case viewProbeList:
+		return m.renderProbeList()
+	case viewProbeDetail:
+		return m.renderProbeDetail()
 	}
 	return ""
 }

@@ -14,8 +14,9 @@ func TestFleetTypeOrder(t *testing.T) {
 		{"vm", 0},
 		{"azure", 1},
 		{"kubernetes", 2},
-		{"unknown", 3},
-		{"", 3},
+		{"probes", 3},
+		{"unknown", 4},
+		{"", 4},
 	}
 
 	for _, tt := range tests {
@@ -33,6 +34,9 @@ func TestFleetTypeOrder(t *testing.T) {
 	}
 	if fleetTypeOrder("azure") >= fleetTypeOrder("kubernetes") {
 		t.Error("azure should sort before kubernetes")
+	}
+	if fleetTypeOrder("kubernetes") >= fleetTypeOrder("probes") {
+		t.Error("kubernetes should sort before probes")
 	}
 }
 
