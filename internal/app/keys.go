@@ -113,6 +113,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.k8sWorkloadCursor = 0
 				m.k8sPodCursor = 0
 				m.k8sPodContainerCursor = 0
+				m.noteCursor = 0
 			}
 		default:
 			if msg.Type == tea.KeyRunes {
@@ -142,6 +143,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.k8sWorkloadCursor = 0
 				m.k8sPodCursor = 0
 				m.k8sPodContainerCursor = 0
+				m.noteCursor = 0
 			}
 		}
 		return m, nil
@@ -149,6 +151,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m.flash = ""
 	m.flashError = false
+
+	// Global `n` key intercept (FLE-78): open Note List for the currently
+	// selected resource. Only fires on noteable list views; individual view
+	// handlers never see the `n` key when their view is noteable.
+	if msg.String() == "n" && isNoteableView(m.view) && m.noteEngine != nil {
+		ref, ok := m.currentNoteRef()
+		if !ok {
+			return m, nil
+		}
+		m.noteRef = ref
+		m.previousView = m.view
+		m.noteCursor = 0
+		m.filterText = ""
+		m.filterActive = false
+		return m, m.loadNoteListCmd(ref)
+	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -256,6 +274,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleProbeDetailKeys(msg)
 	case viewConfig:
 		return m.handleConfigKeys(msg)
+	case viewNoteList:
+		return m.handleNoteListKeys(msg)
+	case viewNoteRead:
+		return m.handleNoteReadKeys(msg)
 	}
 	return m, nil
 }
