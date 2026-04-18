@@ -72,6 +72,33 @@ make test     # run unit tests
 
 TDD: Opus (Step 2) designs *what to test* across all tiers. Sonnet (Step 3) translates unit + UI tests into Go test code. Integration tests go into the Test Plan/Run in Linear for Step 4.
 
+### UI test pattern (teatest)
+
+UI tests drive a real `tea.Program` via `github.com/charmbracelet/x/exp/teatest`. They verify rendered output and key-handler wiring end-to-end.
+
+Minimal shape:
+
+```go
+tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 30))
+
+teatest.WaitFor(t, tm.Output(),
+    func(bts []byte) bool { return bytes.Contains(bts, []byte("expected text")) },
+    teatest.WithDuration(2*time.Second),
+)
+
+tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+```
+
+Guidelines:
+- Always set an initial term size — the Model's width/height guards fall back to 80×24 but explicit is clearer and avoids reflow surprises
+- Use `WaitFor` with a 2s duration for render assertions — teatest's 1s default is sometimes tight under CI load
+- Use `WaitFinished` with a 2s timeout after sending the quit key
+- Construct `Model` via a test helper that sets `AppConfig.FleetDir` to a placeholder (any non-empty string) — an empty FleetDir triggers the first-run wizard and makes the view state unpredictable
+- Use `bytes.Contains` on raw output rather than golden files for baseline tests — golden files make sense only once a view's rendering is stable
+
+See `internal/app/teatest_baseline_test.go` for the canonical example.
+
 ## Security
 
 - No hardcoded credentials, keys, or secrets — use environment variables
