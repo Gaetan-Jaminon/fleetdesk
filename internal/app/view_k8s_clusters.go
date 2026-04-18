@@ -75,6 +75,7 @@ func (m Model) renderK8sClusterList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Contexts"},
+			{"n", "Notes"},
 			{"r", "Refresh"},
 			{"/", "Filter"},
 			{"1-2", "Sort"},

@@ -84,6 +84,7 @@ func (m Model) renderAzureSubList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Drill In"},
+			{"n", "Notes"},
 			{"r", "Refresh"},
 			{"/", "Filter"},
 			{"1-3", "Sort"},

@@ -83,6 +83,7 @@ func (m Model) renderFleetPicker() string {
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
 	s += m.renderHintBar(hintWithHelp([][]string{
 		{"Enter", "Select"},
+		{"n", "Notes"},
 		{"a", "About"},
 		{"e", "Edit"},
 		{"c", "Config"},

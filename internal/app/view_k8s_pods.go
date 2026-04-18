@@ -107,6 +107,7 @@ func (m Model) renderK8sPodList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Detail"},
+			{"n", "Notes"},
 			{"l", "Logs"},
 			{"d", "Delete"},
 			{"/", "Filter"},

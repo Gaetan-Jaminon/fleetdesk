@@ -82,6 +82,7 @@ func (m Model) renderK8sNamespaceList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Workloads"},
+			{"n", "Notes"},
 			{"/", "Filter"},
 			{"1-7", "Sort"},
 			{"r", "Refresh"},

@@ -216,6 +216,7 @@ func (m Model) renderServiceList() string {
 			{"\u2191\u2193", "Navigate"},
 			{"1-4", "Sort"},
 			{"Enter", "Detail"},
+			{"n", "Notes"},
 			{"/", "Search"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},

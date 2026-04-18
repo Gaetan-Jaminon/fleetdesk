@@ -129,6 +129,7 @@ func (m Model) renderContainerList() string {
 	s += m.renderHintBar(hintWithHelp([][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Detail"},
+		{"n", "Notes"},
 		{"1-3", "Sort"},
 		{"/", "Search"},
 		{"l", "Logs"},

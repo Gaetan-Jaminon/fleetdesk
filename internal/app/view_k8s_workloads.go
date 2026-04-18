@@ -88,6 +88,7 @@ func (m Model) renderK8sWorkloadList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Pods"},
+			{"n", "Notes"},
 			{"/", "Filter"},
 			{"1-3", "Sort"},
 			{"r", "Refresh"},

@@ -93,6 +93,7 @@ func (m Model) renderAzureVMList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
+			{"n", "Notes"},
 			{"s", "Start"},
 			{"o", "Stop"},
 			{"t", "Restart"},

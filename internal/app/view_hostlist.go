@@ -95,6 +95,7 @@ func (m Model) renderHostList() string {
 	hints := [][]string{
 		{"↑↓", "Navigate"},
 		{"Enter", "Drill In"},
+		{"n", "Notes"},
 		{"x", "Shell"},
 		{"c", "Commands"},
 		{"K", "Deploy Key"},
