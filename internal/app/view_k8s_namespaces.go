@@ -3,8 +3,6 @@ package app
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) renderK8sNamespaceList() string {
@@ -25,83 +23,45 @@ func (m Model) renderK8sNamespaceList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sNamespaceCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(filtered) == 0 {
-		if m.filterText != "" {
-			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
-		} else {
-			s += borderedRow("  No namespaces.", iw, normalRowStyle) + "\n"
-		}
-	} else {
-		nameCol := len("NAMESPACE")
-		statusCol := len("STATUS")
-		podsCol := 5
-		deployCol := 6
-		stsCol := 4
-		dsCol := 3
-		for _, ns := range filtered {
-			if len(ns.Name) > nameCol {
-				nameCol = len(ns.Name)
-			}
-			if len(ns.Status) > statusCol {
-				statusCol = len(ns.Status)
-			}
-		}
-		nameCol += 2
-		statusCol += 2
-
-		hdr := fmt.Sprintf("     %-*s  %-*s  %*s  %*s  %*s  %*s  %s",
-			nameCol, "NAMESPACE"+m.sortIndicator(1),
-			statusCol, "STATUS"+m.sortIndicator(2),
-			podsCol, "PODS"+m.sortIndicator(3),
-			deployCol, "DEPLOY"+m.sortIndicator(4),
-			stsCol, "STS"+m.sortIndicator(5),
-			dsCol, "DS"+m.sortIndicator(6),
-			"AGE"+m.sortIndicator(7),
-		)
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.k8sNamespaceCursor >= offset+maxVisible {
-			offset = m.k8sNamespaceCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(filtered) {
-			end = len(filtered)
-		}
-
-		for i := offset; i < end; i++ {
-			ns := filtered[i]
-			cur := "   "
-			if i == m.k8sNamespaceCursor {
-				cur = " \u25b8 "
-			}
-
-			line := fmt.Sprintf("%s  %-*s  %-*s  %*d  %*d  %*d  %*d  %s",
-				cur, nameCol, ns.Name,
-				statusCol, ns.Status,
-				podsCol, ns.PodCount,
-				deployCol, ns.DeployCount,
-				stsCol, ns.STSCount,
-				dsCol, ns.DSCount,
-				ns.Age,
-			)
-
-			var style lipgloss.Style
-			if i == m.k8sNamespaceCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
 	}
+
+	emptyMsg := "  No namespaces."
+	if m.filterText != "" {
+		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
+	}
+
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "NAMESPACE", SortIndex: 1},
+			{Label: "STATUS", SortIndex: 2},
+			{Label: "PODS", Width: 5, SortIndex: 3, RightAlign: true},
+			{Label: "DEPLOY", Width: 6, SortIndex: 4, RightAlign: true},
+			{Label: "STS", Width: 4, SortIndex: 5, RightAlign: true},
+			{Label: "DS", Width: 3, SortIndex: 6, RightAlign: true},
+			{Label: "AGE", SortIndex: 7},
+		},
+		RowCount: len(filtered),
+		RowBuilder: func(i int) []string {
+			ns := filtered[i]
+			return []string{
+				ns.Name,
+				ns.Status,
+				fmt.Sprintf("%d", ns.PodCount),
+				fmt.Sprintf("%d", ns.DeployCount),
+				fmt.Sprintf("%d", ns.STSCount),
+				fmt.Sprintf("%d", ns.DSCount),
+				ns.Age,
+			}
+		},
+		Cursor:        m.k8sNamespaceCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  emptyMsg,
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"

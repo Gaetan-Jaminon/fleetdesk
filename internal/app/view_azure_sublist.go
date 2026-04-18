@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 )
 
@@ -24,81 +22,50 @@ func (m Model) renderAzureSubList() string {
 	s := m.renderHeader(breadcrumb, m.azureSubCursor+1, len(m.azureSubs)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if len(m.azureSubs) == 0 {
-		s += borderedRow("  No subscriptions in fleet.", iw, normalRowStyle) + "\n"
-	} else {
-		nameCol := len("SUBSCRIPTION")
-		tenantCol := len("TENANT")
-		userCol := len("USER")
-		for _, sub := range m.azureSubs {
-			if len(sub.Name) > nameCol {
-				nameCol = len(sub.Name)
-			}
-			if len(sub.Tenant) > tenantCol {
-				tenantCol = len(sub.Tenant)
-			}
-			if len(sub.User) > userCol {
-				userCol = len(sub.User)
-			}
-		}
-		nameCol += 2
-		tenantCol += 2
-		userCol += 2
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s",
-			nameCol, "SUBSCRIPTION"+m.sortIndicator(1),
-			tenantCol, "TENANT"+m.sortIndicator(2),
-			userCol, "USER"+m.sortIndicator(3),
-		)
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+	nameCol := len("SUBSCRIPTION")
+	for _, sub := range m.azureSubs {
+		if len(sub.Name) > nameCol {
+			nameCol = len(sub.Name)
+		}
+	}
+	nameCol += 2
 
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.azureSubCursor >= offset+maxVisible {
-			offset = m.azureSubCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(m.azureSubs) {
-			end = len(m.azureSubs)
-		}
-
-		for i := offset; i < end; i++ {
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "SUBSCRIPTION", Width: nameCol, SortIndex: 1},
+			{Label: "TENANT", SortIndex: 2},
+			{Label: "USER", SortIndex: 3},
+		},
+		RowCount: len(m.azureSubs),
+		RowBuilder: func(i int) []string {
 			sub := m.azureSubs[i]
-			cur := "   "
-			if i == m.azureSubCursor {
-				cur = " ▸ "
-			}
-
-			var line string
+			return []string{sub.Name, sub.Tenant, sub.User}
+		},
+		RowOverride: func(i int) string {
+			sub := m.azureSubs[i]
 			switch sub.Status {
 			case azure.SubConnecting:
-				line = fmt.Sprintf("%s  %-*s  checking...", cur, nameCol, sub.Name)
+				return fmt.Sprintf("%-*s  checking...", nameCol, sub.Name)
 			case azure.SubError:
 				reason := sub.Error
 				if reason == "" {
 					reason = "unknown"
 				}
-				line = fmt.Sprintf("%s  %-*s  error (%s)", cur, nameCol, sub.Name, reason)
-			case azure.SubOnline:
-				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s",
-					cur, nameCol, sub.Name, tenantCol, sub.Tenant, userCol, sub.User)
+				return fmt.Sprintf("%-*s  error (%s)", nameCol, sub.Name, reason)
 			}
-
-			var style lipgloss.Style
-			if i == m.azureSubCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
-	}
+			return ""
+		},
+		Cursor:        m.azureSubCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  "  No subscriptions in fleet.",
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"

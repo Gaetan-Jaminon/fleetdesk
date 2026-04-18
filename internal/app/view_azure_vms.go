@@ -37,111 +37,41 @@ func (m Model) renderAzureVMList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.azureVMCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("┌"+strings.Repeat("─", iw)+"┐") + "\n"
 
-	if len(filtered) == 0 {
-		if m.filterText != "" {
-			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
-		} else {
-			s += borderedRow("  No VMs in subscription.", iw, normalRowStyle) + "\n"
-		}
-	} else {
-		nameCol := len("NAME")
-		rgCol := len("RESOURCE GROUP")
-		statusCol := len("STATUS")
-		sizeCol := len("SIZE")
-		osCol := len("OS")
-		ipCol := len("PRIVATE IP")
-		hostCol := len("HOSTNAME")
-		for _, vm := range filtered {
-			if len(vm.Name) > nameCol {
-				nameCol = len(vm.Name)
-			}
-			if len(vm.ResourceGroup) > rgCol {
-				rgCol = len(vm.ResourceGroup)
-			}
-			if len(vm.PowerState) > statusCol {
-				statusCol = len(vm.PowerState)
-			}
-			if len(vm.VMSize) > sizeCol {
-				sizeCol = len(vm.VMSize)
-			}
-			if len(vm.OSType) > osCol {
-				osCol = len(vm.OSType)
-			}
-			if len(vm.PrivateIP) > ipCol {
-				ipCol = len(vm.PrivateIP)
-			}
-			if len(vm.Hostname) > hostCol {
-				hostCol = len(vm.Hostname)
-			}
-		}
-		// Account for transition overlay display strings
-		for k, t := range m.transitions {
-			if strings.HasPrefix(k, "vm/") && len(t.Display) > statusCol {
-				statusCol = len(t.Display)
-			}
-		}
-		nameCol += 2
-		rgCol += 2
-		statusCol += 2
-		sizeCol += 2
-		osCol += 2
-		ipCol += 2
-		hostCol += 2
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-			nameCol, "NAME"+m.sortIndicator(1),
-			rgCol, "RESOURCE GROUP"+m.sortIndicator(2),
-			statusCol, "STATUS"+m.sortIndicator(3),
-			sizeCol, "SIZE"+m.sortIndicator(4),
-			osCol, "OS"+m.sortIndicator(5),
-			ipCol, "PRIVATE IP"+m.sortIndicator(6),
-			"HOSTNAME"+m.sortIndicator(7),
-		)
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("├"+strings.Repeat("─", iw)+"┤") + "\n"
+	emptyMsg := "  No VMs in subscription."
+	if m.filterText != "" {
+		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
+	}
 
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.azureVMCursor >= offset+maxVisible {
-			offset = m.azureVMCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(filtered) {
-			end = len(filtered)
-		}
-
-		for i := offset; i < end; i++ {
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "NAME", SortIndex: 1},
+			{Label: "RESOURCE GROUP", SortIndex: 2},
+			{Label: "STATUS", SortIndex: 3},
+			{Label: "SIZE", SortIndex: 4},
+			{Label: "OS", SortIndex: 5},
+			{Label: "PRIVATE IP", SortIndex: 6},
+			{Label: "HOSTNAME", SortIndex: 7},
+		},
+		RowCount: len(filtered),
+		RowBuilder: func(i int) []string {
 			vm := filtered[i]
-			cur := "   "
-			if i == m.azureVMCursor {
-				cur = " ▸ "
-			}
-
-			// Overlay: check if VM has an in-flight transition
 			status := vm.PowerState
 			if t, ok := m.transitions["vm/"+vm.Name]; ok {
 				status = t.Display
 			}
-
-			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-				cur, nameCol, vm.Name, rgCol, vm.ResourceGroup,
-				statusCol, status, sizeCol, vm.VMSize, osCol, vm.OSType,
-				ipCol, vm.PrivateIP, vm.Hostname)
-
-			var style lipgloss.Style
-			if i == m.azureVMCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
-	}
+			return []string{vm.Name, vm.ResourceGroup, status, vm.VMSize, vm.OSType, vm.PrivateIP, vm.Hostname}
+		},
+		Cursor:        m.azureVMCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  emptyMsg,
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("└"+strings.Repeat("─", iw)+"┘") + "\n"

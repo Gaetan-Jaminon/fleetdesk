@@ -3,8 +3,6 @@ package app
 import (
 	"fmt"
 	"strings"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) renderFleetPicker() string {
@@ -17,71 +15,38 @@ func (m Model) renderFleetPicker() string {
 	s := m.renderHeader("", m.fleetCursor+1, len(m.fleets)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(m.fleets) == 0 {
-		noFleetMsg := "  No fleet files found"
-		if m.appCfg.FleetDir != "" {
-			noFleetMsg += " in " + m.appCfg.FleetDir
-		}
-		s += borderedRow(noFleetMsg, iw, normalRowStyle) + "\n"
-	} else {
-		nameCol := len("FLEET")
-		for _, f := range m.fleets {
-			if len(f.Name) > nameCol {
-				nameCol = len(f.Name)
-			}
-		}
-		nameCol += 2
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
 
-		hdr := fmt.Sprintf("     %-*s  %-6s  %s", nameCol, "FLEET", "TYPE", "TARGETS")
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	emptyMsg := "  No fleet files found"
+	if m.appCfg.FleetDir != "" {
+		emptyMsg += " in " + m.appCfg.FleetDir
+	}
 
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
+	typeLabel := func(t string) string {
+		switch t {
+		case "kubernetes":
+			return "Kubernetes"
+		case "azure":
+			return "Azure"
+		case "probes":
+			return "Probes"
+		default:
+			return "VM"
 		}
-		offset := 0
-		if m.fleetCursor >= offset+maxVisible {
-			offset = m.fleetCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(m.fleets) {
-			end = len(m.fleets)
-		}
+	}
 
-		// build type group start map
-		typeStarts := make(map[int]string)
-		lastType := ""
-		for i, f := range m.fleets {
-			if f.Type != lastType {
-				label := f.Type
-				if label == "kubernetes" {
-					label = "Kubernetes"
-				} else if label == "azure" {
-					label = "Azure"
-				} else if label == "probes" {
-					label = "Probes"
-				} else {
-					label = "VM"
-				}
-				typeStarts[i] = label
-				lastType = f.Type
-			}
-		}
-
-		for i := offset; i < end; i++ {
-			// type group header
-			if typeName, ok := typeStarts[i]; ok {
-				groupLine := fmt.Sprintf("  \u2500\u2500 %s \u2500\u2500", typeName)
-				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
-			}
-
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "FLEET"},
+			{Label: "TYPE", Width: 6},
+			{Label: "TARGETS"},
+		},
+		RowCount: len(m.fleets),
+		RowBuilder: func(i int) []string {
 			f := m.fleets[i]
-			cur := "   "
-			if i == m.fleetCursor {
-				cur = " \u25b8 "
-			}
-
 			ftype := f.Type
 			if ftype == "kubernetes" {
 				ftype = "k8s"
@@ -95,19 +60,19 @@ func (m Model) renderFleetPicker() string {
 			default:
 				targetCount = len(f.Groups)
 			}
-			line := fmt.Sprintf("%s  %-*s  %-6s  %d", cur, nameCol, f.Name, ftype, targetCount)
-
-			var style lipgloss.Style
-			if i == m.fleetCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
+			return []string{f.Name, ftype, fmt.Sprintf("%d", targetCount)}
+		},
+		GroupHeader: func(i int) (string, bool) {
+			if i > 0 && m.fleets[i-1].Type == m.fleets[i].Type {
+				return "", false
 			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
-	}
+			return typeLabel(m.fleets[i].Type), true
+		},
+		Cursor:       m.fleetCursor,
+		MaxVisible:   maxVisible,
+		InnerWidth:   iw,
+		EmptyMessage: emptyMsg,
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"

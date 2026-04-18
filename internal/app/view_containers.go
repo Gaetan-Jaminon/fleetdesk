@@ -83,65 +83,38 @@ func (m Model) renderContainerList() string {
 		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
 	}
 
-	if len(filtered) == 0 {
-		s += borderedRow("  No containers found.", iw, normalRowStyle) + "\n"
-	} else {
-		nameCol := len("CONTAINER")
-		imgCol := len("IMAGE")
-		for _, c := range filtered {
-			if len(c.Name) > nameCol {
-				nameCol = len(c.Name)
-			}
-			if len(c.Image) > imgCol {
-				imgCol = len(c.Image)
-			}
-		}
-		nameCol += 2
-		imgCol += 2
-
-		hdr := fmt.Sprintf("     %-*s  %-*s  %s", nameCol, "CONTAINER"+m.sortIndicator(1), imgCol, "IMAGE"+m.sortIndicator(2), "STATUS"+m.sortIndicator(3))
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-
-		maxVisible := m.height - 8
-		if m.filterText != "" {
-			maxVisible -= 2
-		}
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.containerCursor >= offset+maxVisible {
-			offset = m.containerCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(filtered) {
-			end = len(filtered)
-		}
-
-		for i := offset; i < end; i++ {
-			c := filtered[i]
-			cur := "   "
-			if i == m.containerCursor {
-				cur = " \u25b8 "
-			}
-			prefix := ""
-			if !strings.HasPrefix(c.Status, "Up") && !strings.HasPrefix(c.Status, "Exited (0)") && c.Status != "Created" {
-				prefix = "\u2717 "
-			}
-			line := fmt.Sprintf("%s  %s%-*s  %-*s  %s", cur, prefix, nameCol, c.Name, imgCol, c.Image, c.Status)
-
-			var style lipgloss.Style
-			if i == m.containerCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
+	maxVisible := m.height - 8
+	if m.filterText != "" {
+		maxVisible -= 2
 	}
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "CONTAINER", SortIndex: 1},
+			{Label: "IMAGE", SortIndex: 2},
+			{Label: "STATUS", SortIndex: 3},
+		},
+		RowCount: len(filtered),
+		RowBuilder: func(i int) []string {
+			c := filtered[i]
+			return []string{c.Name, c.Image, c.Status}
+		},
+		RowPrefix: func(i int) string {
+			c := filtered[i]
+			if !strings.HasPrefix(c.Status, "Up") && !strings.HasPrefix(c.Status, "Exited (0)") && c.Status != "Created" {
+				return "\u2717 "
+			}
+			return ""
+		},
+		Cursor:        m.containerCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  "  No containers found.",
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"

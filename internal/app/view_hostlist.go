@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 )
 
@@ -20,100 +18,68 @@ func (m Model) renderHostList() string {
 	s := m.renderHeader(f.Name, m.hostCursor+1, len(m.hosts)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(m.hosts) == 0 {
-		s += borderedRow("  No hosts in fleet.", iw, normalRowStyle) + "\n"
-	} else {
-		nameCol := len("HOST")
-		osCol := len("OS")
-		for _, h := range m.hosts {
-			if len(h.Entry.Name) > nameCol {
-				nameCol = len(h.Entry.Name)
-			}
-			if len(h.OS) > osCol {
-				osCol = len(h.OS)
-			}
-		}
-		nameCol += 2
-		osCol += 2
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
 
-		// compute dynamic column widths from actual data
-		upCol := len("UP SINCE")
-		for _, h := range m.hosts {
-			if len(h.UpSince) > upCol {
-				upCol = len(h.UpSince)
+	nameCol := len("HOST")
+	for _, h := range m.hosts {
+		if len(h.Entry.Name) > nameCol {
+			nameCol = len(h.Entry.Name)
+		}
+	}
+	nameCol += 2
+
+	// Group starts keyed by host index (only when group label differs from previous).
+	groupStarts := make(map[int]string)
+	for i, h := range m.hosts {
+		if h.Group != "" {
+			if i == 0 || m.hosts[i-1].Group != h.Group {
+				groupStarts[i] = h.Group
 			}
 		}
+	}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %s", nameCol, "HOST", osCol, "OS", upCol, "UP SINCE", "UPD")
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.hostCursor >= offset+maxVisible {
-			offset = m.hostCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(m.hosts) {
-			end = len(m.hosts)
-		}
-
-		// build group start index map
-		groupStarts := make(map[int]string)
-		for i, h := range m.hosts {
-			if h.Group != "" {
-				if i == 0 || m.hosts[i-1].Group != h.Group {
-					groupStarts[i] = h.Group
-				}
-			}
-		}
-
-		for i := offset; i < end; i++ {
-			// render group header if this host starts a new group
-			if groupName, ok := groupStarts[i]; ok {
-				groupLine := fmt.Sprintf("  \u2500\u2500 %s \u2500\u2500", groupName)
-				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
-			}
-
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "HOST", Width: nameCol},
+			{Label: "OS"},
+			{Label: "UP SINCE"},
+			{Label: "UPD"},
+		},
+		RowCount: len(m.hosts),
+		RowBuilder: func(i int) []string {
 			h := m.hosts[i]
-			cur := "   "
-			if i == m.hostCursor {
-				cur = " \u25b8 "
+			updStr := fmt.Sprintf("%d", h.UpdateCount)
+			if h.UpdateCount == 0 {
+				updStr = "\u2014"
 			}
-
-			var line string
+			return []string{h.Entry.Name, h.OS, h.UpSince, updStr}
+		},
+		RowOverride: func(i int) string {
+			h := m.hosts[i]
 			switch h.Status {
 			case config.HostConnecting:
-				line = fmt.Sprintf("%s  %-*s  connecting...", cur, nameCol, h.Entry.Name)
+				return fmt.Sprintf("%-*s  connecting...", nameCol, h.Entry.Name)
 			case config.HostUnreachable:
 				reason := h.Error
 				if reason == "" {
 					reason = "unknown"
 				}
-				line = fmt.Sprintf("%s  %-*s  unreachable (%s)", cur, nameCol, h.Entry.Name, reason)
-			default:
-				updStr := fmt.Sprintf("%d", h.UpdateCount)
-				if h.UpdateCount == 0 {
-					updStr = "—"
-				}
-				line = fmt.Sprintf("%s  %-*s  %-*s  %-*s  %s",
-					cur, nameCol, h.Entry.Name, osCol, h.OS, upCol, h.UpSince, updStr)
+				return fmt.Sprintf("%-*s  unreachable (%s)", nameCol, h.Entry.Name, reason)
 			}
-
-			var style lipgloss.Style
-			if i == m.hostCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
-	}
+			return ""
+		},
+		GroupHeader: func(i int) (string, bool) {
+			label, ok := groupStarts[i]
+			return label, ok
+		},
+		Cursor:       m.hostCursor,
+		MaxVisible:   maxVisible,
+		InnerWidth:   iw,
+		EmptyMessage: "  No hosts in fleet.",
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
