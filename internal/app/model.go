@@ -13,6 +13,7 @@ import (
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/probes"
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/ssh"
 )
@@ -263,6 +264,8 @@ const (
 	viewProbeList
 	viewProbeDetail
 	viewConfig
+	viewNoteList
+	viewNoteRead
 )
 
 // resourceCount removed — replaced by dynamic visibleResourceRows()
@@ -515,6 +518,17 @@ type Model struct {
 	modal           *ModalOverlay
 	wizardCancelled bool
 	wizardExitError error
+
+	// notes (FLE-77/78/79)
+	noteEngine      *notes.Engine
+	noteRef         notes.ResourceRef // resource whose notes are being viewed
+	noteList        []notes.Note      // loaded notes, newest first
+	noteCursor      int
+	noteReadLines   []string // split contents for scrollable reader
+	noteReadOffset  int
+	noteCounts      map[string]int // ref.Key() → count, for FLE-79 indicators
+	previousView    view           // for Esc-back from Note List to the originating view
+	noteLastCreated string         // path of just-created note; delete on exit if still empty
 }
 
 func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logger, version, commit string) Model {
@@ -529,6 +543,10 @@ func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logge
 		logger:        logger,
 		version: version,
 		commit:  commit,
+		noteCounts: make(map[string]int),
+	}
+	if appCfg.FleetDir != "" {
+		m.noteEngine = notes.New(appCfg.FleetDir)
 	}
 	if appCfg.FleetDir == "" {
 		m.modal = NewFirstRunWizard()
@@ -537,7 +555,10 @@ func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logge
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	// On startup, the initial view is Fleet Picker (or first-run wizard). If
+	// it's noteable, fire an initial note-count load so indicators appear
+	// without waiting for the first tick.
+	return m.refreshNoteCountsCmd()
 }
 
 // WizardCancelled returns true if the first-run wizard was cancelled.
@@ -1794,6 +1815,72 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.EnterAltScreen
 
+	case noteListLoadedMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Notes load failed: %v", msg.err)
+			m.flashError = true
+			return m, nil
+		}
+		m.noteList = msg.notes
+		if m.noteCursor >= len(m.noteList) {
+			m.noteCursor = max(0, len(m.noteList)-1)
+		}
+		m.view = viewNoteList
+		return m, nil
+
+	case noteReadLoadedMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Read failed: %v", msg.err)
+			m.flashError = true
+			return m, nil
+		}
+		m.noteReadLines = strings.Split(msg.content, "\n")
+		m.noteReadOffset = 0
+		m.view = viewNoteRead
+		return m, nil
+
+	case noteCreatedMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Create failed: %v", msg.err)
+			m.flashError = true
+			return m, nil
+		}
+		m.noteLastCreated = msg.path
+		return m, m.editNoteCmd(msg.path, true)
+
+	case noteEditFinishedMsg:
+		// If this was a post-create flow and the file is still empty, delete it.
+		if msg.createdAt && fileIsEmpty(msg.path) {
+			_ = m.noteEngine.Delete(msg.path)
+		}
+		m.noteLastCreated = ""
+		// Invalidate count cache for this ref so indicators refresh on re-entry.
+		delete(m.noteCounts, m.noteRef.Key())
+		return m, tea.Batch(
+			tea.EnterAltScreen,
+			m.loadNoteListCmd(m.noteRef),
+		)
+
+	case noteDeleteConfirmedMsg:
+		m.modal = nil
+		return m, m.deleteNoteCmd(msg.path)
+
+	case noteDeletedMsg:
+		if msg.err != nil {
+			m.flash = fmt.Sprintf("Delete failed: %v", msg.err)
+			m.flashError = true
+			return m, nil
+		}
+		m.flash = "Note deleted"
+		delete(m.noteCounts, m.noteRef.Key())
+		return m, m.loadNoteListCmd(m.noteRef)
+
+	case noteCountsLoadedMsg:
+		for k, v := range msg.counts {
+			m.noteCounts[k] = v
+		}
+		return m, nil
+
 	case sshHandoverFinishedMsg:
 		m.modal = nil
 		// refresh list after terminal handover returns
@@ -1828,21 +1915,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.EnterAltScreen
 
 	case tickMsg:
+		countsCmd := m.refreshNoteCountsCmd()
 		if m.view == viewHostList {
-			return m, tea.Batch(m.startProbe(), m.tickCmd())
+			return m, tea.Batch(m.startProbe(), m.tickCmd(), countsCmd)
 		}
 		if m.view == viewAzureSubList {
-			return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
+			return m, tea.Batch(m.startAzureProbe(), m.tickCmd(), countsCmd)
 		}
 		if m.view == viewAzureAKSList {
-			return m, tea.Batch(m.fetchAzureAKSClusters(), m.tickCmd())
+			return m, tea.Batch(m.fetchAzureAKSClusters(), m.tickCmd(), countsCmd)
 		}
 		if m.view == viewK8sPodList {
 			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
 			w := m.k8sWorkloads[m.selectedK8sWorkload]
-			return m, tea.Batch(m.fetchK8sPods(ns, w.Name), m.tickCmd())
+			return m, tea.Batch(m.fetchK8sPods(ns, w.Name), m.tickCmd(), countsCmd)
 		}
-		return m, nil
+		return m, countsCmd
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -1951,6 +2039,10 @@ func (m Model) renderCurrentView() string {
 		return m.renderProbeList()
 	case viewProbeDetail:
 		return m.renderProbeDetail()
+	case viewNoteList:
+		return m.renderNoteList()
+	case viewNoteRead:
+		return m.renderNoteRead()
 	}
 	return ""
 }

@@ -229,6 +229,7 @@ func (m Model) renderAzureAKSList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"↑↓", "Navigate"},
 			{"Enter", "Detail"},
+			{"n", "Notes"},
 			{"s", "Start"},
 			{"o", "Stop"},
 			{"d", "Delete"},

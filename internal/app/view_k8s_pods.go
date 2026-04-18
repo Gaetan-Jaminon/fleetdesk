@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func k8sPodStatusStyle(status string) lipgloss.Style {
@@ -43,94 +45,58 @@ func (m Model) renderK8sPodList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sPodCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(filtered) == 0 {
-		if m.filterText != "" {
-			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
-		} else {
-			s += borderedRow("  No pods.", iw, normalRowStyle) + "\n"
-		}
-	} else {
-		nameCol := len("NAME")
-		statusCol := len("STATUS")
-		readyCol := len("READY")
-		restartsCol := len("RESTARTS")
-		nodeCol := len("NODE")
-		for _, p := range filtered {
-			if len(p.Name) > nameCol {
-				nameCol = len(p.Name)
-			}
-			if len(p.Status) > statusCol {
-				statusCol = len(p.Status)
-			}
-			if len(p.Ready) > readyCol {
-				readyCol = len(p.Ready)
-			}
-			if len(p.Node) > nodeCol {
-				nodeCol = len(p.Node)
-			}
-		}
-		nameCol += 2
-		statusCol += 2
-		readyCol += 2
-		restartsCol += 2
-		nodeCol += 2
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
 
-		hdr := fmt.Sprintf("     %-*s  %-*s  %-*s  %*s  %-*s  %s",
-			nameCol, "NAME"+m.sortIndicator(1),
-			statusCol, "STATUS"+m.sortIndicator(2),
-			readyCol, "READY"+m.sortIndicator(3),
-			restartsCol, "RESTARTS"+m.sortIndicator(4),
-			nodeCol, "NODE"+m.sortIndicator(5),
-			"AGE"+m.sortIndicator(6),
-		)
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	emptyMsg := "  No pods."
+	if m.filterText != "" {
+		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
+	}
 
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.k8sPodCursor >= offset+maxVisible {
-			offset = m.k8sPodCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(filtered) {
-			end = len(filtered)
-		}
+	restartsCol := len("RESTARTS") + 2
 
-		for i := offset; i < end; i++ {
+	fleetName := m.fleets[m.selectedFleet].Name
+	clusterName := m.k8sClusters[m.selectedK8sCluster].Name
+	nsName := m.k8sNamespaces[m.selectedK8sNamespace].Name
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "NAME", SortIndex: 1},
+			{Label: "STATUS", SortIndex: 2},
+			{Label: "READY", SortIndex: 3},
+			{Label: "RESTARTS", Width: restartsCol, SortIndex: 4, RightAlign: true},
+			{Label: "NODE", SortIndex: 5},
+			{Label: "AGE", SortIndex: 6},
+		},
+		RowCount: len(filtered),
+		RowBuilder: func(i int) []string {
 			p := filtered[i]
-			cur := "   "
-			if i == m.k8sPodCursor {
-				cur = " \u25b8 "
-			}
-
 			status := p.Status
 			if t, ok := m.transitions["k8s-pod/"+p.Name]; ok {
 				status = t.Display
 			}
-
-			line := fmt.Sprintf("%s  %-*s  %-*s  %-*s  %*d  %-*s  %s",
-				cur, nameCol, p.Name,
-				statusCol, status,
-				readyCol, p.Ready,
-				restartsCol, p.Restarts,
-				nodeCol, p.Node,
+			return []string{
+				p.Name,
+				status,
+				p.Ready,
+				fmt.Sprintf("%d", p.Restarts),
+				p.Node,
 				p.Age,
-			)
-
-			var style lipgloss.Style
-			if i == m.k8sPodCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
 			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
-	}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"k8s", clusterName, m.selectedK8sContext, nsName, "pods", filtered[i].Name},
+			})
+		},
+		Cursor:        m.k8sPodCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  emptyMsg,
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
@@ -141,6 +107,7 @@ func (m Model) renderK8sPodList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Detail"},
+			{"n", "Notes"},
 			{"l", "Logs"},
 			{"d", "Delete"},
 			{"/", "Filter"},

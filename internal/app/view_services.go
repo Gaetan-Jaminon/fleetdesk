@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderServiceList() string {
@@ -159,70 +161,50 @@ func (m Model) renderServiceList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.serviceCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(filtered) == 0 {
-		if m.filterText != "" {
-			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
-		} else {
-			s += borderedRow("  No services found.", iw, normalRowStyle) + "\n"
-		}
-	} else {
-		nameCol := len("SERVICE")
-		enabledCol := len("ENABLED")
-		for _, svc := range filtered {
-			if len(svc.Name) > nameCol {
-				nameCol = len(svc.Name)
-			}
-			if len(svc.Enabled) > enabledCol {
-				enabledCol = len(svc.Enabled)
-			}
-		}
-		nameCol += 2
-		enabledCol += 2
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
 
-		hdr := fmt.Sprintf("     %-*s  %-10s  %-*s  %s", nameCol, "SERVICE"+m.sortIndicator(1), "STATE"+m.sortIndicator(2), enabledCol, "ENABLED"+m.sortIndicator(3), "DESCRIPTION"+m.sortIndicator(4))
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
+	emptyMsg := "  No services found."
+	if m.filterText != "" {
+		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
+	}
 
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.serviceCursor >= offset+maxVisible {
-			offset = m.serviceCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(filtered) {
-			end = len(filtered)
-		}
-
-		for i := offset; i < end; i++ {
+	fleetName := m.fleets[m.selectedFleet].Name
+	hostName := m.hosts[m.selectedHost].Entry.Name
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "SERVICE", SortIndex: 1},
+			{Label: "STATE", Width: 10, SortIndex: 2},
+			{Label: "ENABLED", SortIndex: 3},
+			{Label: "DESCRIPTION", SortIndex: 4},
+		},
+		RowCount: len(filtered),
+		RowBuilder: func(i int) []string {
 			svc := filtered[i]
-			cur := "   "
-			if i == m.serviceCursor {
-				cur = " \u25b8 "
-			}
-			prefix := ""
-			if svc.State == "failed" {
-				prefix = "\u2717 "
-			}
 			desc := svc.Description
 			if desc == "" {
 				desc = "\u2014"
 			}
-			line := fmt.Sprintf("%s  %s%-*s  %-10s  %-*s  %s", cur, prefix, nameCol, svc.Name, svc.State, enabledCol, svc.Enabled, desc)
-
-			var style lipgloss.Style
-			if i == m.serviceCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
+			return []string{svc.Name, svc.State, svc.Enabled, desc}
+		},
+		RowPrefix: func(i int) string {
+			note := m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"hosts", hostName, "services", filtered[i].Name},
+			})
+			if filtered[i].State == "failed" {
+				return note + "\u2717 "
 			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
-	}
+			return note
+		},
+		Cursor:        m.serviceCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  emptyMsg,
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
@@ -234,6 +216,7 @@ func (m Model) renderServiceList() string {
 			{"\u2191\u2193", "Navigate"},
 			{"1-4", "Sort"},
 			{"Enter", "Detail"},
+			{"n", "Notes"},
 			{"/", "Search"},
 			{"r", "Refresh"},
 			{"Esc", "Back"},

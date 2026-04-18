@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderK8sWorkloadList() string {
@@ -26,94 +26,58 @@ func (m Model) renderK8sWorkloadList() string {
 	s := m.renderHeader(breadcrumb+filterInfo, m.k8sWorkloadCursor+1, len(filtered)) + "\n"
 	s += borderStyle.Render("\u250c"+strings.Repeat("\u2500", iw)+"\u2510") + "\n"
 
-	if len(filtered) == 0 {
-		if m.filterText != "" {
-			s += borderedRow(fmt.Sprintf("  No matches for '%s'", m.filterText), iw, normalRowStyle) + "\n"
-		} else {
-			s += borderedRow("  No workloads.", iw, normalRowStyle) + "\n"
-		}
-	} else {
-		nameCol := len("NAME")
-		readyCol := 7
-		for _, wl := range filtered {
-			if len(wl.Name) > nameCol {
-				nameCol = len(wl.Name)
-			}
-			if len(wl.Ready) > readyCol {
-				readyCol = len(wl.Ready)
-			}
-		}
-		nameCol += 2
-		readyCol += 2
-
-		hdr := fmt.Sprintf("     %-*s  %-*s  %s",
-			nameCol, "NAME"+m.sortIndicator(1),
-			readyCol, "READY"+m.sortIndicator(2),
-			"AGE"+m.sortIndicator(3),
-		)
-		s += borderedRow(hdr, iw, colHeaderStyle) + "\n"
-		s += borderStyle.Render("\u251c"+strings.Repeat("\u2500", iw)+"\u2524") + "\n"
-
-		maxVisible := m.height - 8
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		offset := 0
-		if m.k8sWorkloadCursor >= offset+maxVisible {
-			offset = m.k8sWorkloadCursor - maxVisible + 1
-		}
-		end := offset + maxVisible
-		if end > len(filtered) {
-			end = len(filtered)
-		}
-
-		// build group start index map by kind
-		groupStarts := make(map[int]string)
-		kindLabels := map[string]string{
-			"Deployment":  "Deployments",
-			"StatefulSet": "StatefulSets",
-			"DaemonSet":   "DaemonSets",
-		}
-		for i, wl := range filtered {
-			if i == 0 || filtered[i-1].Kind != wl.Kind {
-				label := kindLabels[wl.Kind]
-				if label == "" {
-					label = wl.Kind
-				}
-				groupStarts[i] = label
-			}
-		}
-
-		for i := offset; i < end; i++ {
-			// render group header if this workload starts a new kind
-			if groupLabel, ok := groupStarts[i]; ok {
-				groupLine := fmt.Sprintf("  \u2500\u2500 %s \u2500\u2500", groupLabel)
-				s += borderedRow(groupLine, iw, groupHeaderStyle) + "\n"
-			}
-
-			wl := filtered[i]
-			cur := "   "
-			if i == m.k8sWorkloadCursor {
-				cur = " \u25b8 "
-			}
-
-			line := fmt.Sprintf("%s  %-*s  %-*s  %s",
-				cur, nameCol, wl.Name,
-				readyCol, wl.Ready,
-				wl.Age,
-			)
-
-			var style lipgloss.Style
-			if i == m.k8sWorkloadCursor {
-				style = selectedRowStyle
-			} else if i%2 == 0 {
-				style = altRowStyle
-			} else {
-				style = normalRowStyle
-			}
-			s += borderedRow(line, iw, style) + "\n"
-		}
+	maxVisible := m.height - 8
+	if maxVisible < 1 {
+		maxVisible = 1
 	}
+
+	emptyMsg := "  No workloads."
+	if m.filterText != "" {
+		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
+	}
+
+	kindLabels := map[string]string{
+		"Deployment":  "Deployments",
+		"StatefulSet": "StatefulSets",
+		"DaemonSet":   "DaemonSets",
+	}
+
+	fleetName := m.fleets[m.selectedFleet].Name
+	clusterName := m.k8sClusters[m.selectedK8sCluster].Name
+	nsName := m.k8sNamespaces[m.selectedK8sNamespace].Name
+	s += renderList(ListConfig{
+		Columns: []ListColumn{
+			{Label: "NAME", SortIndex: 1},
+			{Label: "READY", SortIndex: 2},
+			{Label: "AGE", SortIndex: 3},
+		},
+		RowCount: len(filtered),
+		RowBuilder: func(i int) []string {
+			wl := filtered[i]
+			return []string{wl.Name, wl.Ready, wl.Age}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"k8s", clusterName, m.selectedK8sContext, nsName, filtered[i].Name},
+			})
+		},
+		GroupHeader: func(i int) (string, bool) {
+			if i > 0 && filtered[i-1].Kind == filtered[i].Kind {
+				return "", false
+			}
+			label := kindLabels[filtered[i].Kind]
+			if label == "" {
+				label = filtered[i].Kind
+			}
+			return label, true
+		},
+		Cursor:        m.k8sWorkloadCursor,
+		MaxVisible:    maxVisible,
+		InnerWidth:    iw,
+		SortIndicator: m.sortIndicator,
+		EmptyMessage:  emptyMsg,
+	})
 
 	s = m.padToBottom(s, iw)
 	s += borderStyle.Render("\u2514"+strings.Repeat("\u2500", iw)+"\u2518") + "\n"
@@ -124,6 +88,7 @@ func (m Model) renderK8sWorkloadList() string {
 		s += m.renderHintBar(hintWithHelp([][]string{
 			{"\u2191\u2193", "Navigate"},
 			{"Enter", "Pods"},
+			{"n", "Notes"},
 			{"/", "Filter"},
 			{"1-3", "Sort"},
 			{"r", "Refresh"},
