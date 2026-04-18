@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/k8s"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderK8sClusterList() string {
@@ -31,6 +32,7 @@ func (m Model) renderK8sClusterList() string {
 	}
 	nameCol += 2
 
+	fleetName := m.fleets[m.selectedFleet].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "CLUSTER", Width: nameCol, SortIndex: 1},
@@ -40,6 +42,12 @@ func (m Model) renderK8sClusterList() string {
 		RowBuilder: func(i int) []string {
 			c := m.k8sClusters[i]
 			return []string{c.Name, c.K8sVersion}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"k8s", m.k8sClusters[i].Name},
+			})
 		},
 		RowOverride: func(i int) string {
 			c := m.k8sClusters[i]

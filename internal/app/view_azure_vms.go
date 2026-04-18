@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func azureVMStatusStyle(state string) lipgloss.Style {
@@ -47,6 +49,8 @@ func (m Model) renderAzureVMList() string {
 		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
 	}
 
+	fleetName := m.fleets[m.selectedFleet].Name
+	subName := m.azureSubs[m.selectedAzureSub].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "NAME", SortIndex: 1},
@@ -65,6 +69,13 @@ func (m Model) renderAzureVMList() string {
 				status = t.Display
 			}
 			return []string{vm.Name, vm.ResourceGroup, status, vm.VMSize, vm.OSType, vm.PrivateIP, vm.Hostname}
+		},
+		RowPrefix: func(i int) string {
+			vm := filtered[i]
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"azure", subName, vm.ResourceGroup, "vm", vm.Name},
+			})
 		},
 		Cursor:        m.azureVMCursor,
 		MaxVisible:    maxVisible,

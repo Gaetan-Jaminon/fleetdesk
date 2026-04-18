@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"strings"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderK8sNamespaceList() string {
@@ -33,6 +35,8 @@ func (m Model) renderK8sNamespaceList() string {
 		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
 	}
 
+	fleetName := m.fleets[m.selectedFleet].Name
+	clusterName := m.k8sClusters[m.selectedK8sCluster].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "NAMESPACE", SortIndex: 1},
@@ -55,6 +59,12 @@ func (m Model) renderK8sNamespaceList() string {
 				fmt.Sprintf("%d", ns.DSCount),
 				ns.Age,
 			}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"k8s", clusterName, m.selectedK8sContext, filtered[i].Name},
+			})
 		},
 		Cursor:        m.k8sNamespaceCursor,
 		MaxVisible:    maxVisible,

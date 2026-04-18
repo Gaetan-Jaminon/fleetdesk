@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderServiceList() string {
@@ -169,6 +171,8 @@ func (m Model) renderServiceList() string {
 		emptyMsg = fmt.Sprintf("  No matches for '%s'", m.filterText)
 	}
 
+	fleetName := m.fleets[m.selectedFleet].Name
+	hostName := m.hosts[m.selectedHost].Entry.Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "SERVICE", SortIndex: 1},
@@ -186,10 +190,14 @@ func (m Model) renderServiceList() string {
 			return []string{svc.Name, svc.State, svc.Enabled, desc}
 		},
 		RowPrefix: func(i int) string {
+			note := m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"hosts", hostName, "services", filtered[i].Name},
+			})
 			if filtered[i].State == "failed" {
-				return "\u2717 "
+				return note + "\u2717 "
 			}
-			return ""
+			return note
 		},
 		Cursor:        m.serviceCursor,
 		MaxVisible:    maxVisible,

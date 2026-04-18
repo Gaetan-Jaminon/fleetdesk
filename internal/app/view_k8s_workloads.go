@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"strings"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderK8sWorkloadList() string {
@@ -40,6 +42,9 @@ func (m Model) renderK8sWorkloadList() string {
 		"DaemonSet":   "DaemonSets",
 	}
 
+	fleetName := m.fleets[m.selectedFleet].Name
+	clusterName := m.k8sClusters[m.selectedK8sCluster].Name
+	nsName := m.k8sNamespaces[m.selectedK8sNamespace].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "NAME", SortIndex: 1},
@@ -50,6 +55,12 @@ func (m Model) renderK8sWorkloadList() string {
 		RowBuilder: func(i int) []string {
 			wl := filtered[i]
 			return []string{wl.Name, wl.Ready, wl.Age}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"k8s", clusterName, m.selectedK8sContext, nsName, filtered[i].Name},
+			})
 		},
 		GroupHeader: func(i int) (string, bool) {
 			if i > 0 && filtered[i-1].Kind == filtered[i].Kind {

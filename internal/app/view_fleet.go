@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"strings"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderFleetPicker() string {
@@ -61,6 +63,9 @@ func (m Model) renderFleetPicker() string {
 				targetCount = len(f.Groups)
 			}
 			return []string{f.Name, ftype, fmt.Sprintf("%d", targetCount)}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{Fleet: m.fleets[i].Name})
 		},
 		GroupHeader: func(i int) (string, bool) {
 			if i > 0 && m.fleets[i-1].Type == m.fleets[i].Type {

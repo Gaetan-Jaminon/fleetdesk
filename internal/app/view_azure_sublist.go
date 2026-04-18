@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/azure"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderAzureSubList() string {
@@ -35,6 +36,7 @@ func (m Model) renderAzureSubList() string {
 	}
 	nameCol += 2
 
+	fleetName := m.fleets[m.selectedFleet].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "SUBSCRIPTION", Width: nameCol, SortIndex: 1},
@@ -45,6 +47,12 @@ func (m Model) renderAzureSubList() string {
 		RowBuilder: func(i int) []string {
 			sub := m.azureSubs[i]
 			return []string{sub.Name, sub.Tenant, sub.User}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"azure", m.azureSubs[i].Name},
+			})
 		},
 		RowOverride: func(i int) string {
 			sub := m.azureSubs[i]

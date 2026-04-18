@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func k8sPodStatusStyle(status string) lipgloss.Style {
@@ -55,6 +57,9 @@ func (m Model) renderK8sPodList() string {
 
 	restartsCol := len("RESTARTS") + 2
 
+	fleetName := m.fleets[m.selectedFleet].Name
+	clusterName := m.k8sClusters[m.selectedK8sCluster].Name
+	nsName := m.k8sNamespaces[m.selectedK8sNamespace].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "NAME", SortIndex: 1},
@@ -79,6 +84,12 @@ func (m Model) renderK8sPodList() string {
 				p.Node,
 				p.Age,
 			}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"k8s", clusterName, m.selectedK8sContext, nsName, "pods", filtered[i].Name},
+			})
 		},
 		Cursor:        m.k8sPodCursor,
 		MaxVisible:    maxVisible,

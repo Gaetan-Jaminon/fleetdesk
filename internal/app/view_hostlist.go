@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Gaetan-Jaminon/fleetdesk/internal/config"
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderHostList() string {
@@ -41,6 +42,7 @@ func (m Model) renderHostList() string {
 		}
 	}
 
+	fleetName := m.fleets[m.selectedFleet].Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "HOST", Width: nameCol},
@@ -56,6 +58,12 @@ func (m Model) renderHostList() string {
 				updStr = "\u2014"
 			}
 			return []string{h.Entry.Name, h.OS, h.UpSince, updStr}
+		},
+		RowPrefix: func(i int) string {
+			return m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"hosts", m.hosts[i].Entry.Name},
+			})
 		},
 		RowOverride: func(i int) string {
 			h := m.hosts[i]

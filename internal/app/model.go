@@ -555,7 +555,10 @@ func NewModel(fleets []config.Fleet, appCfg config.AppConfig, logger *slog.Logge
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	// On startup, the initial view is Fleet Picker (or first-run wizard). If
+	// it's noteable, fire an initial note-count load so indicators appear
+	// without waiting for the first tick.
+	return m.refreshNoteCountsCmd()
 }
 
 // WizardCancelled returns true if the first-run wizard was cancelled.
@@ -1912,21 +1915,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.EnterAltScreen
 
 	case tickMsg:
+		countsCmd := m.refreshNoteCountsCmd()
 		if m.view == viewHostList {
-			return m, tea.Batch(m.startProbe(), m.tickCmd())
+			return m, tea.Batch(m.startProbe(), m.tickCmd(), countsCmd)
 		}
 		if m.view == viewAzureSubList {
-			return m, tea.Batch(m.startAzureProbe(), m.tickCmd())
+			return m, tea.Batch(m.startAzureProbe(), m.tickCmd(), countsCmd)
 		}
 		if m.view == viewAzureAKSList {
-			return m, tea.Batch(m.fetchAzureAKSClusters(), m.tickCmd())
+			return m, tea.Batch(m.fetchAzureAKSClusters(), m.tickCmd(), countsCmd)
 		}
 		if m.view == viewK8sPodList {
 			ns := m.k8sNamespaces[m.selectedK8sNamespace].Name
 			w := m.k8sWorkloads[m.selectedK8sWorkload]
-			return m, tea.Batch(m.fetchK8sPods(ns, w.Name), m.tickCmd())
+			return m, tea.Batch(m.fetchK8sPods(ns, w.Name), m.tickCmd(), countsCmd)
 		}
-		return m, nil
+		return m, countsCmd
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/notes"
 )
 
 func (m Model) renderContainerList() string {
@@ -91,6 +93,8 @@ func (m Model) renderContainerList() string {
 		maxVisible = 1
 	}
 
+	fleetName := m.fleets[m.selectedFleet].Name
+	hostName := m.hosts[m.selectedHost].Entry.Name
 	s += renderList(ListConfig{
 		Columns: []ListColumn{
 			{Label: "CONTAINER", SortIndex: 1},
@@ -104,10 +108,14 @@ func (m Model) renderContainerList() string {
 		},
 		RowPrefix: func(i int) string {
 			c := filtered[i]
+			note := m.notePrefix(notes.ResourceRef{
+				Fleet:    fleetName,
+				Segments: []string{"hosts", hostName, "containers", c.Name},
+			})
 			if !strings.HasPrefix(c.Status, "Up") && !strings.HasPrefix(c.Status, "Exited (0)") && c.Status != "Created" {
-				return "\u2717 "
+				return note + "\u2717 "
 			}
-			return ""
+			return note
 		},
 		Cursor:        m.containerCursor,
 		MaxVisible:    maxVisible,
