@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/Gaetan-Jaminon/fleetdesk/internal/fspath"
 )
 
 // logWriter manages saving streamed log output to a file.
@@ -20,10 +21,10 @@ type logWriter struct {
 //
 // Returns nil (no error) if the file cannot be created — log saving is best-effort.
 func newLogWriter(fleetDir, fleetName, hostName, sourceName string) *logWriter {
-	dir := filepath.Join(fleetDir, "logs", sanitizePathComponent(fleetName), sanitizePathComponent(hostName))
+	dir := filepath.Join(fleetDir, "logs", fspath.Sanitize(fleetName), fspath.Sanitize(hostName))
 	os.MkdirAll(dir, 0755)
 
-	fileName := fmt.Sprintf("%s-%s.log", sanitizePathComponent(sourceName), time.Now().Format("2006-01-02_150405"))
+	fileName := fmt.Sprintf("%s-%s.log", fspath.Sanitize(sourceName), time.Now().Format("2006-01-02_150405"))
 	f, err := os.Create(filepath.Join(dir, fileName))
 	if err != nil {
 		return nil
@@ -64,10 +65,4 @@ func (lw *logWriter) Path() string {
 		return ""
 	}
 	return lw.file.Name()
-}
-
-// sanitizePathComponent replaces characters unsafe for directory/file names.
-func sanitizePathComponent(s string) string {
-	r := strings.NewReplacer("/", "_", "\\", "_", " ", "-", ":", "_")
-	return r.Replace(s)
 }
