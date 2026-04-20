@@ -243,4 +243,55 @@ func TestSubscriptionHintBar(t *testing.T) {
 			t.Error("hint bar missing Register Satellite")
 		}
 	})
+
+	t.Run("hint bar advertises Check Repo", func(t *testing.T) {
+		m := subscriptionModel("Satellite")
+		rendered := m.renderSubscription()
+		if !strings.Contains(rendered, "Check Repo") {
+			t.Error("hint bar missing Check Repo")
+		}
+	})
+}
+
+// --- Check Repo (c key) ---
+
+func TestCheckRepoAction(t *testing.T) {
+	t.Run("c on a Repo entry switches to ssh stream view", func(t *testing.T) {
+		m := subscriptionModel("Satellite",
+			config.Subscription{Field: "Repo: rhel-9-for-x86_64-baseos-rpms", Value: "ERROR"},
+		)
+		// cursor on the Repo entry (Registration is index 0, Repo is index 1)
+		m.subscriptionCursor = 1
+
+		result, cmd := m.handleSubscriptionKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+		m2 := result.(Model)
+
+		if cmd == nil {
+			t.Fatal("expected non-nil cmd from check repo")
+		}
+		if m2.view != viewSSHStream {
+			t.Errorf("view = %v, want viewSSHStream", m2.view)
+		}
+		if !strings.Contains(m2.streamTitle, "rhel-9-for-x86_64-baseos-rpms") {
+			t.Errorf("streamTitle = %q, want it to include the repo id", m2.streamTitle)
+		}
+		if m2.streamReturnView != viewSubscription {
+			t.Errorf("streamReturnView = %v, want viewSubscription", m2.streamReturnView)
+		}
+	})
+
+	t.Run("c on non-Repo entry is a no-op", func(t *testing.T) {
+		m := subscriptionModel("Satellite") // only Registration entry, no Repo
+		m.subscriptionCursor = 0
+
+		result, cmd := m.handleSubscriptionKeys(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+		m2 := result.(Model)
+
+		if cmd != nil {
+			t.Error("expected nil cmd when cursor is not on a Repo entry")
+		}
+		if m2.view == viewSSHStream {
+			t.Error("view should not switch when not on a Repo entry")
+		}
+	})
 }
