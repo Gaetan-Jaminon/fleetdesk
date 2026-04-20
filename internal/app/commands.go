@@ -595,7 +595,24 @@ func (m Model) fetchSubscription() func() tea.Msg {
 	return func() tea.Msg {
 		start := time.Now()
 		logger.Debug("fetch start", "view", "subscription", "host_idx", idx)
-		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && echo '===STATUS===' && sudo subscription-manager status 2>&1 && echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && echo '===REPOS===' && dnf repolist --enabled 2>&1 && echo '===REPOCHECK===' && for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do (echo "REPO:$repo:$(dnf repoinfo --disablerepo='*' --enablerepo=$repo 2>&1 | grep -c 'Error:')") & done; wait`
+		// Repo health check: per-repo `dnf makecache --refresh --repo=<id>` with
+		// bounded parallelism (4 concurrent). Each repo's status is dnf's exit
+		// code — same source of truth used by the per-repo "Check Repo" UI action,
+		// so the list and the inspector cannot disagree.
+		//
+		// We can't use a single all-repos `dnf makecache --refresh` because dnf
+		// stops emitting per-repo error blocks after the first failure (only the
+		// first failing repo is reported, the rest go silent — even if they also
+		// fail). That under-counts failures.
+		cmd := `echo '===IDENTITY===' && sudo subscription-manager identity 2>&1 && ` +
+			`echo '===STATUS===' && sudo subscription-manager status 2>&1 && ` +
+			`echo '===SERVER===' && sudo subscription-manager config --list 2>&1 | grep 'hostname' | head -1 && ` +
+			`echo '===REPOS===' && dnf repolist --enabled 2>&1 && ` +
+			`echo '===REPOCHECK===' && ` +
+			`i=0; for repo in $(dnf repolist --enabled -q 2>/dev/null | tail -n+2 | awk '{print $1}'); do ` +
+			`( sudo dnf makecache --refresh --repo="$repo" >/dev/null 2>&1; echo "REPO:$repo:$?" ) & ` +
+			`i=$((i+1)); [ $((i % 4)) -eq 0 ] && wait; ` +
+			`done; wait`
 		out, err := sm.RunSudoCommand(idx, cmd)
 		// Check for sudo password prompt only when no sudo password is cached.
 		// When cached, the rewritten command's "echo pw | sudo -S" still outputs
