@@ -81,6 +81,7 @@ func (m Model) renderSubscription() string {
 		{"↑↓", "Navigate"},
 		{"u", "Unregister"},
 		{"g", regTarget},
+		{"c", "Check Repo"},
 		{"d", "Disable Repo"},
 		{"r", "Refresh"},
 		{"Esc", "Back"},

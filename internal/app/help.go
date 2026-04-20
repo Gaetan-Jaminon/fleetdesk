@@ -246,6 +246,7 @@ func helpSubscription() string {
 	}) + "\n" + helpSection("Actions", [][]string{
 		{"u", "Unregister"},
 		{"g", "Register"},
+		{"c", "Check repo (run dnf makecache --refresh on selected repo)"},
 		{"d", "Disable repo"},
 		{"r", "Refresh"},
 	}) + "\n" + globalHelp(false)

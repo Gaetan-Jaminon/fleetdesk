@@ -1113,6 +1113,28 @@ func (m Model) handleSubscriptionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					sshHandover(h, []string{cmd}, banner))
 			}
 		}
+	case "c":
+		if len(m.subscriptions) > 0 {
+			sub := m.subscriptions[m.subscriptionCursor]
+			if strings.HasPrefix(sub.Field, "Repo: ") {
+				repoID := strings.TrimPrefix(sub.Field, "Repo: ")
+				// Redirect dnf's stderr to stdout *inline*. The sudo rewrite adds
+				// `sudo -S 2>/dev/null` to suppress the password prompt, and dnf
+				// inherits that /dev/null on fd 2 — so without our own `2>&1` after
+				// the dnf args, all error lines vanish. Capture dnf's exit into $rc
+				// before any subsequent command can stomp on $?.
+				cmd := fmt.Sprintf("sudo dnf makecache --refresh --repo='%s' 2>&1; rc=$?; echo; echo \"--- exit: $rc\"", shellQuote(repoID))
+				return m, m.startSSHStream(SSHStreamConfig{
+					Command:    cmd,
+					Title:      "Check repo " + repoID,
+					SourceName: "check-" + repoID,
+					ReturnView: viewSubscription,
+					HostIdx:    m.selectedHost,
+					Sudo:       true,
+					AutoDone:   true,
+				})
+			}
+		}
 	case "r":
 		m.subscriptions = nil
 		showLoading(&m, "subscription", "Loading subscription...")
